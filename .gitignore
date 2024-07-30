@@ -1,0 +1,5 @@
+.hg
+.scala-build
+.metals
+.vscode
+*~
