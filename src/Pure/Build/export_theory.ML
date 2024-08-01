@@ -153,6 +153,7 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
     val encode_standard_zterm = ZTerm.encode_zterm {typed_vars = false};
     val encode_standard_zproof = ZTerm.encode_zproof {typed_vars = false};
 
+    val _ = Prooftrace.close_file (Context.theory_long_name thy);
 
     (* strict parents *)
 

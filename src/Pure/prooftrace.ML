@@ -1,0 +1,370 @@
+(*  Title:      Pure/prooftrace.ML
+    Author:     Mario Carneiro
+
+Tight representation of types / terms / proof terms, notably for proof recording.
+*)
+
+(*** global ***)
+
+(*** local ***)
+
+signature PROOFTRACE =
+sig
+  type T
+
+  type thm_header =
+    {serial: serial, command_pos: Position.T, theory_name: string, thm_name: Thm_Name.P,
+      prop: term, types: typ list option};
+
+  val sorry: T
+  val pruned: T
+
+  val enabled: unit -> bool
+  val when: (unit -> T) -> T
+
+  val axiom_proof: string -> term -> T
+  val oracle_proof:  string -> term -> T
+  val strip_shyps_proof: T -> T
+  val incr_indexes_proof: int -> T -> T
+  val assume_proof: term -> T
+  val implies_intr_proof: term -> T -> T
+  val implies_elim_proof: T -> T -> T
+  val forall_intr_proof: term -> T -> T
+  val forall_elim_proof: T -> term -> T
+  val reflexive_proof: term -> T
+  val symmetric_proof: T -> T
+  val transitive_proof: T -> T -> T
+  val beta_proof: bool -> term -> T
+  val eta_proof: term -> T
+  val eta_long_proof: term -> T
+  val abstract_rule_proof: term -> T -> T
+  val combination_proof: T -> T -> T
+  val equal_intr_proof: T -> T -> T
+  val equal_elim_proof: T -> T -> T
+  val flexflex_proof: Envir.env -> T -> T
+  val generalize_proof: Names.set * Names.set -> int -> T -> T
+  val instantiate_proof:
+    ((indexname * sort) * typ) list * ((indexname * typ) * term) list -> T -> T
+  val trivial_proof: T
+  val of_class_proof: typ * class -> T
+  val thm_proof: serial -> T
+  val varifyT_proof: ((string * sort) * (indexname * sort)) list -> T -> T
+  val legacy_freezeT_proof: T -> T
+  val lift_proof: term -> int -> T -> T
+  val assumption_proof: int -> int -> T -> T
+  val eq_assumption_proof: int -> T -> T
+  val rotate_proof: int -> int -> T -> T
+  val permute_prems_proof: int -> int -> T -> T
+  val bicompose_proof: Envir.env -> int -> bool -> term list -> term list ->
+    term option -> term list -> int -> int -> T -> T -> T
+
+  val close_file: string -> unit;
+  val export_proof: thm_header -> T -> unit
+end;
+
+structure Prooftrace: PROOFTRACE =
+struct
+
+type thm_header =
+  {serial: serial, command_pos: Position.T, theory_name: string, thm_name: Thm_Name.P,
+    prop: term, types: typ list option};
+
+datatype T =
+    PTSorry
+  | PTHyp of term
+  | PTImpIntr of term * T
+  | PTImpElim of T * T
+  | PTForallIntr of term * T
+  | PTForallElim of T * term
+  | PTAxiom of string * term
+  | PTOracle of string * term
+  | PTRefl of term
+  | PTSymm of T
+  | PTTrans of T * T
+  | PTBetaNorm of term
+  | PTBetaHead of term
+  | PTEta of term
+  | PTEtaLong of term
+  | PTStripSHyps of T
+  | PTAbsRule of term * T
+  | PTAppRule of T * T
+  | PTEqIntr of T * T
+  | PTEqElim of T * T
+  | PTFlexFlex of Envir.env * T
+  | PTGeneralize of Names.set * Names.set * int * T
+  | PTInstantiate of ((indexname * sort) * typ) list * ((indexname * typ) * term) list * T
+  | PTTrivial
+  | PTOfClass of typ * class
+  | PTThm of serial
+  | PTVarify of ((string * sort) * (indexname * sort)) list * T
+  | PTLegacyFreezeT of T
+  | PTLift of term * int * T
+  | PTIncrIndexes of int * T
+  | PTAssumption of (T * int) * int
+  | PTEqAssumption of T * int
+  | PTRotate of int * int * T
+  | PTPermutePrems of int * int * T
+  | PTBicompose of Envir.env * int * bool * term list * term list *
+    term option * term list * int * int * T * T
+  | PTPruned;
+
+val sorry = PTSorry;
+val pruned = PTPruned;
+fun axiom_proof name prop = PTAxiom (name, prop);
+fun oracle_proof name prop = PTOracle (name, prop);
+fun implies_intr_proof A p = PTImpIntr (A, p);
+fun implies_elim_proof p q = PTImpElim (p, q);
+fun forall_intr_proof x p = PTForallIntr (x, p);
+fun forall_elim_proof p t = PTForallElim (p, t);
+val assume_proof = PTHyp;
+val reflexive_proof = PTRefl;
+val symmetric_proof = PTSymm;
+fun transitive_proof p q = PTTrans (p, q);
+val strip_shyps_proof = PTStripSHyps;
+fun beta_proof true = PTBetaNorm
+  | beta_proof false = PTBetaHead;
+val eta_proof = PTEta;
+val eta_long_proof = PTEtaLong;
+fun abstract_rule_proof x p = PTAbsRule (x, p);
+fun combination_proof p q = PTAppRule (p, q);
+fun equal_intr_proof p q = PTEqIntr (p, q);
+fun equal_elim_proof p q = PTEqElim (p, q);
+fun flexflex_proof env p = PTFlexFlex (env, p);
+fun generalize_proof (tfrees, frees) idx p = PTGeneralize (tfrees, frees, idx, p);
+fun instantiate_proof (instT, inst) p = PTInstantiate (instT, inst, p);
+val trivial_proof = PTTrivial;
+val of_class_proof = PTOfClass;
+val thm_proof = PTThm;
+fun varifyT_proof al p = PTVarify (al, p);
+val legacy_freezeT_proof = PTLegacyFreezeT;
+fun lift_proof gprop inc p = PTLift (gprop, inc, p);
+fun incr_indexes_proof i p = PTIncrIndexes (i, p);
+fun assumption_proof i n p = PTAssumption ((p, i), n);
+fun eq_assumption_proof i p = PTEqAssumption (p, i);
+fun rotate_proof k i p = PTRotate (k, i, p);
+fun permute_prems_proof j k p = PTPermutePrems (j, k, p);
+fun bicompose_proof env smax flatten Bs As A oldAs n nlift p q =
+  PTBicompose (env, smax, flatten, Bs, As, A, oldAs, n, nlift, p, q);
+
+val proofs = Unsynchronized.ref true;
+fun enabled () = ! proofs;
+fun when f = if enabled () then f () else PTSorry;
+
+datatype Elem =
+    EVariant of int * Elem list
+  | EList of Elem list
+  | ETuple of Elem list
+  | EInt of int
+  | EString of string;
+
+fun elem_nr (EVariant _) = 0
+  | elem_nr (EList _) = 1
+  | elem_nr (ETuple _) = 2
+  | elem_nr (EInt _) = 3
+  | elem_nr (EString _) = 4;
+
+fun elem_ord (EVariant a1, EVariant a2) = prod_ord int_ord (list_ord elem_ord) (a1, a2)
+  | elem_ord (EList a1, EList a2) = list_ord elem_ord (a1, a2)
+  | elem_ord (ETuple a1, ETuple a2) = list_ord elem_ord (a1, a2)
+  | elem_ord (EInt a1, EInt a2) = int_ord (a1, a2)
+  | elem_ord (EString a1, EString a2) = fast_string_ord (a1, a2)
+  | elem_ord (a1, a2) = int_ord (elem_nr a1, elem_nr a2);
+
+structure ElemTab = Table(type key = Elem val ord = elem_ord);
+
+exception OutOfRange;
+exception AlreadyClosed;
+
+val open_files = Synchronized.var "open_files"
+  (Symtab.empty: BinIO.outstream Synchronized.var option Symtab.table);
+
+fun with_file thy_name f =
+  let
+    val map = Synchronized.value open_files
+    val s = case Symtab.lookup map thy_name of
+      NONE =>
+        let
+          val dir = "/home/mario/Documents/isabelle/exportTraces"
+          val file = dir ^ "/" ^ thy_name
+          val s = Synchronized.var thy_name (BinIO.openOut (dir ^ "/" ^ thy_name)
+            handle IO.Io _ => (OS.FileSys.mkDir dir; BinIO.openOut file))
+
+        in Synchronized.change open_files (Symtab.update_new (thy_name, SOME s)); s end
+    | SOME NONE => raise AlreadyClosed
+    | SOME (SOME s) => s
+  in Synchronized.change s (fn s => (f s; s)) end;
+
+fun close_file thy_name =
+  Synchronized.change open_files (fn map =>
+    case Symtab.lookup map thy_name of
+      NONE => map
+    | SOME NONE => raise AlreadyClosed
+    | SOME (SOME _) => Symtab.update (thy_name, NONE) map);
+
+fun export_proof (header:thm_header) p =
+  let
+    fun mk_tab encode =
+      let val tab = Unsynchronized.ref (ElemTab.empty, [])
+      in
+        (fn () => let val (_, b) = !tab in b end, fn p =>
+        let val (tab1, vec1) = !tab; val p = encode p in
+          case ElemTab.lookup tab1 p of
+            SOME i => EInt i
+          | NONE =>
+            let val i = ElemTab.size tab1
+            in tab := (ElemTab.update_new (p, i) tab1, p :: vec1); EInt i end
+        end)
+      end;
+
+    fun opt f a = EList (case a of NONE => [] | SOME a => [f a])
+
+    val (strings, hash_string) = mk_tab EString
+    val hash_class = hash_string
+    val (sorts, hash_sort) = mk_tab (EList o map hash_class)
+    val (indexnames, hash_indexname) = mk_tab (fn (s, i) => ETuple [hash_string s, EInt i])
+    val (names, hash_names) = mk_tab (fn s => EList (map (fn (s, i) =>
+      ETuple [hash_string s, EInt i]) (Names.dest s)))
+
+    val (typs, hash_typ') = mk_tab I
+    fun hash_typ t = hash_typ' (case t of
+        Type(s, tys) => EVariant(0, [hash_string s, EList (map hash_typ tys)])
+      | TFree(x, s) => EVariant(1, [hash_string x, hash_sort s])
+      | TVar(i, s) => EVariant(2, [hash_indexname i, hash_sort s]))
+
+    val (terms, hash_term') = mk_tab I
+    fun hash_term t = hash_term' (case t of
+        Const(c, ty) => EVariant(0, [hash_string c, hash_typ ty])
+      | Free(x, ty) => EVariant(1, [hash_string x, hash_typ ty])
+      | Var(x, ty) => EVariant(2, [hash_indexname x, hash_typ ty])
+      | Bound(i) => EVariant(3, [EInt i])
+      | Abs(x, ty, e) => EVariant(4, [hash_string x, hash_typ ty, hash_term e])
+      | e1 $ e2 => EVariant(5, [hash_term e1, hash_term e2]))
+
+    fun enc_env (Envir.Envir {maxidx, tenv, tyenv}) =
+      ETuple [EInt maxidx,
+        EList (map (fn ((a, b), (c, d)) =>
+          ETuple [hash_string a, EInt b, hash_typ c, hash_term d]) (Vartab.dest tenv)),
+        EList (map (fn ((a, b), (c, d)) =>
+          ETuple [hash_string a, EInt b, hash_sort c, hash_typ d]) (Vartab.dest tyenv))]
+
+    val (proofs, hash_proof') = mk_tab I
+    val (assumptions, hash_assumption') = mk_tab I
+    fun hash_assumption (s, i) = hash_assumption' (ETuple [hash_proof s, EInt i])
+    and hash_proof p = hash_proof' (case p of
+        PTSorry => EVariant(0, [])
+      | PTHyp(a) => EVariant(1, [hash_term a])
+      | PTImpIntr(a, p) => EVariant(2, [hash_term a, hash_proof p])
+      | PTImpElim(p, q) => EVariant(3, [hash_proof p, hash_proof q])
+      | PTForallIntr(a, p) => EVariant(4, [hash_term a, hash_proof p])
+      | PTForallElim(p, a) => EVariant(5, [hash_proof p, hash_term a])
+      | PTAxiom(a, b) => EVariant(6, [hash_string a, hash_term b])
+      | PTOracle(a, b) => EVariant(7, [hash_string a, hash_term b])
+      | PTRefl(a) => EVariant(8, [hash_term a])
+      | PTSymm(p) => EVariant(9, [hash_proof p])
+      | PTTrans(p, q) => EVariant(10, [hash_proof p, hash_proof q])
+      | PTBetaNorm(a) => EVariant(11, [hash_term a])
+      | PTBetaHead(a) => EVariant(12, [hash_term a])
+      | PTEta(a) => EVariant(13, [hash_term a])
+      | PTEtaLong(a) => EVariant(14, [hash_term a])
+      | PTStripSHyps(p) => EVariant(15, [hash_proof p])
+      | PTAbsRule(a, p) => EVariant(16, [hash_term a, hash_proof p])
+      | PTAppRule(p, q) => EVariant(17, [hash_proof p, hash_proof q])
+      | PTEqIntr(p, q) => EVariant(18, [hash_proof p, hash_proof q])
+      | PTEqElim(p, q) => EVariant(19, [hash_proof p, hash_proof q])
+      | PTFlexFlex(e, p) => EVariant(20, [enc_env e, hash_proof p])
+      | PTGeneralize(a, b, c, p) => EVariant(21, [hash_names a, hash_names b, EInt c, hash_proof p])
+      | PTInstantiate(a, b, p) => EVariant(22, [
+          EList (map (fn ((a, b), c) => ETuple [hash_indexname a, hash_sort b, hash_typ c]) a),
+          EList (map (fn ((a, b), c) => ETuple [hash_indexname a, hash_typ b, hash_term c]) b),
+          hash_proof p])
+      | PTTrivial => EVariant(23, [])
+      | PTOfClass(a, b) => EVariant(24, [hash_typ a, hash_class b])
+      | PTThm(i) => EVariant(25, [EInt i])
+      | PTVarify(a, p) => EVariant(26, [
+          EList (map (fn ((a, b), (c, d)) =>
+            ETuple [hash_string a, hash_sort b, hash_indexname c, hash_sort d]) a),
+          hash_proof p])
+      | PTLegacyFreezeT(p) => EVariant(27, [hash_proof p])
+      | PTLift(a, b, p) => EVariant(28, [hash_term a, EInt b, hash_proof p])
+      | PTIncrIndexes(a, p) => EVariant(29, [EInt a, hash_proof p])
+      | PTAssumption(p, a) => EVariant(30, [hash_assumption p, EInt a])
+      | PTEqAssumption p => EVariant(31, [hash_assumption p])
+      | PTRotate(a, b, p) => EVariant(32, [EInt a, EInt b, hash_proof p])
+      | PTPermutePrems(a, b, p) => EVariant(33, [EInt a, EInt b, hash_proof p])
+      | PTBicompose(a, b, c, d, e, f, g, h, i, p, q) => EVariant(34, [
+          enc_env a, EInt b, EInt (if c then 1 else 0),
+          EList (map hash_term d), EList (map hash_term e), opt hash_term f,
+          EList (map hash_term g), EInt h, EInt i, hash_proof p, hash_proof q])
+      | PTPruned => EVariant(35, []))
+
+    fun enc_position pos =
+      let val {line, offset, end_offset, props = {label, file, id}} = Position.dest pos
+      in ETuple [EInt line, EInt offset, EInt end_offset,
+        hash_string label, hash_string file, hash_string id] end
+    fun enc_thm_name ((name, i), pos) = ETuple [hash_string name, EInt i, enc_position pos]
+    fun enc_header {serial, command_pos, theory_name, thm_name, prop, types} =
+      ETuple [EInt serial, enc_position command_pos, hash_string theory_name,
+        enc_thm_name thm_name, hash_term prop, opt (EList o map hash_typ) types]
+
+    val enc_root = [enc_header header, hash_proof p]
+  in with_file (#theory_name header) (fn stream =>
+    let
+      val buffer = Word8Array.array(2048, 0w0)
+      fun empty () = 0
+      fun flushBuffer n =
+        BinIO.output (stream, Word8ArraySlice.vector
+          (Word8ArraySlice.slice(buffer, 0, SOME n)))
+      fun output1 w n =
+        let val n =
+          if n < Word8Array.length buffer then n
+          else (BinIO.output (stream, Word8Array.vector buffer); 0)
+        in Word8Array.update(buffer, n, w); n+1 end
+      fun output w n =
+        let val bw = Byte.stringToBytes w
+        in
+          if n + size w <= Word8Array.length buffer then
+            (Word8Array.copyVec {src = bw, dst = buffer, di = n};
+             n + size w)
+          else if size w <= Word8Array.length buffer then
+            (Word8ArraySlice.copyVec
+              {src = Word8VectorSlice.slice(bw, 0, SOME (Word8Array.length buffer - n)),
+               dst = buffer, di = n};
+             BinIO.output (stream, Byte.stringToBytes w);
+             Word8ArraySlice.copyVec
+              {src = Word8VectorSlice.slice(bw, Word8Array.length buffer - n, NONE),
+               dst = buffer, di = 0};
+             size w)
+          else (flushBuffer n; BinIO.output (stream, bw); 0)
+        end
+      fun flush n = (flushBuffer n; BinIO.flushOut stream)
+
+      fun encode_int n =
+        if n < 128 then
+          output1 (Word8.fromInt n)
+        else if n < 128 * 128 then
+          output1 (Word8.fromInt (n div 128)) #>
+          output1 (Word8.fromInt (n mod 128))
+        else if n < 128 * 128 * 128 then
+          output1 (Word8.fromInt (n div (128*128))) #>
+          output1 (Word8.fromInt ((n div 128) mod 128)) #>
+          output1 (Word8.fromInt (n mod 128))
+        else
+          raise OutOfRange
+      fun encode_list ls = encode_int (length ls) #> encode_tuple ls
+      and encode_tuple ls s = List.foldl (uncurry encode_elem) s ls
+      and encode_elem (EVariant (i, ls)) = encode_int i #> encode_tuple ls
+        | encode_elem (EList ls) = encode_list ls
+        | encode_elem (ETuple ls) = encode_tuple ls
+        | encode_elem (EInt i) = encode_int i
+        | encode_elem (EString x) = encode_int (size x) #> output x;
+
+      val s = empty ()
+      val s = List.foldl (fn (f, s) => encode_list (rev (f ())) s) s
+        [strings,sorts,indexnames,names,typs,terms,proofs,assumptions];
+      val s = encode_tuple enc_root s;
+
+      val () = flush s;
+    in () end)
+  end;
+
+end;

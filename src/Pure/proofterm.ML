@@ -30,7 +30,8 @@ sig
      thms: (serial * thm_node) Ord_List.T,
      zboxes: ZTerm.zboxes,
      zproof: zproof,
-     proof: proof}
+     proof: proof,
+     trace: Prooftrace.T}
   type oracle = (string * Position.T) * term option
   type thm = serial * thm_node
   exception MIN_PROOF of unit
@@ -60,7 +61,7 @@ sig
   val unions_oracles: oracle Ord_List.T list -> oracle Ord_List.T
   val union_thms: thm Ord_List.T -> thm Ord_List.T -> thm Ord_List.T
   val unions_thms: thm Ord_List.T list -> thm Ord_List.T
-  val no_proof_body: zproof -> proof -> proof_body
+  val no_proof_body: zproof -> proof -> Prooftrace.T -> proof_body
   val no_thm_names: proof -> proof
   val no_thm_proofs: proof -> proof
   val no_body_proofs: proof -> proof
@@ -203,9 +204,7 @@ struct
 
 val proof_serial = Counter.make ();
 
-type thm_header =
-  {serial: serial, command_pos: Position.T, theory_name: string, thm_name: Thm_Name.P,
-    prop: term, types: typ list option};
+type thm_header = Prooftrace.thm_header;
 
 datatype proof =
    MinProof
@@ -224,7 +223,8 @@ and proof_body = PBody of
    thms: (serial * thm_node) Ord_List.T,
    zboxes: ZTerm.zboxes,
    zproof: zproof,
-   proof: proof}
+   proof: proof,
+   trace: Prooftrace.T}
 and thm_body =
   Thm_Body of {open_proof: proof -> proof, body: proof_body future}
 and thm_node =
@@ -245,11 +245,11 @@ fun proof_of (PBody {proof, ...}) = proof;
 fun zproof_of (PBody {zproof, ...}) = zproof;
 val join_proof = Future.join #> proof_of;
 
-fun map_proof_of f (PBody {oracles, thms, zboxes, zproof, proof}) =
-  PBody {oracles = oracles, thms = thms, zboxes = zboxes, zproof = zproof, proof = f proof};
+fun map_proof_of f (PBody {oracles, thms, zboxes, zproof, proof, trace}) =
+  PBody {oracles = oracles, thms = thms, zboxes = zboxes, zproof = zproof, proof = f proof, trace = trace};
 
-fun no_proof (PBody {oracles, thms, zboxes, zproof, ...}) =
-  PBody {oracles = oracles, thms = thms, zboxes = zboxes, zproof = zproof, proof = MinProof};
+fun no_proof (PBody {oracles, thms, zboxes, zproof, trace, ...}) =
+  PBody {oracles = oracles, thms = thms, zboxes = zboxes, zproof = zproof, proof = MinProof, trace = Prooftrace.pruned};
 
 fun thm_header serial command_pos theory_name thm_name prop types : thm_header =
   {serial = serial, command_pos = command_pos, theory_name = theory_name, thm_name = thm_name,
@@ -334,9 +334,9 @@ val unions_oracles = Ord_List.unions oracle_ord;
 val union_thms = Ord_List.union thm_ord;
 val unions_thms = Ord_List.unions thm_ord;
 
-fun no_proof_body zproof proof =
-  PBody {oracles = [], thms = [], zboxes = [], zproof = zproof, proof = proof};
-val no_thm_body = thm_body (no_proof_body ZNop MinProof);
+fun no_proof_body zproof proof trace =
+  PBody {oracles = [], thms = [], zboxes = [], zproof = zproof, proof = proof, trace = trace};
+val no_thm_body = thm_body (no_proof_body ZNop MinProof Prooftrace.sorry);
 
 fun no_thm_names (Abst (x, T, prf)) = Abst (x, T, no_thm_names prf)
   | no_thm_names (AbsP (x, t, prf)) = AbsP (x, t, no_thm_names prf)
@@ -359,8 +359,8 @@ fun no_body_proofs (Abst (x, T, prf)) = Abst (x, T, no_body_proofs prf)
   | no_body_proofs (prf1 %% prf2) = no_body_proofs prf1 %% no_body_proofs prf2
   | no_body_proofs (PThm (header, Thm_Body {open_proof, body})) =
       let
-        val PBody {zproof, proof, ...} = Future.join body;
-        val body' = Future.value (no_proof_body zproof proof);
+        val PBody {zproof, proof, trace, ...} = Future.join body;
+        val body' = Future.value (no_proof_body zproof proof trace);
         val thm_body' = Thm_Body {open_proof = open_proof, body = body'};
       in PThm (header, thm_body') end
   | no_body_proofs a = a;
@@ -426,7 +426,7 @@ fun proof consts prf = prf |> variant
             (pair (term consts)
               (pair (option (list typ)) (proof_body consts))))
         (command_pos, (thm_name, (prop, (types, map_proof_of open_proof (Future.join body))))))]
-and proof_body consts (PBody {oracles, thms, zboxes = _, zproof = _, proof = prf}) =
+and proof_body consts (PBody {oracles, thms, zboxes = _, zproof = _, trace = _, proof = prf}) =
   triple (list (pair (pair string (properties o Position.properties_of))
       (option (term consts)))) (list (thm consts)) (proof consts) (oracles, thms, prf)
 and thm consts (a, thm_node) =
@@ -472,7 +472,7 @@ and proof_body consts x =
     val (a, b, c) =
       triple (list (pair (pair string (Position.of_properties o properties))
         (option (term consts)))) (list (thm consts)) (proof consts) x;
-  in PBody {oracles = a, thms = b, zboxes = [], zproof = ZNop, proof = c} end
+  in PBody {oracles = a, thms = b, zboxes = [], zproof = ZNop, trace = Prooftrace.sorry, proof = c} end
 and thm consts x =
   let
     val (a, (b, (c, (d, e)))) =
@@ -1995,7 +1995,7 @@ end;
 fun fulfill_norm_proof thy ps body0 =
   let
     val _ = consolidate_bodies (map #2 ps @ [body0]);
-    val PBody {oracles = oracles0, thms = thms0, zboxes = zboxes0, zproof, proof = proof0} = body0;
+    val PBody {oracles = oracles0, thms = thms0, zboxes = zboxes0, zproof, proof = proof0, trace} = body0;
     val oracles =
       unions_oracles
         (fold (fn (_, PBody {oracles, ...}) => not (null oracles) ? cons oracles) ps [oracles0]);
@@ -2006,7 +2006,7 @@ fun fulfill_norm_proof thy ps body0 =
         (fold (fn (_, PBody {zboxes, ...}) => not (null zboxes) ? cons zboxes) ps [zboxes0]);
     val proof = rew_proof thy proof0;
   in
-    PBody {oracles = oracles, thms = thms, zboxes = zboxes, zproof = zproof, proof = proof}
+    PBody {oracles = oracles, thms = thms, zboxes = zboxes, zproof = zproof, proof = proof, trace = trace}
   end;
 
 fun fulfill_proof_future thy promises (postproc: proof_body -> proof_body) body =
@@ -2083,7 +2083,7 @@ fun export_proof thy i prop0 proof0 =
 
 fun prepare_thm_proof unconstrain thy sorts_proof
     (name, pos) shyps hyps concl promises
-    (PBody {oracles = oracles0, thms = thms0, zboxes = zboxes0, zproof = zproof0, proof = proof0}) =
+    (PBody {oracles = oracles0, thms = thms0, zboxes = zboxes0, zproof = zproof0, proof = proof0, trace = trace0}) =
   let
     val named = not (Thm_Name.is_empty name);
 
@@ -2107,7 +2107,7 @@ fun prepare_thm_proof unconstrain thy sorts_proof
         val unconstrainT = unconstrainT_proof (Sign.classes_of thy) sorts_proof ucontext;
         val postproc = map_proof_of (unconstrainT #> named ? rew_proof thy);
         val body1 =
-          {oracles = oracles0, thms = thms0, zboxes = [], zproof = ZNop, proof = proof1};
+          {oracles = oracles0, thms = thms0, zboxes = [], zproof = ZNop, proof = proof1, trace = Prooftrace.sorry};
       in (i, fulfill_proof_future thy promises postproc (Future.value (PBody body1))) end;
 
     val (i, body') =
@@ -2159,8 +2159,14 @@ fun prepare_thm_proof unconstrain thy sorts_proof
       if unconstrain then []
       else map PClass (#outer_constraints ucontext) @ map Hyp hyps;
     val proof2 = proof_combP (proof_combt' (head, argst), argsP);
+    val trace1 = Prooftrace.when (fn () => 
+      let
+        val () = if Options.default_bool "prune_proofs" then 
+          Prooftrace.export_proof header trace0
+        else ()
+      in Prooftrace.thm_proof i end);
 
-    val body2 = {oracles = [], thms = [thm], zboxes = zboxes1, zproof = zproof1, proof = proof2};
+    val body2 = {oracles = [], thms = [thm], zboxes = zboxes1, zproof = zproof1, proof = proof2, trace = trace1};
   in (prop1, PBody body2) end;
 
 in
