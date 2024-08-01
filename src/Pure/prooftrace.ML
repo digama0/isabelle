@@ -173,10 +173,24 @@ fun elem_ord (EVariant a1, EVariant a2) = prod_ord int_ord (list_ord elem_ord) (
 
 exception OutOfRange;
 
-fun EVariant (i, ls) = XML.Elem ((string_of_int i, []), ls)
+fun pack_int i =
+  (* this encoding is designed to avoid the 0x05 and 0x06 bytes reserved in YXML *)
+  if i < 128-6 then chr (i+6)
+  else if i < (128-6) * 128 then
+    String.implode [Char.chr ((i div 128)+128), Char.chr ((i mod 128)+6)]
+  else if i < (128-6) * 128 * 128 then
+    String.implode [Char.chr ((i div (128*128))+128),
+      Char.chr (((i div 128) mod 128)+128), Char.chr ((i mod 128)+6)]
+  else if i < (128-6) * 128 * 128 * 128 then
+    String.implode [Char.chr ((i div (128*128*128))+128),
+      Char.chr (((i div (128*128)) mod 128)+128),
+      Char.chr (((i div 128) mod 128)+128), Char.chr ((i mod 128)+6)]
+  else raise OutOfRange;
+
+fun EVariant (i, ls) = XML.Elem ((pack_int i, []), ls)
 fun EList ls = XML.Elem ((":", []), ls)
 fun ETuple ls = XML.Elem ((":", []), ls)
-fun EInt i = XML.Text (string_of_int i)
+fun EInt i = XML.Text (pack_int i)
 fun EString s = XML.Text s;
 
 fun tree_ord (XML.Elem a1, XML.Elem a2) =
