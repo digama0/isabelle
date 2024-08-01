@@ -170,6 +170,12 @@ fun elem_ord (EVariant a1, EVariant a2) = prod_ord int_ord (list_ord elem_ord) (
   | elem_ord (EString a1, EString a2) = fast_string_ord (a1, a2)
   | elem_ord (a1, a2) = int_ord (elem_nr a1, elem_nr a2);
 
+fun to_elem (EVariant (i, ls)) = XML.Elem ((string_of_int i, []), map to_elem ls)
+  | to_elem (EList ls) = XML.Elem ((":", []), map to_elem ls)
+  | to_elem (ETuple ls) = XML.Elem ((":", []), map to_elem ls)
+  | to_elem (EInt i) = XML.Text (string_of_int i)
+  | to_elem (EString s) = XML.Text s;
+
 structure ElemTab = Table(type key = Elem val ord = elem_ord);
 
 exception OutOfRange;
@@ -308,6 +314,7 @@ fun export_proof thy header p =
         enc_thm_name thm_name, hash_term prop, opt (EList o map hash_typ) types]
 
     val enc_root = [enc_header header, hash_proof p]
+(*
     val stream = Unsynchronized.ref []
     fun puts (s, w) = s := w :: !s
     fun flushOut s =
@@ -369,6 +376,13 @@ fun export_proof thy header p =
     val s = encode_tuple enc_root s;
 
     val () = flush s;
+*)
+    val s = map (fn f => EList (rev (f ())))
+      [strings,sorts,indexnames,names,typs,terms,proofs,assumptions];
+    val () =
+      Export.export thy (Path.binding0 (Path.make ["exportTrace", string_of_int (#serial header)]))
+        (map to_elem (s @ [ETuple enc_root]))
+
   in () end;
 
 end;
