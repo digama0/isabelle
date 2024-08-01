@@ -58,7 +58,6 @@ sig
   val bicompose_proof: Envir.env -> int -> bool -> term list -> term list ->
     term option -> term list -> int -> int -> T -> T -> T
 
-  val close_file: string -> unit;
   val export_proof: theory -> thm_header -> T -> unit
 end;
 
@@ -149,31 +148,10 @@ fun bicompose_proof env smax flatten Bs As A oldAs n nlift p q =
 val proofs = Unsynchronized.ref true;
 fun enabled () = ! proofs;
 fun when f = if enabled () then f () else PTSorry;
-(*
-datatype Elem =
-    EVariant of int * Elem list
-  | EList of Elem list
-  | ETuple of Elem list
-  | EInt of int
-  | EString of string;
-
-fun elem_nr (EVariant _) = 0
-  | elem_nr (EList _) = 1
-  | elem_nr (ETuple _) = 2
-  | elem_nr (EInt _) = 3
-  | elem_nr (EString _) = 4;
-
-fun elem_ord (EVariant a1, EVariant a2) = prod_ord int_ord (list_ord elem_ord) (a1, a2)
-  | elem_ord (EList a1, EList a2) = list_ord elem_ord (a1, a2)
-  | elem_ord (ETuple a1, ETuple a2) = list_ord elem_ord (a1, a2)
-  | elem_ord (EInt a1, EInt a2) = int_ord (a1, a2)
-  | elem_ord (EString a1, EString a2) = fast_string_ord (a1, a2)
-  | elem_ord (a1, a2) = int_ord (elem_nr a1, elem_nr a2);
-*)
 
 exception OutOfRange;
 
-fun EVariant (i, ls) = XML.Elem ((string_of_int i, []), ls)
+fun EVariant (i, ls) = XML.Elem ((i, []), ls)
 fun EList ls = XML.Elem ((":", []), ls)
 fun ETuple ls = XML.Elem ((":", []), ls)
 fun EInt i = XML.Text (string_of_int i)
@@ -186,35 +164,6 @@ fun tree_ord (XML.Elem a1, XML.Elem a2) =
   | tree_ord (XML.Text _, XML.Elem _) = GREATER;
 
 structure ElemTab = Table(type key = XML.tree val ord = tree_ord);
-
-exception AlreadyClosed;
-
-(* val open_files = Synchronized.var "open_files"
-  (Symtab.empty: BinIO.outstream Synchronized.var option Symtab.table);
-
-fun with_file thy_name f =
-  let
-    val map = Synchronized.value open_files
-    val s = case Symtab.lookup map thy_name of
-      NONE =>
-        let
-          val dir = "/home/mario/Documents/isabelle/exportTraces"
-          val file = dir ^ "/" ^ thy_name
-          val s = Synchronized.var thy_name (BinIO.openOut (dir ^ "/" ^ thy_name)
-            handle IO.Io _ => (OS.FileSys.mkDir dir; BinIO.openOut file))
-
-        in Synchronized.change open_files (Symtab.update_new (thy_name, SOME s)); s end
-    | SOME NONE => raise AlreadyClosed
-    | SOME (SOME s) => s
-  in Synchronized.change s (fn s => (f s; s)) end; *)
-
-fun close_file thy_name = ();
-(*
-  Synchronized.change open_files (fn map =>
-    case Symtab.lookup map thy_name of
-      NONE => map
-    | SOME NONE => raise AlreadyClosed
-    | SOME (SOME _) => Symtab.update (thy_name, NONE) map); *)
 
 fun export_proof thy header p =
   let
@@ -242,18 +191,18 @@ fun export_proof thy header p =
 
     val (typs, hash_typ') = mk_tab I
     fun hash_typ t = hash_typ' (case t of
-        Type(s, tys) => EVariant(0, [hash_string s, EList (map hash_typ tys)])
-      | TFree(x, s) => EVariant(1, [hash_string x, hash_sort s])
-      | TVar(i, s) => EVariant(2, [hash_indexname i, hash_sort s]))
+        Type(s, tys) => EVariant("T", [hash_string s, EList (map hash_typ tys)])
+      | TFree(x, s) => EVariant("F", [hash_string x, hash_sort s])
+      | TVar(i, s) => EVariant("V", [hash_indexname i, hash_sort s]))
 
     val (terms, hash_term') = mk_tab I
     fun hash_term t = hash_term' (case t of
-        Const(c, ty) => EVariant(0, [hash_string c, hash_typ ty])
-      | Free(x, ty) => EVariant(1, [hash_string x, hash_typ ty])
-      | Var(x, ty) => EVariant(2, [hash_indexname x, hash_typ ty])
-      | Bound(i) => EVariant(3, [EInt i])
-      | Abs(x, ty, e) => EVariant(4, [hash_string x, hash_typ ty, hash_term e])
-      | e1 $ e2 => EVariant(5, [hash_term e1, hash_term e2]))
+        Const(c, ty) => EVariant("C", [hash_string c, hash_typ ty])
+      | Free(x, ty) => EVariant("F", [hash_string x, hash_typ ty])
+      | Var(x, ty) => EVariant("V", [hash_indexname x, hash_typ ty])
+      | Bound(i) => EVariant("B", [EInt i])
+      | Abs(x, ty, e) => EVariant("L", [hash_string x, hash_typ ty, hash_term e])
+      | e1 $ e2 => EVariant("A", [hash_term e1, hash_term e2]))
 
     fun enc_env (Envir.Envir {maxidx, tenv, tyenv}) =
       ETuple [EInt maxidx,
@@ -266,51 +215,51 @@ fun export_proof thy header p =
     val (assumptions, hash_assumption') = mk_tab I
     fun hash_assumption (s, i) = hash_assumption' (ETuple [hash_proof s, EInt i])
     and hash_proof p = hash_proof' (case p of
-        PTSorry => EVariant(0, [])
-      | PTHyp(a) => EVariant(1, [hash_term a])
-      | PTImpIntr(a, p) => EVariant(2, [hash_term a, hash_proof p])
-      | PTImpElim(p, q) => EVariant(3, [hash_proof p, hash_proof q])
-      | PTForallIntr(a, p) => EVariant(4, [hash_term a, hash_proof p])
-      | PTForallElim(p, a) => EVariant(5, [hash_proof p, hash_term a])
-      | PTAxiom(a, b) => EVariant(6, [hash_string a, hash_term b])
-      | PTOracle(a, b) => EVariant(7, [hash_string a, hash_term b])
-      | PTRefl(a) => EVariant(8, [hash_term a])
-      | PTSymm(p) => EVariant(9, [hash_proof p])
-      | PTTrans(p, q) => EVariant(10, [hash_proof p, hash_proof q])
-      | PTBetaNorm(a) => EVariant(11, [hash_term a])
-      | PTBetaHead(a) => EVariant(12, [hash_term a])
-      | PTEta(a) => EVariant(13, [hash_term a])
-      | PTEtaLong(a) => EVariant(14, [hash_term a])
-      | PTStripSHyps(p) => EVariant(15, [hash_proof p])
-      | PTAbsRule(a, p) => EVariant(16, [hash_term a, hash_proof p])
-      | PTAppRule(p, q) => EVariant(17, [hash_proof p, hash_proof q])
-      | PTEqIntr(p, q) => EVariant(18, [hash_proof p, hash_proof q])
-      | PTEqElim(p, q) => EVariant(19, [hash_proof p, hash_proof q])
-      | PTFlexFlex(e, p) => EVariant(20, [enc_env e, hash_proof p])
-      | PTGeneralize(a, b, c, p) => EVariant(21, [hash_names a, hash_names b, EInt c, hash_proof p])
-      | PTInstantiate(a, b, p) => EVariant(22, [
+        PTSorry => EVariant("?", [])
+      | PTHyp(a) => EVariant("X", [hash_term a])
+      | PTImpIntr(a, p) => EVariant("i", [hash_term a, hash_proof p])
+      | PTImpElim(p, q) => EVariant("I", [hash_proof p, hash_proof q])
+      | PTForallIntr(a, p) => EVariant("f", [hash_term a, hash_proof p])
+      | PTForallElim(p, a) => EVariant("F", [hash_proof p, hash_term a])
+      | PTAxiom(a, b) => EVariant("A", [hash_string a, hash_term b])
+      | PTOracle(a, b) => EVariant("O", [hash_string a, hash_term b])
+      | PTRefl(a) => EVariant("=", [hash_term a])
+      | PTSymm(p) => EVariant("-", [hash_proof p])
+      | PTTrans(p, q) => EVariant("+", [hash_proof p, hash_proof q])
+      | PTBetaNorm(a) => EVariant("B", [hash_term a])
+      | PTBetaHead(a) => EVariant("b", [hash_term a])
+      | PTEta(a) => EVariant("h", [hash_term a])
+      | PTEtaLong(a) => EVariant("H", [hash_term a])
+      | PTStripSHyps(p) => EVariant("p", [hash_proof p])
+      | PTAbsRule(a, p) => EVariant("l", [hash_term a, hash_proof p])
+      | PTAppRule(p, q) => EVariant("c", [hash_proof p, hash_proof q])
+      | PTEqIntr(p, q) => EVariant("e", [hash_proof p, hash_proof q])
+      | PTEqElim(p, q) => EVariant("E", [hash_proof p, hash_proof q])
+      | PTFlexFlex(e, p) => EVariant("x", [enc_env e, hash_proof p])
+      | PTGeneralize(a, b, c, p) => EVariant("G", [hash_names a, hash_names b, EInt c, hash_proof p])
+      | PTInstantiate(a, b, p) => EVariant("N", [
           EList (map (fn ((a, b), c) => ETuple [hash_indexname a, hash_sort b, hash_typ c]) a),
           EList (map (fn ((a, b), c) => ETuple [hash_indexname a, hash_typ b, hash_term c]) b),
           hash_proof p])
-      | PTTrivial => EVariant(23, [])
-      | PTOfClass(a, b) => EVariant(24, [hash_typ a, hash_class b])
-      | PTThm(i) => EVariant(25, [EInt i])
-      | PTVarify(a, p) => EVariant(26, [
+      | PTTrivial => EVariant("t", [])
+      | PTOfClass(a, b) => EVariant("o", [hash_typ a, hash_class b])
+      | PTThm(i) => EVariant("T", [EInt i])
+      | PTVarify(a, p) => EVariant("V", [
           EList (map (fn ((a, b), (c, d)) =>
             ETuple [hash_string a, hash_sort b, hash_indexname c, hash_sort d]) a),
           hash_proof p])
-      | PTLegacyFreezeT(p) => EVariant(27, [hash_proof p])
-      | PTLift(a, b, p) => EVariant(28, [hash_term a, EInt b, hash_proof p])
-      | PTIncrIndexes(a, p) => EVariant(29, [EInt a, hash_proof p])
-      | PTAssumption(p, a) => EVariant(30, [hash_assumption p, EInt a])
-      | PTEqAssumption p => EVariant(31, [hash_assumption p])
-      | PTRotate(a, b, p) => EVariant(32, [EInt a, EInt b, hash_proof p])
-      | PTPermutePrems(a, b, p) => EVariant(33, [EInt a, EInt b, hash_proof p])
-      | PTBicompose(a, b, c, d, e, f, g, h, i, p, q) => EVariant(34, [
+      | PTLegacyFreezeT(p) => EVariant("g", [hash_proof p])
+      | PTLift(a, b, p) => EVariant("L", [hash_term a, EInt b, hash_proof p])
+      | PTIncrIndexes(a, p) => EVariant("k", [EInt a, hash_proof p])
+      | PTAssumption(p, a) => EVariant("a", [hash_assumption p, EInt a])
+      | PTEqAssumption p => EVariant("q", [hash_assumption p])
+      | PTRotate(a, b, p) => EVariant("R", [EInt a, EInt b, hash_proof p])
+      | PTPermutePrems(a, b, p) => EVariant("P", [EInt a, EInt b, hash_proof p])
+      | PTBicompose(a, b, c, d, e, f, g, h, i, p, q) => EVariant("C", [
           enc_env a, EInt b, EInt (if c then 1 else 0),
           EList (map hash_term d), EList (map hash_term e), opt hash_term f,
           EList (map hash_term g), EInt h, EInt i, hash_proof p, hash_proof q])
-      | PTPruned => EVariant(35, []))
+      | PTPruned => EVariant("!", []))
 
     fun enc_position pos =
       let val {line, offset, end_offset, props = {label, file, id}} = Position.dest pos
@@ -322,75 +271,12 @@ fun export_proof thy header p =
         enc_thm_name thm_name, hash_term prop, opt (EList o map hash_typ) types]
 
     val enc_root = [enc_header header, hash_proof p]
-(*
-    val stream = Unsynchronized.ref []
-    fun puts (s, w) = s := w :: !s
-    fun flushOut s =
-      Export.export thy (Path.binding0 (Path.make ["exportTrace", string_of_int (#serial header)]))
-        [XML.Text (Byte.bytesToString (Word8Vector.concat (rev (!s))))]
 
-    val buffer = Word8Array.array(2048, 0w0)
-    fun empty () = 0
-    fun flushBuffer n =
-      puts (stream, Word8ArraySlice.vector
-        (Word8ArraySlice.slice(buffer, 0, SOME n)))
-    fun output1 w n =
-      let val n =
-        if n < Word8Array.length buffer then n
-        else (puts (stream, Word8Array.vector buffer); 0)
-      in Word8Array.update(buffer, n, w); n+1 end
-    fun output w n =
-      let val bw = Byte.stringToBytes w
-      in
-        if n + size w <= Word8Array.length buffer then
-          (Word8Array.copyVec {src = bw, dst = buffer, di = n};
-            n + size w)
-        else if size w <= Word8Array.length buffer then
-          (Word8ArraySlice.copyVec
-            {src = Word8VectorSlice.slice(bw, 0, SOME (Word8Array.length buffer - n)),
-              dst = buffer, di = n};
-            puts (stream, Byte.stringToBytes w);
-            Word8ArraySlice.copyVec
-            {src = Word8VectorSlice.slice(bw, Word8Array.length buffer - n, NONE),
-              dst = buffer, di = 0};
-            size w)
-        else (flushBuffer n; puts (stream, bw); 0)
-      end
-    fun flush n = (flushBuffer n; flushOut stream)
-
-    fun encode_int n =
-      if n < 128 then
-        output1 (Word8.fromInt n)
-      else if n < 128 * 128 then
-        output1 (Word8.fromInt (n div 128)) #>
-        output1 (Word8.fromInt (n mod 128))
-      else if n < 128 * 128 * 128 then
-        output1 (Word8.fromInt (n div (128*128))) #>
-        output1 (Word8.fromInt ((n div 128) mod 128)) #>
-        output1 (Word8.fromInt (n mod 128))
-      else
-        raise OutOfRange
-    fun encode_list ls = encode_int (length ls) #> encode_tuple ls
-    and encode_tuple ls s = List.foldl (uncurry encode_elem) s ls
-    and encode_elem (EVariant (i, ls)) = encode_int i #> encode_tuple ls
-      | encode_elem (EList ls) = encode_list ls
-      | encode_elem (ETuple ls) = encode_tuple ls
-      | encode_elem (EInt i) = encode_int i
-      | encode_elem (EString x) = encode_int (size x) #> output x;
-
-    val s = empty ()
-    val s = List.foldl (fn (f, s) => encode_list (rev (f ())) s) s
-      [strings,sorts,indexnames,names,typs,terms,proofs,assumptions];
-    val s = encode_tuple enc_root s;
-
-    val () = flush s;
-*)
     val s = map (fn f => EList (rev (f ())))
       [strings,sorts,indexnames,names,typs,terms,proofs,assumptions];
-    val () =
-      Export.export thy (Path.binding0 (Path.make ["exportTrace", string_of_int (#serial header)]))
-        (s @ [ETuple enc_root])
-
-  in () end;
+  in
+    Export.export thy (Path.binding0 (Path.make ["exportTrace", string_of_int (#serial header)]))
+      (s @ [ETuple enc_root])
+  end;
 
 end;
