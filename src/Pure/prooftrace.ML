@@ -167,35 +167,36 @@ structure ElemTab = Table(type key = XML.tree val ord = tree_ord);
 
 fun export_proof thy header p =
   let
+    val cache = Unsynchronized.ref (0, [])
     fun mk_tab encode =
-      let val tab = Unsynchronized.ref (ElemTab.empty, [])
+      let val tab = Unsynchronized.ref ElemTab.empty
       in
-        (fn () => let val (_, b) = !tab in b end, fn p =>
-        let val (tab1, vec1) = !tab; val p = encode p in
+        fn p =>
+        let val tab1 = !tab; val p = encode p in
           case ElemTab.lookup tab1 p of
             SOME i => EInt i
           | NONE =>
-            let val i = ElemTab.size tab1
-            in tab := (ElemTab.update_new (p, i) tab1, p :: vec1); EInt i end
-        end)
+            let val i = Unsynchronized.change_result cache (fn (i, l) => (i, (i+1, p::l)))
+            in tab := ElemTab.update_new (p, i) tab1; EInt i end
+        end
       end;
 
     fun opt f a = EList (case a of NONE => [] | SOME a => [f a])
 
-    val (strings, hash_string) = mk_tab EString
+    val hash_string = mk_tab EString
     val hash_class = hash_string
-    val (sorts, hash_sort) = mk_tab (EList o map hash_class)
-    val (indexnames, hash_indexname) = mk_tab (fn (s, i) => ETuple [hash_string s, EInt i])
-    val (names, hash_names) = mk_tab (fn s => EList (map (fn (s, i) =>
+    val hash_sort = mk_tab (EList o map hash_class)
+    val hash_indexname = mk_tab (fn (s, i) => ETuple [hash_string s, EInt i])
+    val hash_names = mk_tab (fn s => EList (map (fn (s, i) =>
       ETuple [hash_string s, EInt i]) (Names.dest s)))
 
-    val (typs, hash_typ') = mk_tab I
+    val hash_typ' = mk_tab I
     fun hash_typ t = hash_typ' (case t of
         Type(s, tys) => EVariant("T", [hash_string s, EList (map hash_typ tys)])
       | TFree(x, s) => EVariant("F", [hash_string x, hash_sort s])
       | TVar(i, s) => EVariant("V", [hash_indexname i, hash_sort s]))
 
-    val (terms, hash_term') = mk_tab I
+    val hash_term' = mk_tab I
     fun hash_term t = hash_term' (case t of
         Const(c, ty) => EVariant("C", [hash_string c, hash_typ ty])
       | Free(x, ty) => EVariant("F", [hash_string x, hash_typ ty])
@@ -211,8 +212,8 @@ fun export_proof thy header p =
         EList (map (fn ((a, b), (c, d)) =>
           ETuple [hash_string a, EInt b, hash_sort c, hash_typ d]) (Vartab.dest tyenv))]
 
-    val (proofs, hash_proof') = mk_tab I
-    val (assumptions, hash_assumption') = mk_tab I
+    val hash_proof' = mk_tab I
+    val hash_assumption' = mk_tab I
     fun hash_assumption (s, i) = hash_assumption' (ETuple [hash_proof s, EInt i])
     and hash_proof p = hash_proof' (case p of
         PTSorry => EVariant("?", [])
@@ -272,11 +273,9 @@ fun export_proof thy header p =
 
     val enc_root = [enc_header header, hash_proof p]
 
-    val s = map (fn f => EList (rev (f ())))
-      [strings,sorts,indexnames,names,typs,terms,proofs,assumptions];
   in
     Export.export thy (Path.binding0 (Path.make ["exportTrace", string_of_int (#serial header)]))
-      (s @ [ETuple enc_root])
+      (EList (rev (#2 (!cache))) :: enc_root)
   end;
 
 end;
