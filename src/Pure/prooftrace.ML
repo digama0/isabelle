@@ -149,7 +149,7 @@ fun bicompose_proof env smax flatten Bs As A oldAs n nlift p q =
 val proofs = Unsynchronized.ref true;
 fun enabled () = ! proofs;
 fun when f = if enabled () then f () else PTSorry;
-
+(*
 datatype Elem =
     EVariant of int * Elem list
   | EList of Elem list
@@ -169,16 +169,24 @@ fun elem_ord (EVariant a1, EVariant a2) = prod_ord int_ord (list_ord elem_ord) (
   | elem_ord (EInt a1, EInt a2) = int_ord (a1, a2)
   | elem_ord (EString a1, EString a2) = fast_string_ord (a1, a2)
   | elem_ord (a1, a2) = int_ord (elem_nr a1, elem_nr a2);
-
-fun to_elem (EVariant (i, ls)) = XML.Elem ((string_of_int i, []), map to_elem ls)
-  | to_elem (EList ls) = XML.Elem ((":", []), map to_elem ls)
-  | to_elem (ETuple ls) = XML.Elem ((":", []), map to_elem ls)
-  | to_elem (EInt i) = XML.Text (string_of_int i)
-  | to_elem (EString s) = XML.Text s;
-
-structure ElemTab = Table(type key = Elem val ord = elem_ord);
+*)
 
 exception OutOfRange;
+
+fun EVariant (i, ls) = XML.Elem ((string_of_int i, []), ls)
+fun EList ls = XML.Elem ((":", []), ls)
+fun ETuple ls = XML.Elem ((":", []), ls)
+fun EInt i = XML.Text (string_of_int i)
+fun EString s = XML.Text s;
+
+fun tree_ord (XML.Elem a1, XML.Elem a2) =
+      prod_ord (fn (a, b) => fast_string_ord (#1 a, #1 b)) (list_ord tree_ord) (a1, a2)
+  | tree_ord (XML.Text a1, XML.Text a2) = fast_string_ord (a1, a2)
+  | tree_ord (XML.Elem _, XML.Text _) = LESS
+  | tree_ord (XML.Text _, XML.Elem _) = GREATER;
+
+structure ElemTab = Table(type key = XML.tree val ord = tree_ord);
+
 exception AlreadyClosed;
 
 (* val open_files = Synchronized.var "open_files"
@@ -381,7 +389,7 @@ fun export_proof thy header p =
       [strings,sorts,indexnames,names,typs,terms,proofs,assumptions];
     val () =
       Export.export thy (Path.binding0 (Path.make ["exportTrace", string_of_int (#serial header)]))
-        (map to_elem (s @ [ETuple enc_root]))
+        (s @ [ETuple enc_root])
 
   in () end;
 
