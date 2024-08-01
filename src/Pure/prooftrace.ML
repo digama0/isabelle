@@ -59,7 +59,7 @@ sig
     term option -> term list -> int -> int -> T -> T -> T
 
   val close_file: string -> unit;
-  val export_proof: thm_header -> T -> unit
+  val export_proof: theory -> thm_header -> T -> unit
 end;
 
 structure Prooftrace: PROOFTRACE =
@@ -175,7 +175,7 @@ structure ElemTab = Table(type key = Elem val ord = elem_ord);
 exception OutOfRange;
 exception AlreadyClosed;
 
-val open_files = Synchronized.var "open_files"
+(* val open_files = Synchronized.var "open_files"
   (Symtab.empty: BinIO.outstream Synchronized.var option Symtab.table);
 
 fun with_file thy_name f =
@@ -192,16 +192,17 @@ fun with_file thy_name f =
         in Synchronized.change open_files (Symtab.update_new (thy_name, SOME s)); s end
     | SOME NONE => raise AlreadyClosed
     | SOME (SOME s) => s
-  in Synchronized.change s (fn s => (f s; s)) end;
+  in Synchronized.change s (fn s => (f s; s)) end; *)
 
-fun close_file thy_name =
+fun close_file thy_name = ();
+(*
   Synchronized.change open_files (fn map =>
     case Symtab.lookup map thy_name of
       NONE => map
     | SOME NONE => raise AlreadyClosed
-    | SOME (SOME _) => Symtab.update (thy_name, NONE) map);
+    | SOME (SOME _) => Symtab.update (thy_name, NONE) map); *)
 
-fun export_proof (header:thm_header) p =
+fun export_proof thy header p =
   let
     fun mk_tab encode =
       let val tab = Unsynchronized.ref (ElemTab.empty, [])
@@ -307,64 +308,67 @@ fun export_proof (header:thm_header) p =
         enc_thm_name thm_name, hash_term prop, opt (EList o map hash_typ) types]
 
     val enc_root = [enc_header header, hash_proof p]
-  in with_file (#theory_name header) (fn stream =>
-    let
-      val buffer = Word8Array.array(2048, 0w0)
-      fun empty () = 0
-      fun flushBuffer n =
-        BinIO.output (stream, Word8ArraySlice.vector
-          (Word8ArraySlice.slice(buffer, 0, SOME n)))
-      fun output1 w n =
-        let val n =
-          if n < Word8Array.length buffer then n
-          else (BinIO.output (stream, Word8Array.vector buffer); 0)
-        in Word8Array.update(buffer, n, w); n+1 end
-      fun output w n =
-        let val bw = Byte.stringToBytes w
-        in
-          if n + size w <= Word8Array.length buffer then
-            (Word8Array.copyVec {src = bw, dst = buffer, di = n};
-             n + size w)
-          else if size w <= Word8Array.length buffer then
-            (Word8ArraySlice.copyVec
-              {src = Word8VectorSlice.slice(bw, 0, SOME (Word8Array.length buffer - n)),
-               dst = buffer, di = n};
-             BinIO.output (stream, Byte.stringToBytes w);
-             Word8ArraySlice.copyVec
-              {src = Word8VectorSlice.slice(bw, Word8Array.length buffer - n, NONE),
-               dst = buffer, di = 0};
-             size w)
-          else (flushBuffer n; BinIO.output (stream, bw); 0)
-        end
-      fun flush n = (flushBuffer n; BinIO.flushOut stream)
+    val stream = Unsynchronized.ref []
+    fun puts (s, w) = s := w :: !s
+    fun flushOut s =
+      Export.export thy (Path.binding0 (Path.make ["exportTrace", string_of_int (#serial header)]))
+        [XML.Text (Byte.bytesToString (Word8Vector.concat (rev (!s))))]
 
-      fun encode_int n =
-        if n < 128 then
-          output1 (Word8.fromInt n)
-        else if n < 128 * 128 then
-          output1 (Word8.fromInt (n div 128)) #>
-          output1 (Word8.fromInt (n mod 128))
-        else if n < 128 * 128 * 128 then
-          output1 (Word8.fromInt (n div (128*128))) #>
-          output1 (Word8.fromInt ((n div 128) mod 128)) #>
-          output1 (Word8.fromInt (n mod 128))
-        else
-          raise OutOfRange
-      fun encode_list ls = encode_int (length ls) #> encode_tuple ls
-      and encode_tuple ls s = List.foldl (uncurry encode_elem) s ls
-      and encode_elem (EVariant (i, ls)) = encode_int i #> encode_tuple ls
-        | encode_elem (EList ls) = encode_list ls
-        | encode_elem (ETuple ls) = encode_tuple ls
-        | encode_elem (EInt i) = encode_int i
-        | encode_elem (EString x) = encode_int (size x) #> output x;
+    val buffer = Word8Array.array(2048, 0w0)
+    fun empty () = 0
+    fun flushBuffer n =
+      puts (stream, Word8ArraySlice.vector
+        (Word8ArraySlice.slice(buffer, 0, SOME n)))
+    fun output1 w n =
+      let val n =
+        if n < Word8Array.length buffer then n
+        else (puts (stream, Word8Array.vector buffer); 0)
+      in Word8Array.update(buffer, n, w); n+1 end
+    fun output w n =
+      let val bw = Byte.stringToBytes w
+      in
+        if n + size w <= Word8Array.length buffer then
+          (Word8Array.copyVec {src = bw, dst = buffer, di = n};
+            n + size w)
+        else if size w <= Word8Array.length buffer then
+          (Word8ArraySlice.copyVec
+            {src = Word8VectorSlice.slice(bw, 0, SOME (Word8Array.length buffer - n)),
+              dst = buffer, di = n};
+            puts (stream, Byte.stringToBytes w);
+            Word8ArraySlice.copyVec
+            {src = Word8VectorSlice.slice(bw, Word8Array.length buffer - n, NONE),
+              dst = buffer, di = 0};
+            size w)
+        else (flushBuffer n; puts (stream, bw); 0)
+      end
+    fun flush n = (flushBuffer n; flushOut stream)
 
-      val s = empty ()
-      val s = List.foldl (fn (f, s) => encode_list (rev (f ())) s) s
-        [strings,sorts,indexnames,names,typs,terms,proofs,assumptions];
-      val s = encode_tuple enc_root s;
+    fun encode_int n =
+      if n < 128 then
+        output1 (Word8.fromInt n)
+      else if n < 128 * 128 then
+        output1 (Word8.fromInt (n div 128)) #>
+        output1 (Word8.fromInt (n mod 128))
+      else if n < 128 * 128 * 128 then
+        output1 (Word8.fromInt (n div (128*128))) #>
+        output1 (Word8.fromInt ((n div 128) mod 128)) #>
+        output1 (Word8.fromInt (n mod 128))
+      else
+        raise OutOfRange
+    fun encode_list ls = encode_int (length ls) #> encode_tuple ls
+    and encode_tuple ls s = List.foldl (uncurry encode_elem) s ls
+    and encode_elem (EVariant (i, ls)) = encode_int i #> encode_tuple ls
+      | encode_elem (EList ls) = encode_list ls
+      | encode_elem (ETuple ls) = encode_tuple ls
+      | encode_elem (EInt i) = encode_int i
+      | encode_elem (EString x) = encode_int (size x) #> output x;
 
-      val () = flush s;
-    in () end)
-  end;
+    val s = empty ()
+    val s = List.foldl (fn (f, s) => encode_list (rev (f ())) s) s
+      [strings,sorts,indexnames,names,typs,terms,proofs,assumptions];
+    val s = encode_tuple enc_root s;
+
+    val () = flush s;
+  in () end;
 
 end;

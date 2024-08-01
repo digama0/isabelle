@@ -2108,9 +2108,9 @@ fun prepare_thm_proof unconstrain thy sorts_proof
         val postproc = map_proof_of (unconstrainT #> named ? rew_proof thy);
         val body1 =
           {oracles = oracles0, thms = thms0, zboxes = [], zproof = ZNop, proof = proof1, trace = Prooftrace.sorry};
-      in (i, fulfill_proof_future thy promises postproc (Future.value (PBody body1))) end;
+      in (false, i, fulfill_proof_future thy promises postproc (Future.value (PBody body1))) end;
 
-    val (i, body') =
+    val (reused, i, body') =
       (*somewhat non-deterministic proof boxes!*)
       if export_enabled () then new_prf ()
       else
@@ -2119,8 +2119,9 @@ fun prepare_thm_proof unconstrain thy sorts_proof
             if (#1 a = "" orelse a = name) andalso prop' = prop1 andalso args' = args then
               let
                 val Thm_Body {body = body', ...} = thm_body';
-                val i = if #1 a = "" andalso named then proof_serial () else ser;
-              in (i, body' |> ser <> i ? Future.map (map_proof_of (rew_proof thy))) end
+                val reused = not (#1 a = "" andalso named)
+                val i = if reused then ser else proof_serial ();
+              in (reused, i, body' |> ser <> i ? Future.map (map_proof_of (rew_proof thy))) end
             else new_prf ()
         | _ => new_prf ());
 
@@ -2159,10 +2160,10 @@ fun prepare_thm_proof unconstrain thy sorts_proof
       if unconstrain then []
       else map PClass (#outer_constraints ucontext) @ map Hyp hyps;
     val proof2 = proof_combP (proof_combt' (head, argst), argsP);
-    val trace1 = Prooftrace.when (fn () => 
+    val trace1 = Prooftrace.when (fn () =>
       let
-        val () = if Options.default_bool "prune_proofs" then 
-          Prooftrace.export_proof header trace0
+        val () = if reused andalso Options.default_bool "prune_proofs" then
+          Prooftrace.export_proof thy header trace0
         else ()
       in Prooftrace.thm_proof i end);
 
