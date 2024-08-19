@@ -1108,7 +1108,8 @@ fun strip_shyps thm =
 
         val zproof' = ZTerm.map_proof_types {hyps = true} map_ztyp zproof;
         val proof' = Proofterm.map_proof_types (Term.map_atyps_same map_atyp) proof;
-        val trace' = Prooftrace.strip_shyps_proof trace;
+        val trace' = Prooftrace.when (fn () => 
+          Prooftrace.strip_shyps_proof (Sorts.subtract extra extra') trace);
       in
         Thm (make_deriv promises oracles thms zboxes zproof' proof' trace',
          {cert = cert, tags = tags, maxidx = maxidx, constraints = constraints',
@@ -2313,7 +2314,7 @@ fun rotate_rule k i state =
           handle ERROR msg => raise CONTEXT (msg, [], [], [state], NONE);
       in ZTerm.rotate_proof thy Bs Bi' params asms m p end;
     fun proof p = Proofterm.rotate_proof Bs Bi' params asms m p;
-    fun trace p = Prooftrace.rotate_proof k i p;
+    fun trace p = Prooftrace.rotate_proof m i p;
   in
     Thm (deriv_rule1 zproof proof trace der,
      {cert = cert,
@@ -2355,7 +2356,7 @@ fun permute_prems j k rl =
           handle ERROR msg => raise CONTEXT (msg, [], [], [rl], NONE);
       in ZTerm.permute_prems_proof thy prems' j m p end;
     fun proof p = Proofterm.permute_prems_proof prems' j m p;
-    fun trace p = Prooftrace.permute_prems_proof j k p;
+    fun trace p = Prooftrace.permute_prems_proof j m p;
   in
     Thm (deriv_rule1 zproof proof trace der,
      {cert = cert,

@@ -24,7 +24,7 @@ sig
 
   val axiom_proof: string -> term -> T
   val oracle_proof:  string -> term -> T
-  val strip_shyps_proof: T -> T
+  val strip_shyps_proof: sort list -> T -> T
   val incr_indexes_proof: int -> T -> T
   val assume_proof: term -> T
   val implies_intr_proof: term -> T -> T
@@ -85,7 +85,7 @@ datatype T =
   | PTBetaHead of term
   | PTEta of term
   | PTEtaLong of term
-  | PTStripSHyps of T
+  | PTStripSHyps of sort list * T
   | PTAbsRule of term * T
   | PTAppRule of T * T
   | PTEqIntr of T * T
@@ -121,7 +121,7 @@ val assume_proof = PTHyp;
 val reflexive_proof = PTRefl;
 val symmetric_proof = PTSymm;
 fun transitive_proof p q = PTTrans (p, q);
-val strip_shyps_proof = PTStripSHyps;
+fun strip_shyps_proof sorts p = PTStripSHyps (sorts, p);
 fun beta_proof true = PTBetaNorm
   | beta_proof false = PTBetaHead;
 val eta_proof = PTEta;
@@ -233,7 +233,7 @@ fun export_proof thy header tvar_map shyps hyps p =
       | PTBetaHead(a) => EVariant("b", [hash_term a])
       | PTEta(a) => EVariant("h", [hash_term a])
       | PTEtaLong(a) => EVariant("H", [hash_term a])
-      | PTStripSHyps(p) => EVariant("p", [hash_proof p])
+      | PTStripSHyps(s, p) => EVariant("p", [EList (map hash_sort s), hash_proof p])
       | PTAbsRule(a, p) => EVariant("l", [hash_term a, hash_proof p])
       | PTAppRule(p, q) => EVariant("c", [hash_proof p, hash_proof q])
       | PTEqIntr(p, q) => EVariant("e", [hash_proof p, hash_proof q])
