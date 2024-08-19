@@ -69,11 +69,11 @@ sig
   val forall_intr_frees: thm -> thm
   val forall_intr_vars: thm -> thm
   val unvarify_global: theory -> thm -> thm
-  val unvarify_axiom: theory -> string -> thm
+  val unvarify_axiom: theory -> string  * Theory.axiom_source -> thm
   val rename_params_rule: string list * int -> thm -> thm
   val rename_boundvars: term -> term -> thm -> thm
-  val add_axiom: Proof.context -> binding * term -> theory -> (string * thm) * theory
-  val add_axiom_global: binding * term -> theory -> (string * thm) * theory
+  val add_axiom: Proof.context -> binding * (term * Theory.axiom_reason) -> theory -> (string * thm) * theory
+  val add_axiom_global: binding * (term * Theory.axiom_reason) -> theory -> (string * thm) * theory
   val add_def: Defs.context -> bool -> bool -> binding * term -> theory -> (string * thm) * theory
   val add_def_global: bool -> bool -> binding * term -> theory -> (string * thm) * theory
   type attribute = Context.generic * thm -> Context.generic option * thm option
@@ -486,7 +486,7 @@ fun unvarify_global thy th =
           | _ => inst)));
   in Thm.instantiate (cinstT, cinst) th end;
 
-fun unvarify_axiom thy = unvarify_global thy o Thm.axiom thy;
+fun unvarify_axiom thy = unvarify_global thy o Thm.axiom' thy;
 
 
 (* user renaming of parameters in a subgoal *)
@@ -539,7 +539,7 @@ fun stripped_sorts thy t =
         (Same.function_eq (op =) (perhaps (AList.lookup (op =) strip))) t;
   in (strip, recover, t') end;
 
-fun add_axiom ctxt (b, prop) thy =
+fun add_axiom ctxt (b, (prop, reason)) thy =
   let
     val _ = Sign.no_vars ctxt prop;
     val (strip, recover, prop') = stripped_sorts thy prop;
@@ -547,9 +547,9 @@ fun add_axiom ctxt (b, prop) thy =
     val of_sorts = maps (fn (T as TFree (_, S), _) => of_sort (Thm.ctyp_of ctxt T, S)) strip;
 
     val thy' = thy
-      |> Theory.add_axiom ctxt (b, Logic.list_implies (maps Logic.mk_of_sort constraints, prop'));
+      |> Theory.add_axiom ctxt (b, (Logic.list_implies (maps Logic.mk_of_sort constraints, prop'), reason));
     val axm_name = Sign.full_name thy' b;
-    val axm' = Thm.axiom thy' axm_name;
+    val axm' = Thm.axiom' thy' (axm_name, Theory.ASPrev);
     val thm =
       Thm.instantiate (TVars.make recover, Vars.empty) axm'
       |> unvarify_global thy'
@@ -566,7 +566,7 @@ fun add_def (context as (ctxt, _)) unchecked overloaded (b, prop) thy =
 
     val thy' = Theory.add_def context unchecked overloaded (b, concl') thy;
     val axm_name = Sign.full_name thy' b;
-    val axm' = Thm.axiom thy' axm_name;
+    val axm' = Thm.axiom' thy' (axm_name, Theory.ASPrev);
     val thm =
       Thm.instantiate (TVars.make recover, Vars.empty) axm'
       |> unvarify_global thy'

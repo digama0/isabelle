@@ -441,10 +441,10 @@ fun define_class (bclass, raw_super) raw_params raw_specs thy =
 local
 
 (*old-style axioms*)
-fun add_axioms prep mk name add raw_args thy =
+fun add_axioms reason prep mk name add raw_args thy =
   let
     val args = prep thy raw_args;
-    val specs = mk args;
+    val specs = map (fn x => (x, reason)) (mk args);
     val names = name args;
   in
     thy
@@ -458,11 +458,11 @@ fun class_const_dep c =
 in
 
 val classrel_axiomatization =
-  add_axioms (map o cert_classrel) (map Logic.mk_classrel)
+  add_axioms Theory.ARClassRel (map o cert_classrel) (map Logic.mk_classrel)
     (map (prefix classrel_prefix o Logic.name_classrel)) add_classrel;
 
 val arity_axiomatization =
-  add_axioms (Proof_Context.cert_arity o Proof_Context.init_global) Logic.mk_arities
+  add_axioms Theory.ARArity (Proof_Context.cert_arity o Proof_Context.init_global) Logic.mk_arities
     (map (prefix arity_prefix) o Logic.name_arities) add_arity;
 
 fun class_axiomatization (bclass, raw_super) thy =

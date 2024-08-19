@@ -235,6 +235,6 @@ val _ = Theory.setup
       \ (CONST Pure.term :: 'a itself \<Rightarrow> prop) (CONST Pure.type :: 'a itself)"),
     (Binding.make ("conjunction_def", \<^here>),
       prop "(A &&& B) \<equiv> (\<And>C::prop. (A \<Longrightarrow> B \<Longrightarrow> C) \<Longrightarrow> C)")]
-  #> fold (#2 oo Thm.add_axiom_global) Theory.equality_axioms);
+  #> fold (fn (a, b) => fn thy => #2 (Thm.add_axiom_global (a, (b, Theory.ARPrim)) thy)) Theory.equality_axioms);
 
 end;

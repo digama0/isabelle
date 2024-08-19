@@ -144,7 +144,7 @@ end;
 fun proof_of_term thy ty =
   let
     val thms = Global_Theory.all_thms_of thy true |> map (apfst Thm_Name.short);
-    val axms = Theory.all_axioms_of thy;
+    val axms = Theory.all_axioms_of' thy;
 
     fun mk_term t = (if ty then I else map_types (K dummyT))
       (Term.no_dummy_patterns t);
@@ -157,7 +157,7 @@ fun proof_of_term thy ty =
                  let
                    val name = Long_Name.implode xs;
                    val prop = (case AList.lookup (op =) axms name of
-                       SOME prop => prop
+                       SOME (prop, _) => prop
                      | NONE => error ("Unknown axiom " ^ quote name))
                  in PAxm (name, prop, NONE) end
              | "thm" :: xs =>
@@ -202,7 +202,7 @@ fun read_term thy topsort =
   let
     val thm_names =
       filter_out (fn s => s = "") (map (Thm_Name.short o fst) (Global_Theory.all_thms_of thy true));
-    val axm_names = map fst (Theory.all_axioms_of thy);
+    val axm_names = map fst (Theory.all_axioms_of' thy);
     val ctxt = thy
       |> add_proof_syntax
       |> add_proof_atom_consts

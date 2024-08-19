@@ -22,7 +22,7 @@ sig
   val enabled: unit -> bool
   val when: (unit -> T) -> T
 
-  val axiom_proof: string -> term -> T
+  val axiom_proof: string -> term -> Theory.axiom_source -> T
   val oracle_proof:  string -> term -> T
   val strip_shyps_proof: sort list -> T -> T
   val incr_indexes_proof: int -> T -> T
@@ -76,7 +76,7 @@ datatype T =
   | PTImpElim of T * T
   | PTForallIntr of term * T
   | PTForallElim of T * term
-  | PTAxiom of string * term
+  | PTAxiom of string * term * Theory.axiom_source
   | PTOracle of string * term
   | PTRefl of term
   | PTSymm of T
@@ -111,7 +111,7 @@ datatype T =
 
 val sorry = PTSorry;
 val pruned = PTPruned;
-fun axiom_proof name prop = PTAxiom (name, prop);
+fun axiom_proof name prop src = PTAxiom (name, prop, src);
 fun oracle_proof name prop = PTOracle (name, prop);
 fun implies_intr_proof A p = PTImpIntr (A, p);
 fun implies_elim_proof p q = PTImpElim (p, q);
@@ -207,6 +207,9 @@ fun export_proof thy header tvar_map shyps hyps p =
 
     fun enc_names s = EList (map (fn (s, _) => hash_string s) (Names.dest s))
 
+    fun enc_axiom_src Theory.ASPrev = EVariant("P", [])
+      | enc_axiom_src Theory.ASForgot = EVariant("?", [])
+
     fun enc_env (Envir.Envir {maxidx, tenv, tyenv}) =
       ETuple [EInt maxidx,
         EList (map (fn ((a, b), (c, d)) =>
@@ -224,7 +227,7 @@ fun export_proof thy header tvar_map shyps hyps p =
       | PTImpElim(p, q) => EVariant("I", [hash_proof p, hash_proof q])
       | PTForallIntr(a, p) => EVariant("f", [hash_term a, hash_proof p])
       | PTForallElim(p, a) => EVariant("F", [hash_proof p, hash_term a])
-      | PTAxiom(a, b) => EVariant("A", [hash_string a, hash_term b])
+      | PTAxiom(a, b, s) => EVariant("A", [hash_string a, hash_term b, enc_axiom_src s])
       | PTOracle(a, b) => EVariant("O", [hash_string a, hash_term b])
       | PTRefl(a) => EVariant("=", [hash_term a])
       | PTSymm(p) => EVariant("-", [hash_proof p])

@@ -268,6 +268,17 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
     fun standard_prop_of thm =
       standard_prop Name.context (Thm.extra_shyps thm) (Thm.full_prop_of thm);
 
+    val encode_reason: Theory.axiom_reason XML.Encode.T =
+      let open XML.Encode in variant
+       [fn Theory.ARForgot => ([], []),
+        fn Theory.ARAxiom => ([], []),
+        fn Theory.ARPrim => ([], []),
+        fn Theory.ARDef (a, b) => ([], pair bool bool (a, b)),
+        fn Theory.ARClassRel => ([], []),
+        fn Theory.ARArity => ([], []),
+        fn Theory.ARTypedef => ([], [])]
+      end
+
     val encode_prop =
       let open XML.Encode Term_XML.Encode
       in triple (list (pair string sort)) (list (pair string encode_ztyp)) encode_zterm end;
@@ -275,9 +286,12 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
     fun encode_axiom used prop =
       encode_prop (#1 (standard_prop used [] prop NONE));
 
+    fun encode_axiom_full used =
+      XML.Encode.pair (encode_axiom used) encode_reason;
+
     val _ =
-      export_entities "axioms" true Theory.axiom_space (Theory.all_axioms_of thy)
-        (fn _ => fn prop => SOME (fn () => encode_axiom Name.context prop));
+      export_entities "axioms" true Theory.axiom_space (Theory.all_axioms_of' thy)
+        (fn _ => fn prop => SOME (fn () => encode_axiom_full Name.context prop));
 
 
     (* theorems and proof terms *)

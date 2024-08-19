@@ -148,7 +148,7 @@ fun primitive_typedef {overloaded} type_definition_name newT oldT Rep_name Abs_n
 
     val ((axiom_name, axiom), axiom_lthy) = consts_lthy
       |> Local_Theory.background_theory_result
-        (Thm.add_axiom consts_lthy (type_definition_name, mk_typedef newT oldT RepC AbsC A) ##>
+        (Thm.add_axiom consts_lthy (type_definition_name, (mk_typedef newT oldT RepC AbsC A, Theory.ARTypedef)) ##>
           Theory.add_deps defs_context "" newT_dep typedef_deps ##>
           Theory.add_deps defs_context "" (const_dep (dest_Const RepC)) [newT_dep] ##>
           Theory.add_deps defs_context "" (const_dep (dest_Const AbsC)) [newT_dep]);

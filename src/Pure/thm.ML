@@ -125,6 +125,7 @@ sig
   val name_derivation: Thm_Name.P -> thm -> thm
   val close_derivation: Position.T -> thm -> thm
   val trim_context: thm -> thm
+  val axiom': theory -> string * Theory.axiom_source -> thm
   val axiom: theory -> string -> thm
   val all_axioms_of: theory -> (string * thm) list
   val get_tags: thm -> Properties.T
@@ -870,13 +871,13 @@ fun future future_thm ct =
 
 (** Axioms **)
 
-fun axiom thy name =
+fun axiom' thy (name, src) =
   (case Name_Space.lookup (Theory.axiom_table thy) name of
-    SOME prop =>
+    SOME (prop, _) =>
       let
         fun zproof () = ZTerm.axiom_proof thy name prop;
         fun proof () = Proofterm.axiom_proof name prop;
-        fun trace () = Prooftrace.axiom_proof name prop;
+        fun trace () = Prooftrace.axiom_proof name prop src;
         val cert = Context.Certificate thy;
         val maxidx = maxidx_of_term prop;
         val shyps = Sorts.insert_term prop [];
@@ -887,8 +888,10 @@ fun axiom thy name =
       end
   | NONE => raise THEORY ("No axiom " ^ quote name, [thy]));
 
+fun axiom thy name = axiom' thy (name, Theory.ASForgot);
+
 fun all_axioms_of thy =
-  map (fn (name, _) => (name, axiom thy name)) (Theory.all_axioms_of thy);
+  map (fn (name, _) => (name, axiom' thy (name, Theory.ASPrev))) (Theory.all_axioms_of' thy);
 
 
 (* tags *)

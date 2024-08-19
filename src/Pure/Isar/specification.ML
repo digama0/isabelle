@@ -220,7 +220,7 @@ fun gen_axioms prep_stmt prep_att raw_decls raw_fixes raw_prems raw_concls thy =
     (*axioms*)
     val (axioms, axioms_thy) =
       (specs, consts_thy) |-> fold_map (fn ((b, atts), prop) =>
-        Thm.add_axiom_global (b, subst prop) #>> (fn (_, th) => ((b, atts), [([th], [])])));
+        Thm.add_axiom_global (b, (subst prop, Theory.ARAxiom)) #>> (fn (_, th) => ((b, atts), [([th], [])])));
 
     (*facts*)
     val (facts, facts_lthy) = axioms_thy

@@ -553,7 +553,7 @@ val remdups_rl =
 
 local
   val A = certify (Free ("A", propT));
-  val axiom = Thm.unvarify_axiom (Context.the_global_context ());
+  fun axiom s = Thm.unvarify_axiom (Context.the_global_context ()) (s, Theory.ASPrev);
   val prop_def = axiom "Pure.prop_def";
   val term_def = axiom "Pure.term_def";
   val sort_constraint_def = axiom "Pure.sort_constraint_def";
