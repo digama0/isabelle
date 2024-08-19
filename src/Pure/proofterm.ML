@@ -2161,11 +2161,11 @@ fun prepare_thm_proof unconstrain thy sorts_proof
       else map PClass (#outer_constraints ucontext) @ map Hyp hyps;
     val proof2 = proof_combP (proof_combt' (head, argst), argsP);
     val trace1 = Prooftrace.when (fn () =>
-      let
-        val () = if reused andalso Options.default_bool "prune_proofs" then
-          Prooftrace.export_proof thy header trace0
-        else ()
-      in Prooftrace.thm_proof i end);
+     (if reused then () else
+        Prooftrace.export_proof thy header (#present_map ucontext)
+          (length (#constraints ucontext)) hyps trace0;
+      if unconstrain then Prooftrace.thm_proof i
+      else Prooftrace.constrain_thm_proof i shyps hyps prop));
 
     val body2 = {oracles = [], thms = [thm], zboxes = zboxes1, zproof = zproof1, proof = proof2, trace = trace1};
   in (prop1, PBody body2) end;

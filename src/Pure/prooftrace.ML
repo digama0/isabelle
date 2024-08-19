@@ -48,6 +48,7 @@ sig
   val trivial_proof: T
   val of_class_proof: typ * class -> T
   val thm_proof: serial -> T
+  val constrain_thm_proof: serial -> sort list -> term list -> term -> T
   val varifyT_proof: ((string * sort) * (indexname * sort)) list -> T -> T
   val legacy_freezeT_proof: T -> T
   val lift_proof: term -> int -> T -> T
@@ -58,7 +59,7 @@ sig
   val bicompose_proof: Envir.env -> int -> bool -> term list -> term list ->
     term option -> term list -> int -> int -> T -> T -> T
 
-  val export_proof: theory -> thm_header -> T -> unit
+  val export_proof: theory -> thm_header -> (typ * typ) list -> int -> term list -> T -> unit
 end;
 
 structure Prooftrace: PROOFTRACE =
@@ -95,6 +96,7 @@ datatype T =
   | PTTrivial
   | PTOfClass of typ * class
   | PTThm of serial
+  | PTConstrainThm of serial * sort list * term list * term
   | PTVarify of ((string * sort) * (indexname * sort)) list * T
   | PTLegacyFreezeT of T
   | PTLift of term * int * T
@@ -134,6 +136,7 @@ fun instantiate_proof (instT, inst) p = PTInstantiate (instT, inst, p);
 val trivial_proof = PTTrivial;
 val of_class_proof = PTOfClass;
 val thm_proof = PTThm;
+fun constrain_thm_proof i shyps hyps prop = PTConstrainThm (i, shyps, hyps, prop);
 fun varifyT_proof al p = PTVarify (al, p);
 val legacy_freezeT_proof = PTLegacyFreezeT;
 fun lift_proof gprop inc p = PTLift (gprop, inc, p);
@@ -165,7 +168,7 @@ fun tree_ord (XML.Elem a1, XML.Elem a2) =
 
 structure ElemTab = Table(type key = XML.tree val ord = tree_ord);
 
-fun export_proof thy header p =
+fun export_proof thy header tvar_map shyps hyps p =
   let
     fun mk_tab encode =
       let val tab = Unsynchronized.ref (ElemTab.empty, [])
@@ -244,6 +247,8 @@ fun export_proof thy header p =
       | PTTrivial => EVariant("t", [])
       | PTOfClass(a, b) => EVariant("o", [hash_typ a, hash_class b])
       | PTThm(i) => EVariant("T", [EInt i])
+      | PTConstrainThm(i, sh, h, t) => EVariant("K", [
+          EInt i, EList (map hash_sort sh), EList (map hash_term h), hash_term t])
       | PTVarify(a, p) => EVariant("V", [
           EList (map (fn ((a, b), (c, d)) =>
             ETuple [hash_string a, hash_sort b, hash_indexname c, hash_sort d]) a),
@@ -270,7 +275,9 @@ fun export_proof thy header p =
       ETuple [EInt serial, enc_position command_pos, hash_string theory_name,
         enc_thm_name thm_name, hash_term prop, opt (EList o map hash_typ) types]
 
-    val enc_root = [enc_header header, hash_proof p]
+    val enc_root = [enc_header header,
+      EList (map (fn (a, b) => ETuple [hash_typ a, hash_typ b]) tvar_map),
+      EInt shyps, EList (map hash_term hyps), hash_proof p]
 
     val s = map (fn f => EList (rev (f ())))
       [strings,sorts,indexnames,names,typs,terms,proofs,assumptions];

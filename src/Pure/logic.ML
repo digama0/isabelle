@@ -63,7 +63,8 @@ sig
     {present: (typ * sort) list, extra: sort Ord_List.T}
   val dummy_tfree: sort -> typ
   type unconstrain_context =
-   {typ_operation: {strip_sorts: bool} -> typ Same.operation,
+   {present_map: (typ * typ) list,
+    typ_operation: {strip_sorts: bool} -> typ Same.operation,
     constraints: ((typ * class) * term) list,
     outer_constraints: (typ * class) list}
   val unconstrain_context: sort Ord_List.T -> Types.set -> unconstrain_context
@@ -366,7 +367,8 @@ fun present_sorts shyps present_set =
   in {present = present, extra = extra} end;
 
 type unconstrain_context =
- {typ_operation: {strip_sorts: bool} -> typ Same.operation,
+ {present_map: (typ * typ) list,
+  typ_operation: {strip_sorts: bool} -> typ Same.operation,
   constraints: ((typ * class) * term) list,
   outer_constraints: (typ * class) list};
 
@@ -401,7 +403,8 @@ fun unconstrain_context shyps present_set =
     val outer_constraints =
       maps (fn (T, S) => map (pair T) S) (present @ map (`dummy_tfree) extra);
   in
-   {typ_operation = typ_operation,
+   {present_map = present_map,
+    typ_operation = typ_operation,
     constraints = constraints,
     outer_constraints = outer_constraints}
   end;
