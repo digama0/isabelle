@@ -157,14 +157,14 @@ exception OutOfRange;
 fun EVariant (i, ls) = XML.Elem ((i, []), ls)
 fun EList ls = XML.Elem ((":", []), ls)
 fun ETuple ls = XML.Elem ((":", []), ls)
-fun EInt i = XML.Text (string_of_int i)
-fun EString s = XML.Text s;
+fun EString s = XML.Elem ((":", []), [XML.Text s])
+fun EInt i = EString (string_of_int i)
 
 fun tree_ord (XML.Elem a1, XML.Elem a2) =
       prod_ord (fn (a, b) => fast_string_ord (#1 a, #1 b)) (list_ord tree_ord) (a1, a2)
-  | tree_ord (XML.Text a1, XML.Text a2) = fast_string_ord (a1, a2)
+  | tree_ord (XML.Text s1, XML.Text s2) = fast_string_ord (s1, s2)
   | tree_ord (XML.Elem _, XML.Text _) = LESS
-  | tree_ord (XML.Text _, XML.Elem _) = GREATER;
+  | tree_ord (XML.Text _, XML.Elem _) = GREATER
 
 structure ElemTab = Table(type key = XML.tree val ord = tree_ord);
 
