@@ -189,8 +189,6 @@ fun export_proof thy header tvar_map shyps hyps p =
     val hash_class = hash_string
     val (sorts, hash_sort) = mk_tab (EList o map hash_class)
     val (indexnames, hash_indexname) = mk_tab (fn (s, i) => ETuple [hash_string s, EInt i])
-    val (names, hash_names) = mk_tab (fn s => EList (map (fn (s, i) =>
-      ETuple [hash_string s, EInt i]) (Names.dest s)))
 
     val (typs, hash_typ') = mk_tab I
     fun hash_typ t = hash_typ' (case t of
@@ -206,6 +204,8 @@ fun export_proof thy header tvar_map shyps hyps p =
       | Bound(i) => EVariant("B", [EInt i])
       | Abs(x, ty, e) => EVariant("L", [hash_string x, hash_typ ty, hash_term e])
       | e1 $ e2 => EVariant("A", [hash_term e1, hash_term e2]))
+
+    fun enc_names s = EList (map (fn (s, _) => hash_string s) (Names.dest s))
 
     fun enc_env (Envir.Envir {maxidx, tenv, tyenv}) =
       ETuple [EInt maxidx,
@@ -239,7 +239,7 @@ fun export_proof thy header tvar_map shyps hyps p =
       | PTEqIntr(p, q) => EVariant("e", [hash_proof p, hash_proof q])
       | PTEqElim(p, q) => EVariant("E", [hash_proof p, hash_proof q])
       | PTFlexFlex(e, p) => EVariant("x", [enc_env e, hash_proof p])
-      | PTGeneralize(a, b, c, p) => EVariant("G", [hash_names a, hash_names b, EInt c, hash_proof p])
+      | PTGeneralize(a, b, c, p) => EVariant("G", [enc_names a, enc_names b, EInt c, hash_proof p])
       | PTInstantiate(a, b, p) => EVariant("N", [
           EList (map (fn ((a, b), c) => ETuple [hash_indexname a, hash_sort b, hash_typ c]) a),
           EList (map (fn ((a, b), c) => ETuple [hash_indexname a, hash_typ b, hash_term c]) b),
@@ -280,7 +280,7 @@ fun export_proof thy header tvar_map shyps hyps p =
       EInt shyps, EList (map hash_term hyps), hash_proof p]
 
     val s = map (fn f => EList (rev (f ())))
-      [strings,sorts,indexnames,names,typs,terms,proofs,assumptions];
+      [strings,sorts,indexnames,typs,terms,proofs,assumptions];
   in
     Export.export thy (Path.binding0 (Path.make ["proof_trace", string_of_int (#serial header)]))
       (s @ [ETuple enc_root])
