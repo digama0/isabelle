@@ -282,7 +282,7 @@ fun export_proof thy header tvar_map shyps hyps p =
     val s = map (fn f => EList (rev (f ())))
       [strings,sorts,indexnames,names,typs,terms,proofs,assumptions];
   in
-    Export.export thy (Path.binding0 (Path.make ["exportTrace", string_of_int (#serial header)]))
+    Export.export thy (Path.binding0 (Path.make ["proof_trace", string_of_int (#serial header)]))
       (s @ [ETuple enc_root])
   end;
 
