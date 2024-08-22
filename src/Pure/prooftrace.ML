@@ -216,10 +216,8 @@ fun export_proof thy header tvar_map shyps hyps p =
         EList (map (fn (a, (b, c)) =>
           ETuple [hash_indexname a, hash_typ b, hash_term c]) (Vartab.dest tenv))]
 
-    val (proofs, hash_proof') = mk_tab I
-    val (assumptions, hash_assumption') = mk_tab I
-    fun hash_assumption (s, i) = hash_assumption' (ETuple [hash_proof s, EInt i])
-    and hash_proof p = hash_proof' (case p of
+    fun hash_assumption (s, i) = ETuple [hash_proof s, EInt i]
+    and hash_proof p = case p of
         PTSorry => EVariant("?", [])
       | PTHyp(a) => EVariant("X", [hash_term a])
       | PTImpIntr(a, p) => EVariant("i", [hash_term a, hash_proof p])
@@ -266,7 +264,7 @@ fun export_proof thy header tvar_map shyps hyps p =
           enc_env a, EList (map (fn (a, b) => ETuple [hash_term a, hash_term b]) b),
           EInt c, EInt (if d then 1 else 0), EList (map hash_term e), opt hash_term f,
           EInt g, EInt h, hash_proof p, hash_proof q])
-      | PTPruned => EVariant("!", []))
+      | PTPruned => EVariant("!", [])
 
     fun enc_position pos =
       let val {line, offset, end_offset, props = {label, file, id}} = Position.dest pos
@@ -282,7 +280,7 @@ fun export_proof thy header tvar_map shyps hyps p =
       EInt shyps, EList (map hash_term hyps), hash_proof p]
 
     val s = map (fn f => EList (rev (f ())))
-      [strings,sorts,indexnames,typs,terms,proofs,assumptions];
+      [strings,sorts,indexnames,typs,terms];
   in
     Export.export thy (Path.binding0 (Path.make ["proof_trace", string_of_int (#serial header)]))
       (s @ [ETuple enc_root])
