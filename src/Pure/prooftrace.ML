@@ -148,8 +148,7 @@ fun permute_prems_proof j k p = PTPermutePrems (j, k, p);
 fun bicompose_proof env tpairs nsubgoal flatten As A n nlift p q =
   PTBicompose (env, tpairs, nsubgoal, flatten, As, A, n, nlift, p, q);
 
-val proofs = Unsynchronized.ref true;
-fun enabled () = ! proofs;
+fun enabled () = Options.default_bool "prooftrace_enabled";
 fun when f = if enabled () then f () else PTSorry;
 
 exception OutOfRange;

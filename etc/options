@@ -423,6 +423,9 @@ option export_proofs : bool = false for content
 option prune_proofs : bool = false for content
   -- "prune proof terms after export (do not store in Isabelle/ML)"
 
+option prooftrace_enabled : bool = false for content
+  -- "enable prooftrace module"
+
 
 section "Theory update"
 
