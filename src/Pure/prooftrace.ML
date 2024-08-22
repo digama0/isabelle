@@ -56,8 +56,8 @@ sig
   val eq_assumption_proof: int -> T -> T
   val rotate_proof: int -> int -> T -> T
   val permute_prems_proof: int -> int -> T -> T
-  val bicompose_proof: Envir.env -> int -> bool -> term list -> term list ->
-    term option -> term list -> int -> int -> T -> T -> T
+  val bicompose_proof: Envir.env -> (term * term) list -> int -> bool -> term list ->
+    term option -> int -> int -> T -> T -> T
 
   val export_proof: theory -> thm_header -> (typ * typ) list -> int -> term list -> T -> unit
 end;
@@ -105,8 +105,8 @@ datatype T =
   | PTEqAssumption of T * int
   | PTRotate of int * int * T
   | PTPermutePrems of int * int * T
-  | PTBicompose of Envir.env * int * bool * term list * term list *
-    term option * term list * int * int * T * T
+  | PTBicompose of Envir.env * (term * term) list * int * bool * term list *
+    term option * int * int * T * T
   | PTPruned;
 
 val sorry = PTSorry;
@@ -145,8 +145,8 @@ fun assumption_proof i n p = PTAssumption ((p, i), n);
 fun eq_assumption_proof i p = PTEqAssumption (p, i);
 fun rotate_proof k i p = PTRotate (k, i, p);
 fun permute_prems_proof j k p = PTPermutePrems (j, k, p);
-fun bicompose_proof env smax flatten Bs As A oldAs n nlift p q =
-  PTBicompose (env, smax, flatten, Bs, As, A, oldAs, n, nlift, p, q);
+fun bicompose_proof env tpairs nsubgoal flatten As A n nlift p q =
+  PTBicompose (env, tpairs, nsubgoal, flatten, As, A, n, nlift, p, q);
 
 val proofs = Unsynchronized.ref true;
 fun enabled () = ! proofs;
@@ -210,12 +210,12 @@ fun export_proof thy header tvar_map shyps hyps p =
     fun enc_axiom_src Theory.ASPrev = EVariant("P", [])
       | enc_axiom_src Theory.ASForgot = EVariant("?", [])
 
-    fun enc_env (Envir.Envir {maxidx, tenv, tyenv}) =
-      ETuple [EInt maxidx,
-        EList (map (fn ((a, b), (c, d)) =>
-          ETuple [hash_string a, EInt b, hash_typ c, hash_term d]) (Vartab.dest tenv)),
-        EList (map (fn ((a, b), (c, d)) =>
-          ETuple [hash_string a, EInt b, hash_sort c, hash_typ d]) (Vartab.dest tyenv))]
+    fun enc_env (Envir.Envir {tyenv, tenv, ...}) =
+      ETuple [
+        EList (map (fn (a, (b, c)) =>
+          ETuple [hash_indexname a, hash_sort b, hash_typ c]) (Vartab.dest tyenv)),
+        EList (map (fn (a, (b, c)) =>
+          ETuple [hash_indexname a, hash_typ b, hash_term c]) (Vartab.dest tenv))]
 
     val (proofs, hash_proof') = mk_tab I
     val (assumptions, hash_assumption') = mk_tab I
@@ -263,10 +263,10 @@ fun export_proof thy header tvar_map shyps hyps p =
       | PTEqAssumption p => EVariant("q", [hash_assumption p])
       | PTRotate(a, b, p) => EVariant("R", [EInt a, EInt b, hash_proof p])
       | PTPermutePrems(a, b, p) => EVariant("P", [EInt a, EInt b, hash_proof p])
-      | PTBicompose(a, b, c, d, e, f, g, h, i, p, q) => EVariant("C", [
-          enc_env a, EInt b, EInt (if c then 1 else 0),
-          EList (map hash_term d), EList (map hash_term e), opt hash_term f,
-          EList (map hash_term g), EInt h, EInt i, hash_proof p, hash_proof q])
+      | PTBicompose(a, b, c, d, e, f, g, h, p, q) => EVariant("C", [
+          enc_env a, EList (map (fn (a, b) => ETuple [hash_term a, hash_term b]) b),
+          EInt c, EInt (if d then 1 else 0), EList (map hash_term e), opt hash_term f,
+          EInt g, EInt h, hash_proof p, hash_proof q])
       | PTPruned => EVariant("!", []))
 
     fun enc_position pos =

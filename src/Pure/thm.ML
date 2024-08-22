@@ -1111,7 +1111,7 @@ fun strip_shyps thm =
 
         val zproof' = ZTerm.map_proof_types {hyps = true} map_ztyp zproof;
         val proof' = Proofterm.map_proof_types (Term.map_atyps_same map_atyp) proof;
-        val trace' = Prooftrace.when (fn () => 
+        val trace' = Prooftrace.when (fn () =>
           Prooftrace.strip_shyps_proof (Sorts.subtract extra extra') trace);
       in
         Thm (make_deriv promises oracles thms zboxes zproof' proof' trace',
@@ -2532,7 +2532,7 @@ fun bicompose_aux opt_ctxt {flatten, match, incremented} (state, (stpairs, Bs, B
         fun proof p q =
           Proofterm.bicompose_proof env smax flatten Bs As A oldAs n (nlift + 1) p q;
         fun trace p q =
-          Prooftrace.bicompose_proof env smax flatten Bs As A oldAs n (nlift + 1) p q;
+          Prooftrace.bicompose_proof env tpairs nsubgoal flatten As A n (nlift + 1) p q;
         val th =
           Thm (deriv_rule2 zproof proof trace rder' sder,
            {tags = [],
