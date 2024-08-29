@@ -155,9 +155,9 @@ object Component_PolyML {
 
   /** skeleton for component **/
 
-  val default_polyml_url = "https://github.com/polyml/polyml/archive"
-  val default_polyml_version = "90c0dbb2514e"
-  val default_polyml_name = "polyml-5.9.1"
+  val default_polyml_url = "https://github.com/digama0/polyml/archive"
+  val default_polyml_version = "c1988c0cea1d"
+  val default_polyml_name = "polyml-5.9.1-exportSmall"
 
   val default_sha1_url = "https://isabelle.sketis.net/repos/sha1/archive"
   val default_sha1_version = "0ce12663fe76"
@@ -387,7 +387,7 @@ Usage: isabelle make_polyml [OPTIONS] ROOT [CONFIGURE_OPTIONS]
         var polyml_version = default_polyml_version
         var polyml_name = default_polyml_name
         var verbose = false
-  
+
         val getopts = Getopts("""
 Usage: isabelle component_polyml [OPTIONS] [CONFIGURE_OPTIONS]
 

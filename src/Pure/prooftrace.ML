@@ -176,130 +176,13 @@ fun bicompose_proof env tpairs nsubgoal flatten As A n nlift p q =
 fun enabled () = Options.default_bool "prooftrace_enabled";
 fun when f = if enabled () then f () else PTSorry;
 
-exception OutOfRange;
-
-fun EVariant (i, ls) = XML.Elem ((i, []), ls)
-fun EList ls = XML.Elem ((":", []), ls)
-fun ETuple ls = XML.Elem ((":", []), ls)
-fun EString s = XML.Elem ((":", []), [XML.Text s])
-fun EInt i = EString (string_of_int i)
-
-
-structure StringTab = Prooftrace_Table(type key = string val ord = fast_string_ord);
-structure SortTab = Prooftrace_Table(type key = string list val ord = list_ord fast_string_ord);
-structure IndexnameTab = Prooftrace_Table(
-  type key = string * int
-  val ord = prod_ord fast_string_ord int_ord);
-structure TypTab = Prooftrace_Table(type key = typ val ord = Term_Ord.typ_ord);
-structure TermTab = Prooftrace_Table(type key = term val ord = Term_Ord.term_ord);
-
 fun export_proof thy header tvar_map shyps hyps p =
   if not (Options.default_bool "prooftrace_out") then () else
   let
-
-    fun opt f a = EList (case a of NONE => [] | SOME a => [f a])
-
-    val (strings, hash_string) = StringTab.mk_tab EInt EString
-    val hash_class = hash_string
-    val (sorts, hash_sort) = SortTab.mk_tab EInt (EList o map hash_class)
-    val (indexnames, hash_indexname) = IndexnameTab.mk_tab EInt
-      (fn (s, i) => ETuple [hash_string s, EInt i])
-
-    val (typs, hash_typ') = TypTab.mk_tab_rec EInt
-    fun hash_typ t = hash_typ' (fn
-        Type(s, tys) => EVariant("T", [hash_string s, EList (map hash_typ tys)])
-      | TFree(x, s) => EVariant("F", [hash_string x, hash_sort s])
-      | TVar(i, s) => EVariant("V", [hash_indexname i, hash_sort s])) t
-
-    val (terms, hash_term') = TermTab.mk_tab_rec EInt
-    fun hash_term t = hash_term' (fn
-        Const(c, ty) => EVariant("C", [hash_string c, hash_typ ty])
-      | Free(x, ty) => EVariant("F", [hash_string x, hash_typ ty])
-      | Var(x, ty) => EVariant("V", [hash_indexname x, hash_typ ty])
-      | Bound(i) => EVariant("B", [EInt i])
-      | Abs(x, ty, e) => EVariant("L", [hash_string x, hash_typ ty, hash_term e])
-      | e1 $ e2 => EVariant("A", [hash_term e1, hash_term e2])) t
-
-    fun enc_names s = EList (map (fn (s, _) => hash_string s) (Names.dest s))
-
-    fun enc_axiom_src Theory.ASPrev = EVariant("P", [])
-      | enc_axiom_src Theory.ASForgot = EVariant("?", [])
-
-    fun enc_env (Envir.Envir {tyenv, tenv, ...}) =
-      ETuple [
-        EList (map (fn (a, (b, c)) =>
-          ETuple [hash_indexname a, hash_sort b, hash_typ c]) (Vartab.dest tyenv)),
-        EList (map (fn (a, (b, c)) =>
-          ETuple [hash_indexname a, hash_typ b, hash_term c]) (Vartab.dest tenv))]
-
-    fun hash_assumption (s, i) = ETuple [hash_proof s, EInt i]
-    and hash_proof p = case p of
-        PTSorry => EVariant("?", [])
-      | PTHyp(a) => EVariant("X", [hash_term a])
-      | PTImpIntr(a, p) => EVariant("i", [hash_term a, hash_proof p])
-      | PTImpElim(p, q) => EVariant("I", [hash_proof p, hash_proof q])
-      | PTForallIntr(a, p) => EVariant("f", [hash_term a, hash_proof p])
-      | PTForallElim(p, a) => EVariant("F", [hash_proof p, hash_term a])
-      | PTAxiom(a, b, s) => EVariant("A", [hash_string a, hash_term b, enc_axiom_src s])
-      | PTOracle(a, b) => EVariant("O", [hash_string a, hash_term b])
-      | PTRefl(a) => EVariant("=", [hash_term a])
-      | PTSymm(p) => EVariant("-", [hash_proof p])
-      | PTTrans(p, q) => EVariant("+", [hash_proof p, hash_proof q])
-      | PTBetaNorm(a) => EVariant("B", [hash_term a])
-      | PTBetaHead(a) => EVariant("b", [hash_term a])
-      | PTEta(a) => EVariant("h", [hash_term a])
-      | PTEtaLong(a) => EVariant("H", [hash_term a])
-      | PTStripSHyps(s, p) => EVariant("p", [EList (map hash_sort s), hash_proof p])
-      | PTAbsRule(a, p) => EVariant("l", [hash_term a, hash_proof p])
-      | PTAppRule(p, q) => EVariant("c", [hash_proof p, hash_proof q])
-      | PTEqIntr(p, q) => EVariant("e", [hash_proof p, hash_proof q])
-      | PTEqElim(p, q) => EVariant("E", [hash_proof p, hash_proof q])
-      | PTFlexFlex(e, p) => EVariant("x", [enc_env e, hash_proof p])
-      | PTGeneralize(a, b, c, p) => EVariant("G", [enc_names a, enc_names b, EInt c, hash_proof p])
-      | PTInstantiate(a, b, p) => EVariant("N", [
-          EList (map (fn ((a, b), c) => ETuple [hash_indexname a, hash_sort b, hash_typ c]) a),
-          EList (map (fn ((a, b), c) => ETuple [hash_indexname a, hash_typ b, hash_term c]) b),
-          hash_proof p])
-      | PTTrivial => EVariant("t", [])
-      | PTOfClass(a, b) => EVariant("o", [hash_typ a, hash_class b])
-      | PTThm(i) => EVariant("T", [EInt i])
-      | PTConstrainThm(i, sh, h, t) => EVariant("K", [
-          EInt i, EList (map hash_sort sh), EList (map hash_term h), hash_term t])
-      | PTVarify(a, p) => EVariant("V", [
-          EList (map (fn ((a, b), (c, d)) =>
-            ETuple [hash_string a, hash_sort b, hash_indexname c, hash_sort d]) a),
-          hash_proof p])
-      | PTLegacyFreezeT(p) => EVariant("g", [hash_proof p])
-      | PTLift(a, b, p) => EVariant("L", [hash_term a, EInt b, hash_proof p])
-      | PTIncrIndexes(a, p) => EVariant("k", [EInt a, hash_proof p])
-      | PTAssumption(p, a) => EVariant("a", [hash_assumption p, EInt a])
-      | PTEqAssumption p => EVariant("q", [hash_assumption p])
-      | PTRotate(a, b, p) => EVariant("R", [EInt a, EInt b, hash_proof p])
-      | PTPermutePrems(a, b, p) => EVariant("P", [EInt a, EInt b, hash_proof p])
-      | PTBicompose(a, b, c, d, e, f, g, h, p, q) => EVariant("C", [
-          enc_env a, EList (map (fn (a, b) => ETuple [hash_term a, hash_term b]) b),
-          EInt c, EInt (if d then 1 else 0), EList (map hash_term e), opt hash_term f,
-          EInt g, EInt h, hash_proof p, hash_proof q])
-      | PTPruned => EVariant("!", [])
-
-    fun enc_position pos =
-      let val {line, offset, end_offset, props = {label, file, id}} = Position.dest pos
-      in ETuple [EInt line, EInt offset, EInt end_offset,
-        hash_string label, hash_string file, hash_string id] end
-    fun enc_thm_name ((name, i), pos) = ETuple [hash_string name, EInt i, enc_position pos]
-    fun enc_header {serial, command_pos, theory_name, thm_name, prop, types} =
-      ETuple [EInt serial, enc_position command_pos, hash_string theory_name,
-        enc_thm_name thm_name, hash_term prop, opt (EList o map hash_typ) types]
-
-    val enc_root = [enc_header header,
-      EList (map (fn (a, b) => ETuple [hash_typ a, hash_typ b]) tvar_map),
-      EInt shyps, EList (map hash_term hyps), hash_proof p]
-
-    val s = map (fn f => EList (rev (f ())))
-      [strings,sorts,indexnames,typs,terms];
+    val data = (header, tvar_map, shyps, hyps, p)
   in
     Export.export thy (Path.binding0 (Path.make ["proof_trace", string_of_int (#serial header)]))
-      (s @ [ETuple enc_root])
+      [XML.Text (Byte.bytesToString (PolyML.exportSmall data))]
   end;
 
 end;
