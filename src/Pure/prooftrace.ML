@@ -6,8 +6,6 @@ Tight representation of types / terms / proof terms, notably for proof recording
 
 (*** global ***)
 
-(*** local ***)
-
 signature PROOFTRACE =
 sig
   type T
@@ -60,6 +58,33 @@ sig
     term option -> int -> int -> T -> T -> T
 
   val export_proof: theory -> thm_header -> (typ * typ) list -> int -> term list -> T -> unit
+end;
+
+(*** local ***)
+
+functor Prooftrace_Table(Key: KEY): sig
+  val mk_tab_rec: (int -> 'b) -> (unit -> 'a list) * ((Key.key -> 'a) -> Key.key -> 'b)
+  val mk_tab: (int -> 'b) -> (Key.key -> 'a) -> (unit -> 'a list) * (Key.key -> 'b)
+end = struct
+  structure Table = Table(Key);
+
+  fun mk_tab_rec decode =
+    let val tab = Unsynchronized.ref (Table.empty, [])
+    in
+      (fn () => let val (_, b) = !tab in b end, fn encode => fn p =>
+        case Table.lookup (#1 (!tab)) p of
+          SOME i => decode i
+        | NONE =>
+          let
+            val p' = encode p
+            val (tab1, vec1) = !tab
+            val i = Table.size tab1
+            val () = tab := (Table.update_new (p, i) tab1, p' :: vec1)
+          in decode i end)
+    end;
+
+  fun mk_tab decode encode =
+    let val (out, map) = mk_tab_rec decode in (out, map encode) end
 end;
 
 structure Prooftrace: PROOFTRACE =
@@ -159,50 +184,41 @@ fun ETuple ls = XML.Elem ((":", []), ls)
 fun EString s = XML.Elem ((":", []), [XML.Text s])
 fun EInt i = EString (string_of_int i)
 
-fun tree_ord (XML.Elem a1, XML.Elem a2) =
-      prod_ord (fn (a, b) => fast_string_ord (#1 a, #1 b)) (list_ord tree_ord) (a1, a2)
-  | tree_ord (XML.Text s1, XML.Text s2) = fast_string_ord (s1, s2)
-  | tree_ord (XML.Elem _, XML.Text _) = LESS
-  | tree_ord (XML.Text _, XML.Elem _) = GREATER
 
-structure ElemTab = Table(type key = XML.tree val ord = tree_ord);
+structure StringTab = Prooftrace_Table(type key = string val ord = fast_string_ord);
+structure SortTab = Prooftrace_Table(type key = string list val ord = list_ord fast_string_ord);
+structure IndexnameTab = Prooftrace_Table(
+  type key = string * int
+  val ord = prod_ord fast_string_ord int_ord);
+structure TypTab = Prooftrace_Table(type key = typ val ord = Term_Ord.typ_ord);
+structure TermTab = Prooftrace_Table(type key = term val ord = Term_Ord.term_ord);
 
 fun export_proof thy header tvar_map shyps hyps p =
+  if not (Options.default_bool "prooftrace_out") then () else
   let
-    fun mk_tab encode =
-      let val tab = Unsynchronized.ref (ElemTab.empty, [])
-      in
-        (fn () => let val (_, b) = !tab in b end, fn p =>
-        let val (tab1, vec1) = !tab; val p = encode p in
-          case ElemTab.lookup tab1 p of
-            SOME i => EInt i
-          | NONE =>
-            let val i = ElemTab.size tab1
-            in tab := (ElemTab.update_new (p, i) tab1, p :: vec1); EInt i end
-        end)
-      end;
 
     fun opt f a = EList (case a of NONE => [] | SOME a => [f a])
 
-    val (strings, hash_string) = mk_tab EString
+    val (strings, hash_string) = StringTab.mk_tab EInt EString
     val hash_class = hash_string
-    val (sorts, hash_sort) = mk_tab (EList o map hash_class)
-    val (indexnames, hash_indexname) = mk_tab (fn (s, i) => ETuple [hash_string s, EInt i])
+    val (sorts, hash_sort) = SortTab.mk_tab EInt (EList o map hash_class)
+    val (indexnames, hash_indexname) = IndexnameTab.mk_tab EInt
+      (fn (s, i) => ETuple [hash_string s, EInt i])
 
-    val (typs, hash_typ') = mk_tab I
-    fun hash_typ t = hash_typ' (case t of
+    val (typs, hash_typ') = TypTab.mk_tab_rec EInt
+    fun hash_typ t = hash_typ' (fn
         Type(s, tys) => EVariant("T", [hash_string s, EList (map hash_typ tys)])
       | TFree(x, s) => EVariant("F", [hash_string x, hash_sort s])
-      | TVar(i, s) => EVariant("V", [hash_indexname i, hash_sort s]))
+      | TVar(i, s) => EVariant("V", [hash_indexname i, hash_sort s])) t
 
-    val (terms, hash_term') = mk_tab I
-    fun hash_term t = hash_term' (case t of
+    val (terms, hash_term') = TermTab.mk_tab_rec EInt
+    fun hash_term t = hash_term' (fn
         Const(c, ty) => EVariant("C", [hash_string c, hash_typ ty])
       | Free(x, ty) => EVariant("F", [hash_string x, hash_typ ty])
       | Var(x, ty) => EVariant("V", [hash_indexname x, hash_typ ty])
       | Bound(i) => EVariant("B", [EInt i])
       | Abs(x, ty, e) => EVariant("L", [hash_string x, hash_typ ty, hash_term e])
-      | e1 $ e2 => EVariant("A", [hash_term e1, hash_term e2]))
+      | e1 $ e2 => EVariant("A", [hash_term e1, hash_term e2])) t
 
     fun enc_names s = EList (map (fn (s, _) => hash_string s) (Names.dest s))
 

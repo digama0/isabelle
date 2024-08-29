@@ -426,6 +426,9 @@ option prune_proofs : bool = false for content
 option prooftrace_enabled : bool = false for content
   -- "enable prooftrace module"
 
+option prooftrace_out : bool = true for content
+  -- "export prooftrace values (requires prooftrace_enabled)"
+
 
 section "Theory update"
 
