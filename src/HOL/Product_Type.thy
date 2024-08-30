@@ -293,6 +293,10 @@ syntax
   ""            :: "pttrn \<Rightarrow> patterns"                  ("_")
   "_patterns"   :: "pttrn \<Rightarrow> patterns \<Rightarrow> patterns"      ("_,/ _")
   "_unit"       :: pttrn                                ("'(')")
+syntax_consts
+  "_tuple" "_tuple_arg" "_tuple_args" \<rightleftharpoons> Pair and
+  "_pattern" "_patterns" \<rightleftharpoons> case_prod and
+  "_unit" \<rightleftharpoons> case_unit
 translations
   "(x, y)" \<rightleftharpoons> "CONST Pair x y"
   "_pattern x y" \<rightleftharpoons> "CONST Pair x y"
@@ -492,7 +496,7 @@ ML \<open>
       simpset_of
        (put_simpset HOL_basic_ss \<^context>
         addsimps [@{thm split_paired_all}, @{thm unit_all_eq2}, @{thm unit_abs_eta_conv}]
-        addsimprocs [\<^simproc>\<open>unit_eq\<close>]);
+        |> Simplifier.add_proc \<^simproc>\<open>unit_eq\<close>);
   in
     fun split_all_tac ctxt = SUBGOAL (fn (t, i) =>
       if exists_paired_all t then safe_full_simp_tac (put_simpset ss ctxt) i else no_tac);
@@ -1010,6 +1014,8 @@ end
 
 syntax
   "_Sigma" :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b set \<Rightarrow> ('a \<times> 'b) set"  ("(3SIGMA _:_./ _)" [0, 0, 10] 10)
+syntax_consts
+  "_Sigma" \<rightleftharpoons> Sigma
 translations
   "SIGMA x:A. B" \<rightleftharpoons> "CONST Sigma A (\<lambda>x. B)"
 
@@ -1313,7 +1319,7 @@ ML_file \<open>Tools/set_comprehension_pointfree.ML\<close>
 simproc_setup passive set_comprehension ("Collect P") =
   \<open>K Set_Comprehension_Pointfree.code_proc\<close>
 
-setup \<open>Code_Preproc.map_pre (fn ctxt => ctxt addsimprocs [\<^simproc>\<open>set_comprehension\<close>])\<close>
+setup \<open>Code_Preproc.map_pre (Simplifier.add_proc \<^simproc>\<open>set_comprehension\<close>)\<close>
 
 
 subsection \<open>Lemmas about disjointness\<close>
@@ -1334,22 +1340,22 @@ subsection \<open>Inductively defined sets\<close>
 simproc_setup Collect_mem ("Collect t") = \<open>
   K (fn ctxt => fn ct =>
     (case Thm.term_of ct of
-      S as Const (\<^const_name>\<open>Collect\<close>, Type (\<^type_name>\<open>fun\<close>, [_, T])) $ t =>
+      S as \<^Const_>\<open>Collect A for t\<close> =>
         let val (u, _, ps) = HOLogic.strip_ptupleabs t in
           (case u of
-            (c as Const (\<^const_name>\<open>Set.member\<close>, _)) $ q $ S' =>
+            (c as \<^Const_>\<open>Set.member _ for q S'\<close>) =>
               (case try (HOLogic.strip_ptuple ps) q of
                 NONE => NONE
               | SOME ts =>
                   if not (Term.is_open S') andalso
                     ts = map Bound (length ps downto 0)
                   then
-                    let val simp =
-                      full_simp_tac (put_simpset HOL_basic_ss ctxt
-                        addsimps [@{thm split_paired_all}, @{thm case_prod_conv}]) 1
+                    let
+                      val simp =
+                        full_simp_tac (put_simpset HOL_basic_ss ctxt
+                          addsimps [@{thm split_paired_all}, @{thm case_prod_conv}]) 1
                     in
-                      SOME (Goal.prove ctxt [] []
-                        (Const (\<^const_name>\<open>Pure.eq\<close>, T --> T --> propT) $ S $ S')
+                      SOME (Goal.prove ctxt [] [] \<^Const>\<open>Pure.eq \<^Type>\<open>set A\<close> for S S'\<close>
                         (K (EVERY
                           [resolve_tac ctxt [eq_reflection] 1,
                            resolve_tac ctxt @{thms subset_antisym} 1,

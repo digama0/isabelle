@@ -176,7 +176,7 @@ fun all_friend_extras_of ctxt =
 
 fun coinduct_extras_of_generic context =
   corec_infos_of_generic context
-  #> map (#corecUU #> dest_Const #> fst #> Symtab.lookup (#2 (Data.get context)) #> the
+  #> map (#corecUU #> dest_Const_name #> Symtab.lookup (#2 (Data.get context)) #> the
     #> transfer_coinduct_extra (Context.theory_of context));
 
 fun get_coinduct_uptos fpT_name context =
@@ -332,7 +332,7 @@ fun derive_code ctxt inner_fp_simps goal
 
     val fp_map_ident = map_ident_of_bnf fp_bnf;
     val fpsig_nesting_bnfs = fp_nesting_bnfs @ maps #live_nesting_bnfs sig_fp_sugars;
-    val fpsig_nesting_T_names = map (fst o dest_Type o T_of_bnf) fpsig_nesting_bnfs;
+    val fpsig_nesting_T_names = map (dest_Type_name o T_of_bnf) fpsig_nesting_bnfs;
     val fpsig_nesting_fp_sugars = map_filter (fp_sugar_of ctxt) fpsig_nesting_T_names;
     val fpsig_nesting_fp_bnf_sugars = map #fp_bnf_sugar fpsig_nesting_fp_sugars;
     val ssig_fp_bnf_sugar = #fp_bnf_sugar ssig_fp_sugar;
@@ -373,7 +373,7 @@ fun derive_unique ctxt phi code_goal
 
     val fp_map_ident = map_ident_of_bnf fp_bnf;
     val fpsig_nesting_bnfs = fp_nesting_bnfs @ maps #live_nesting_bnfs sig_fp_sugars;
-    val fpsig_nesting_T_names = map (fst o dest_Type o T_of_bnf) fpsig_nesting_bnfs;
+    val fpsig_nesting_T_names = map (dest_Type_name o T_of_bnf) fpsig_nesting_bnfs;
     val fpsig_nesting_fp_sugars = map_filter (fp_sugar_of ctxt) fpsig_nesting_T_names;
     val fpsig_nesting_fp_bnf_sugars = map #fp_bnf_sugar fpsig_nesting_fp_sugars;
     val ssig_fp_bnf_sugar = #fp_bnf_sugar ssig_fp_sugar;
@@ -492,7 +492,7 @@ fun derive_eq_algrho ctxt {sig_fp_sugars, ssig_fp_sugar, eval, eval_simps, all_a
 
     val fp_map_ident = map_ident_of_bnf fp_bnf;
     val fpsig_nesting_bnfs = fp_nesting_bnfs @ maps #live_nesting_bnfs sig_fp_sugars;
-    val fpsig_nesting_T_names = map (fst o dest_Type o T_of_bnf) fpsig_nesting_bnfs;
+    val fpsig_nesting_T_names = map (dest_Type_name o T_of_bnf) fpsig_nesting_bnfs;
     val fpsig_nesting_fp_sugars = map_filter (fp_sugar_of ctxt) fpsig_nesting_T_names;
     val fpsig_nesting_fp_bnf_sugars = map #fp_bnf_sugar fpsig_nesting_fp_sugars;
     val ssig_fp_bnf_sugar = #fp_bnf_sugar ssig_fp_sugar;
@@ -628,7 +628,7 @@ fun derive_cong_friend_intro ctxt cong_algrho_intro =
     val fpT as Type (_, fp_argTs) = range_type (fastype_of algrho);
 
     fun has_algrho (\<^Const_>\<open>Trueprop\<close> $ (Const (\<^const_name>\<open>HOL.eq\<close>, _) $ _ $ rhs)) =
-      fst (dest_Const (head_of (strip_abs_body rhs))) = algrho_name;
+      dest_Const_name (head_of (strip_abs_body rhs)) = algrho_name;
 
     val eq_algrho :: _ =
       maps (filter (has_algrho o Thm.prop_of) o #eq_algrhos o snd) (all_friend_extras_of ctxt);
@@ -955,7 +955,7 @@ fun find_all_associated_types [] _ = []
   | find_all_associated_types ((T1, T2) :: TTs) T =
     find_all_associated_types TTs T |> T1 = T ? cons T2;
 
-fun as_member_of tab = try dest_Const #> Option.mapPartial (fst #> Symtab.lookup tab);
+fun as_member_of tab = try dest_Const_name #> Option.mapPartial (Symtab.lookup tab);
 
 fun extract_rho_from_equation
     ({ctr_guards, inner_buffer = {Oper, VLeaf, CLeaf, ctr_wrapper, friends}, ...},
@@ -986,7 +986,7 @@ fun extract_rho_from_equation
 
     fun has_res_T bound_Ts t = fastype_of1 (bound_Ts, t) = res_T;
 
-    fun contains_res_T (Type (s, Ts)) = s = fst (dest_Type res_T) orelse exists contains_res_T Ts
+    fun contains_res_T (Type (s, Ts)) = s = dest_Type_name res_T orelse exists contains_res_T Ts
       | contains_res_T _ = false;
 
     val res_T_lhs_args = filter (exists_type contains_res_T) lhs_args;
@@ -997,9 +997,6 @@ fun extract_rho_from_equation
     fun is_nested_type T = T <> res_T andalso T <> YpreT andalso T <> ssig_T;
 
     val is_valid_case_argumentT = not o member (op =) [Y, ssig_T];
-
-    fun is_same_type_constr (Type (s, _)) (Type (s', _)) = (s = s')
-      | is_same_type_constr _ _ = false;
 
     exception NO_ENCAPSULATION of unit;
 
@@ -1028,8 +1025,7 @@ fun extract_rho_from_equation
 
         val deadfixed_T =
           build_map lthy [] [] (mk_undefined o op -->) (apply2 tupleT_of_funT (param1_T, param2_T))
-          |> singleton (Type_Infer_Context.infer_types lthy)
-          |> singleton (Type_Infer.fixate lthy false)
+          |> singleton (Type_Infer_Context.infer_types_finished lthy)
           |> type_of
           |> dest_funT
           |-> generalize_types 1
@@ -1065,7 +1061,7 @@ fun extract_rho_from_equation
         CLeaf $ t
       else if T = YpreT then
         it $ t
-      else if is_nested_type T andalso is_same_type_constr T U then
+      else if is_nested_type T andalso eq_Type_name (T, U) then
         explore_nested lthy encapsulate params t
       else
         raise NO_ENCAPSULATION ();
@@ -1217,7 +1213,7 @@ fun extract_rho_from_equation
         ((fun_t, arg :: []), true) =>
         let val arg_T = fastype_of1 (bound_Ts, arg) in
           if arg_T <> res_T then
-            (case arg_T |> try (fst o dest_Type) |> Option.mapPartial (ctr_sugar_of lthy) of
+            (case arg_T |> try dest_Type_name |> Option.mapPartial (ctr_sugar_of lthy) of
               SOME {discs, T = Type (_, Ts), ...} =>
               (case const_of discs fun_t of
                 SOME disc =>
@@ -1241,7 +1237,7 @@ fun extract_rho_from_equation
           explore params t
         else
           let val T = fastype_of1 (bound_Ts, hd args) in
-            (case (Option.mapPartial (ctr_sugar_of lthy) (try (fst o dest_Type) T), T <> res_T) of
+            (case (Option.mapPartial (ctr_sugar_of lthy) (try dest_Type_name T), T <> res_T) of
               (SOME {selss, T = Type (_, Ts), ...}, true) =>
               (case const_of (flat selss) fun_t of
                 SOME sel =>
@@ -1486,7 +1482,7 @@ fun extract_rho_from_equation
                       error (quote (Syntax.string_of_term lthy (hd obj_leftovers)) ^
                         " is not a valid case argument");
 
-                    val Us = obj_leftoverUs |> hd |> dest_Type |> snd;
+                    val Us = dest_Type_args (hd obj_leftoverUs);
 
                     val branche_binderUss =
                       (if hd obj_leftoverUs = YpreT then mk_case HOLogic.boolT
@@ -1895,7 +1891,7 @@ fun derive_eq_corecUU ctxt {sig_fp_sugars, ssig_fp_sugar, eval, corecUU, eval_si
 
     val fp_map_ident = map_ident_of_bnf fp_bnf;
     val fpsig_nesting_bnfs = fp_nesting_bnfs @ maps #live_nesting_bnfs sig_fp_sugars;
-    val fpsig_nesting_T_names = map (fst o dest_Type o T_of_bnf) fpsig_nesting_bnfs;
+    val fpsig_nesting_T_names = map (dest_Type_name o T_of_bnf) fpsig_nesting_bnfs;
     val fpsig_nesting_fp_sugars = map_filter (fp_sugar_of ctxt) fpsig_nesting_T_names;
     val fpsig_nesting_fp_bnf_sugars = map #fp_bnf_sugar fpsig_nesting_fp_sugars;
     val ssig_fp_bnf_sugar = #fp_bnf_sugar ssig_fp_sugar;

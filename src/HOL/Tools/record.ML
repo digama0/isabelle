@@ -363,6 +363,14 @@ fun make_parent_info name fields extension ext_def induct_scheme : parent_info =
 
 (* theory data *)
 
+type splits = {Pure_all: thm, All: thm, Ex: thm, induct_scheme: thm};
+
+fun eq_splits (arg: splits * splits) =
+  Thm.eq_thm (apply2 #Pure_all arg) andalso
+  Thm.eq_thm (apply2 #All arg) andalso
+  Thm.eq_thm (apply2 #Ex arg) andalso
+  Thm.eq_thm (apply2 #induct_scheme arg);
+
 type data =
  {records: info Symtab.table,
   sel_upd:
@@ -373,7 +381,7 @@ type data =
   equalities: thm Symtab.table,
   extinjects: thm list,
   extsplit: thm Symtab.table,  (*maps extension name to split rule*)
-  splits: (thm * thm * thm * thm) Symtab.table,  (*!!, ALL, EX - split-equalities, induct rule*)
+  splits: splits Symtab.table,  (*\<And>/\<forall>/\<exists>-split-equalities, induct rule*)
   extfields: (string * typ) list Symtab.table,  (*maps extension to its fields*)
   fieldext: (string * typ list) Symtab.table};  (*maps field to its extension*)
 
@@ -417,9 +425,7 @@ structure Data = Theory_Data
       (Symtab.merge Thm.eq_thm_prop (equalities1, equalities2))
       (Thm.merge_thms (extinjects1, extinjects2))
       (Symtab.merge Thm.eq_thm_prop (extsplit1, extsplit2))
-      (Symtab.merge (fn ((a, b, c, d), (w, x, y, z)) =>
-          Thm.eq_thm (a, w) andalso Thm.eq_thm (b, x) andalso
-          Thm.eq_thm (c, y) andalso Thm.eq_thm (d, z)) (splits1, splits2))
+      (Symtab.merge eq_splits (splits1, splits2))
       (Symtab.merge (K true) (extfields1, extfields2))
       (Symtab.merge (K true) (fieldext1, fieldext2));
 );
@@ -989,24 +995,23 @@ fun get_updupd_simp ctxt defset u u' comp =
 
 fun gen_get_updupd_simps ctxt upd_funs defset =
   let
-    val cname = fst o dest_Const;
-    fun getswap u u' = get_updupd_simp ctxt defset u u' (cname u = cname u');
+    fun getswap u u' = get_updupd_simp ctxt defset u u' (dest_Const_name u = dest_Const_name u');
     fun build_swaps_to_eq _ [] swaps = swaps
       | build_swaps_to_eq upd (u :: us) swaps =
           let
-            val key = (cname u, cname upd);
+            val key = (dest_Const_name u, dest_Const_name upd);
             val newswaps =
               if Symreltab.defined swaps key then swaps
               else Symreltab.insert (K true) (key, getswap u upd) swaps;
           in
-            if cname u = cname upd then newswaps
+            if dest_Const_name u = dest_Const_name upd then newswaps
             else build_swaps_to_eq upd us newswaps
           end;
     fun swaps_needed [] _ _ swaps = map snd (Symreltab.dest swaps)
       | swaps_needed (u :: us) prev seen swaps =
-          if Symtab.defined seen (cname u)
+          if Symtab.defined seen (dest_Const_name u)
           then swaps_needed us prev seen (build_swaps_to_eq u prev swaps)
-          else swaps_needed us (u :: prev) (Symtab.insert (K true) (cname u, ()) seen) swaps;
+          else swaps_needed us (u :: prev) (Symtab.insert (K true) (dest_Const_name u, ()) seen) swaps;
   in swaps_needed upd_funs [] Symtab.empty Symreltab.empty end;
 
 fun get_updupd_simps ctxt term defset = gen_get_updupd_simps ctxt (get_upd_funs term) defset;
@@ -1238,9 +1243,8 @@ fun upd_proc ctxt ct =
             val (fvar, skelf) =
               K_skeleton (Long_Name.base_name s) (domain_type T) (Bound (length vars)) f;
             val (isnoop, skelf') = is_upd_noop s f term;
-            val funT = domain_type T;
-            fun mk_comp_local (f, f') =
-              Const (\<^const_name>\<open>Fun.comp\<close>, funT --> funT --> funT) $ f $ f';
+            val \<^Type>\<open>fun \<^Type>\<open>fun A _\<close> _\<close> = T;
+            fun mk_comp_local (f, f') = \<^Const>\<open>Fun.comp A A A for f f'\<close>;
           in
             if isnoop then
               ((upd $ skelf', i)::lhs_upds, rhs, vars,
@@ -1324,32 +1328,28 @@ val eq_simproc = \<^simproc_setup>\<open>eq ("r = s") = \<open>K eq_proc\<close>
 fun split_simproc P =
   Simplifier.make_simproc \<^context>
    {name = "record_split",
+    kind = Simproc,
     lhss = [\<^term>\<open>x::'a::{}\<close>],
     proc = fn _ => fn ctxt => fn ct =>
-      (case Thm.term_of ct of
-        Const (quantifier, Type (_, [Type (_, [T, _]), _])) $ _ =>
-          if quantifier = \<^const_name>\<open>Pure.all\<close> orelse
-            quantifier = \<^const_name>\<open>All\<close> orelse
-            quantifier = \<^const_name>\<open>Ex\<close>
-          then
-            (case rec_id ~1 T of
-              "" => NONE
-            | _ =>
-                let val split = P (Thm.term_of ct) in
-                  if split <> 0 then
-                    (case get_splits (Proof_Context.theory_of ctxt) (rec_id split T) of
-                      NONE => NONE
-                    | SOME (all_thm, All_thm, Ex_thm, _) =>
-                        SOME
-                          (case quantifier of
-                            \<^const_name>\<open>Pure.all\<close> => all_thm
-                          | \<^const_name>\<open>All\<close> => All_thm RS @{thm eq_reflection}
-                          | \<^const_name>\<open>Ex\<close> => Ex_thm RS @{thm eq_reflection}
-                          | _ => raise Fail "split_simproc"))
-                  else NONE
-                end)
-          else NONE
-      | _ => NONE),
+      let
+        fun quantifier T which =
+          (case rec_id ~1 T of
+            "" => NONE
+          | _ =>
+              let val split = P (Thm.term_of ct) in
+                if split <> 0 then
+                  (case get_splits (Proof_Context.theory_of ctxt) (rec_id split T) of
+                    NONE => NONE
+                  | SOME thms => SOME (which thms))
+                else NONE
+              end)
+      in
+        (case Thm.term_of ct of
+          \<^Const_>\<open>Pure.all T for _\<close> => quantifier T #Pure_all
+        | \<^Const_>\<open>All T for _\<close> => quantifier T #All
+        | \<^Const_>\<open>Ex T for _\<close> => quantifier T #Ex
+        | _ => NONE)
+      end,
     identifier = []};
 
 fun ex_sel_eq_proc ctxt ct =
@@ -1385,7 +1385,8 @@ fun ex_sel_eq_proc ctxt ct =
           SOME (Goal.prove_sorry_global thy [] [] prop
             (fn {context = ctxt', ...} =>
               simp_tac (put_simpset (get_simpset thy) ctxt'
-                addsimps @{thms simp_thms} addsimprocs [split_simproc (K ~1)]) 1))
+                addsimps @{thms simp_thms}
+                |> Simplifier.add_proc (split_simproc (K ~1))) 1))
         end handle TERM _ => NONE)
     | _ => NONE)
   end;
@@ -1409,11 +1410,12 @@ fun split_simp_tac ctxt thms P = CSUBGOAL (fn (cgoal, i) =>
     val goal = Thm.term_of cgoal;
     val frees = filter (is_recT o #2) (Term.add_frees goal []);
 
-    val has_rec = exists_Const
-      (fn (s, Type (_, [Type (_, [T, _]), _])) =>
-          (s = \<^const_name>\<open>Pure.all\<close> orelse s = \<^const_name>\<open>All\<close> orelse s = \<^const_name>\<open>Ex\<close>)
-            andalso is_recT T
-        | _ => false);
+    val has_rec =
+      exists_subterm
+        (fn \<^Const_>\<open>Pure.all T\<close> => is_recT T
+          | \<^Const_>\<open>All T\<close> => is_recT T
+          | \<^Const_>\<open>Ex T\<close> => is_recT T
+          | _ => false);
 
     fun mk_split_free_tac free induct_thm i =
       let
@@ -1437,16 +1439,15 @@ fun split_simp_tac ctxt thms P = CSUBGOAL (fn (cgoal, i) =>
               if split <> 0 then
                 (case get_splits thy (rec_id split T) of
                   NONE => NONE
-                | SOME (_, _, _, induct_thm) =>
-                    SOME (mk_split_free_tac free induct_thm i))
+                | SOME thms => SOME (mk_split_free_tac free (#induct_scheme thms) i))
               else NONE
             end));
 
-    val simprocs = if has_rec goal then [split_simproc P] else [];
+    val add_simproc = if has_rec goal then Simplifier.add_proc (split_simproc P) else I;
     val thms' = @{thms o_apply K_record_comp} @ thms;
   in
     EVERY split_frees_tacs THEN
-    full_simp_tac (put_simpset (get_simpset thy) ctxt addsimps thms' addsimprocs simprocs) i
+    full_simp_tac (put_simpset (get_simpset thy) ctxt addsimps thms' |> add_simproc) i
   end);
 
 
@@ -1457,17 +1458,18 @@ fun split_tac ctxt = CSUBGOAL (fn (cgoal, i) =>
   let
     val goal = Thm.term_of cgoal;
 
-    val has_rec = exists_Const
-      (fn (s, Type (_, [Type (_, [T, _]), _])) =>
-          (s = \<^const_name>\<open>Pure.all\<close> orelse s = \<^const_name>\<open>All\<close>) andalso is_recT T
-        | _ => false);
+    val has_rec =
+      exists_subterm
+        (fn \<^Const_>\<open>Pure.all T\<close> => is_recT T
+          | \<^Const_>\<open>All T\<close> => is_recT T
+          | _ => false);
 
-    fun is_all (Const (\<^const_name>\<open>Pure.all\<close>, _) $ _) = ~1
-      | is_all (Const (\<^const_name>\<open>All\<close>, _) $ _) = ~1
+    fun is_all \<^Const_>\<open>Pure.all _ for _\<close> = ~1
+      | is_all \<^Const_>\<open>All _ for _\<close> = ~1
       | is_all _ = 0;
   in
     if has_rec goal then
-      full_simp_tac (put_simpset HOL_basic_ss ctxt addsimprocs [split_simproc is_all]) i
+      full_simp_tac (put_simpset HOL_basic_ss ctxt |> Simplifier.add_proc (split_simproc is_all)) i
     else no_tac
   end);
 
@@ -2271,7 +2273,11 @@ fun definition overloaded (alphas, binding) parent (parents: parent_info list) r
       |> add_equalities extension_id equality'
       |> add_extinjects ext_inject
       |> add_extsplit extension_name ext_split
-      |> add_splits extension_id (split_meta', split_object', split_ex', induct_scheme')
+      |> add_splits extension_id
+          {Pure_all = split_meta',
+           All = split_object' RS @{thm eq_reflection},
+           Ex = split_ex' RS @{thm eq_reflection},
+           induct_scheme = induct_scheme'}
       |> add_extfields extension_name (fields @ [(full_moreN, moreT)])
       |> add_fieldext (extension_name, snd extension) names
       |> add_code ext_tyco vs extT ext simps' ext_inject

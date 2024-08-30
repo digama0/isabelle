@@ -36,7 +36,7 @@ fun mk_Domainp P =
     Const (\<^const_name>\<open>Domainp\<close>, PT --> argT --> HOLogic.boolT) $ P
   end
 
-fun type_name_of_bnf bnf = T_of_bnf bnf |> dest_Type |> fst
+fun type_name_of_bnf bnf = dest_Type_name (T_of_bnf bnf)
 
 fun bnf_only_type_ctr f bnf = if is_Type (T_of_bnf bnf) then f bnf else I
 
@@ -70,7 +70,7 @@ fun generate_relation_constraint_goal ctxt bnf constraint_def =
   let
     val constr_name =
       constraint_def |> Thm.prop_of |> HOLogic.dest_Trueprop |> fst o HOLogic.dest_eq
-      |> head_of |> fst o dest_Const
+      |> head_of |> dest_Const_name
     val live = live_of_bnf bnf
     val (((As, Bs), Ds), ctxt') = ctxt
       |> mk_TFrees live

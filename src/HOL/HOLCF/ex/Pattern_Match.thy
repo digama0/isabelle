@@ -422,7 +422,7 @@ fun get_vars_avoiding
     : (term list * term list) =
   let
     val Ts = map snd args;
-    val ns = Name.variant_list taken (Old_Datatype_Prop.make_tnames Ts);
+    val ns = Name.variant_list taken (Case_Translation.make_tnames Ts);
     val vs = map Free (ns ~~ Ts);
     val nonlazy = map snd (filter_out (fst o fst) (args ~~ vs));
   in
@@ -461,7 +461,7 @@ fun add_pattern_combinators
 
     (* define pattern combinators *)
     local
-      val tns = map (fst o dest_TFree) (snd (dest_Type lhsT));
+      val tns = map (fst o dest_TFree) (dest_Type_args lhsT);
 
       fun pat_eqn (i, (bind, (con, args))) : binding * term * mixfix =
         let
@@ -469,10 +469,10 @@ fun add_pattern_combinators
           val Ts = map snd args;
           val Vs =
               (map (K "'t") args)
-              |> Old_Datatype_Prop.indexify_names
+              |> Case_Translation.indexify_names
               |> Name.variant_list tns
               |> map (fn t => TFree (t, \<^sort>\<open>pcpo\<close>));
-          val patNs = Old_Datatype_Prop.indexify_names (map (K "pat") args);
+          val patNs = Case_Translation.indexify_names (map (K "pat") args);
           val patTs = map2 (fn T => fn V => T ->> mk_matchT V) Ts Vs;
           val pats = map Free (patNs ~~ patTs);
           val fail = mk_fail (mk_tupleT Vs);
@@ -494,7 +494,7 @@ fun add_pattern_combinators
 
     (* syntax translations for pattern combinators *)
     local
-      fun syntax c = Lexicon.mark_const (fst (dest_Const c));
+      fun syntax c = Lexicon.mark_const (dest_Const_name c);
       fun app s (l, r) = Ast.mk_appl (Ast.Constant s) [l, r];
       val capp = app \<^const_syntax>\<open>Rep_cfun\<close>;
       val capps = Library.foldl capp
@@ -527,7 +527,7 @@ fun add_pattern_combinators
 
     (* prove strictness and reduction rules of pattern combinators *)
     local
-      val tns = map (fst o dest_TFree) (snd (dest_Type lhsT));
+      val tns = map (fst o dest_TFree) (dest_Type_args lhsT);
       val rn = singleton (Name.variant_list tns) "'r";
       val R = TFree (rn, \<^sort>\<open>pcpo\<close>);
       fun pat_lhs (pat, args) =
@@ -535,10 +535,10 @@ fun add_pattern_combinators
           val Ts = map snd args;
           val Vs =
               (map (K "'t") args)
-              |> Old_Datatype_Prop.indexify_names
+              |> Case_Translation.indexify_names
               |> Name.variant_list (rn::tns)
               |> map (fn t => TFree (t, \<^sort>\<open>pcpo\<close>));
-          val patNs = Old_Datatype_Prop.indexify_names (map (K "pat") args);
+          val patNs = Case_Translation.indexify_names (map (K "pat") args);
           val patTs = map2 (fn T => fn V => T ->> mk_matchT V) Ts Vs;
           val pats = map Free (patNs ~~ patTs);
           val k = Free ("rhs", mk_tupleT Vs ->> R);

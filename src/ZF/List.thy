@@ -13,16 +13,18 @@ consts
 datatype
   "list(A)" = Nil | Cons ("a \<in> A", "l \<in> list(A)")
 
+notation Nil (\<open>[]\<close>)
 
+nonterminal list_args
 syntax
- "_Nil" :: i  (\<open>[]\<close>)
- "_List" :: "is \<Rightarrow> i"  (\<open>[(_)]\<close>)
-
+  "" :: "i \<Rightarrow> list_args"  (\<open>_\<close>)
+  "_List_args" :: "[i, list_args] \<Rightarrow> list_args"  (\<open>_,/ _\<close>)
+  "_List" :: "list_args \<Rightarrow> i"  (\<open>[(_)]\<close>)
+syntax_consts
+  "_List_args" "_List" \<rightleftharpoons> Cons
 translations
   "[x, xs]"     == "CONST Cons(x, [xs])"
   "[x]"         == "CONST Cons(x, [])"
-  "[]"          == "CONST Nil"
-
 
 consts
   length :: "i\<Rightarrow>i"

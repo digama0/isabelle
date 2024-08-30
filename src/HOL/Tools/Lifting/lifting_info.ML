@@ -184,7 +184,7 @@ fun add_quot_map rel_quot_thm context =
     val _ = Context.cases (K ()) (quot_map_thm_sanity_check rel_quot_thm) context
     val rel_quot_thm_concl = Logic.strip_imp_concl (Thm.prop_of rel_quot_thm)
     val (_, abs, _, _) = dest_Quotient (HOLogic.dest_Trueprop rel_quot_thm_concl)
-    val relatorT_name = fst (dest_Type (fst (dest_funT (fastype_of abs))))
+    val relatorT_name = dest_Type_name (fst (dest_funT (fastype_of abs)))
     val minfo = {rel_quot_thm = Thm.trim_context rel_quot_thm}
   in (Data.map o map_quot_maps) (Symtab.update (relatorT_name, minfo)) context end
 
@@ -223,7 +223,7 @@ fun lookup_quotients ctxt type_name =
 fun lookup_quot_thm_quotients ctxt quot_thm =
   let
     val (_, qtyp) = quot_thm_rty_qty quot_thm
-    val qty_full_name = fst (dest_Type qtyp)
+    val qty_full_name = dest_Type_name qtyp
     fun compare_data (data:quotient) = Thm.eq_thm_prop (#quot_thm data, quot_thm)
   in
     case lookup_quotients ctxt qty_full_name of
@@ -238,7 +238,7 @@ fun update_quotients type_name qinfo context =
 fun delete_quotients quot_thm context =
   let
     val (_, qtyp) = quot_thm_rty_qty quot_thm
-    val qty_full_name = fst (dest_Type qtyp)
+    val qty_full_name = dest_Type_name qtyp
   in
     if is_some (lookup_quot_thm_quotients (Context.proof_of context) quot_thm)
     then (Data.map o map_quotients) (Symtab.delete qty_full_name) context
@@ -391,8 +391,8 @@ fun add_mono_rule mono_rule context =
   let
     val pol_mono_rule = introduce_polarities mono_rule
     val mono_ruleT_name =
-      fst (dest_Type (fst (relation_types (fst (relation_types
-        (snd (dest_Const (head_of (HOLogic.dest_Trueprop (Thm.concl_of pol_mono_rule))))))))))
+      dest_Type_name (fst (relation_types (fst (relation_types
+        (dest_Const_type (head_of (HOLogic.dest_Trueprop (Thm.concl_of pol_mono_rule))))))))
   in
     if Symtab.defined (get_relator_distr_data' context) mono_ruleT_name
     then
@@ -418,8 +418,8 @@ local
   fun add_distr_rule update_entry distr_rule context =
     let
       val distr_ruleT_name =
-        fst (dest_Type (fst (relation_types (fst (relation_types
-          (snd (dest_Const (head_of (HOLogic.dest_Trueprop (Thm.concl_of distr_rule))))))))))
+        dest_Type_name (fst (relation_types (fst (relation_types
+          (dest_Const_type (head_of (HOLogic.dest_Trueprop (Thm.concl_of distr_rule))))))))
     in
       if Symtab.defined (get_relator_distr_data' context) distr_ruleT_name then
         (Data.map o map_relator_distr_data)
@@ -478,12 +478,9 @@ local
       val concl = perhaps (try HOLogic.dest_Trueprop) (Thm.concl_of rule);
       val (lhs, rhs) =
         (case concl of
-          Const (\<^const_name>\<open>less_eq\<close>, _) $ (lhs as Const (\<^const_name>\<open>relcompp\<close>,_) $ _ $ _) $ rhs =>
-            (lhs, rhs)
-        | Const (\<^const_name>\<open>less_eq\<close>, _) $ rhs $ (lhs as Const (\<^const_name>\<open>relcompp\<close>,_) $ _ $ _) =>
-            (lhs, rhs)
-        | Const (\<^const_name>\<open>HOL.eq\<close>, _) $ (lhs as Const (\<^const_name>\<open>relcompp\<close>,_) $ _ $ _) $ rhs =>
-            (lhs, rhs)
+          \<^Const_>\<open>less_eq _ for \<open>lhs as \<^Const_>\<open>relcompp _ _ _ for _ _\<close>\<close> rhs\<close> => (lhs, rhs)
+        | \<^Const_>\<open>less_eq _ for rhs \<open>lhs as \<^Const_>\<open>relcompp _ _ _ for _ _\<close>\<close>\<close> => (lhs, rhs)
+        | \<^Const_>\<open>HOL.eq _ for \<open>lhs as \<^Const_>\<open>relcompp _ _ _ for _ _\<close>\<close> rhs\<close> => (lhs, rhs)
         | _ => error "The rule has a wrong format.")
 
       val lhs_vars = Term.add_vars lhs []
@@ -501,10 +498,9 @@ local
       val rhs_args = (snd o strip_comb) rhs;
       fun check_comp t =
         (case t of
-          Const (\<^const_name>\<open>relcompp\<close>, _) $ Var _ $ Var _ => ()
+          \<^Const_>\<open>relcompp _ _ _ for \<open>Var _\<close> \<open>Var _\<close>\<close> => ()
         | _ => error "There is an argument on the rhs that is not a composition.")
-      val _ = map check_comp rhs_args
-    in () end
+    in List.app check_comp rhs_args end
 in
 
   fun add_distr_rule distr_rule context =
@@ -513,11 +509,11 @@ in
       val concl = perhaps (try HOLogic.dest_Trueprop) (Thm.concl_of distr_rule)
     in
       (case concl of
-        Const (\<^const_name>\<open>less_eq\<close>, _) $ (Const (\<^const_name>\<open>relcompp\<close>,_) $ _ $ _) $ _ =>
+        \<^Const_>\<open>less_eq _ for \<^Const_>\<open>relcompp _ _ _ for _ _\<close> _\<close> =>
           add_pos_distr_rule distr_rule context
-      | Const (\<^const_name>\<open>less_eq\<close>, _) $ _ $ (Const (\<^const_name>\<open>relcompp\<close>,_) $ _ $ _) =>
+      | \<^Const_>\<open>less_eq _ for _ \<^Const_>\<open>relcompp _ _ _ for _ _\<close>\<close> =>
           add_neg_distr_rule distr_rule context
-      | Const (\<^const_name>\<open>HOL.eq\<close>, _) $ (Const (\<^const_name>\<open>relcompp\<close>,_) $ _ $ _) $ _ =>
+      | \<^Const_>\<open>HOL.eq _ for \<^Const_>\<open>relcompp _ _ _ for _ _\<close> _\<close> =>
           add_eq_distr_rule distr_rule context)
     end
 end

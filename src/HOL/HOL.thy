@@ -129,6 +129,9 @@ subsubsection \<open>Additional concrete syntax\<close>
 
 syntax (ASCII) "_Uniq" :: "pttrn \<Rightarrow> bool \<Rightarrow> bool"  ("(4?< _./ _)" [0, 10] 10)
 syntax "_Uniq" :: "pttrn \<Rightarrow> bool \<Rightarrow> bool"  ("(2\<exists>\<^sub>\<le>\<^sub>1 _./ _)" [0, 10] 10)
+
+syntax_consts "_Uniq" \<rightleftharpoons> Uniq
+
 translations "\<exists>\<^sub>\<le>\<^sub>1x. P" \<rightleftharpoons> "CONST Uniq (\<lambda>x. P)"
 
 print_translation \<open>
@@ -141,6 +144,9 @@ syntax (ASCII)
 syntax (input)
   "_Ex1" :: "pttrn \<Rightarrow> bool \<Rightarrow> bool"  ("(3?! _./ _)" [0, 10] 10)
 syntax "_Ex1" :: "pttrn \<Rightarrow> bool \<Rightarrow> bool"  ("(3\<exists>!_./ _)" [0, 10] 10)
+
+syntax_consts "_Ex1" \<rightleftharpoons> Ex1
+
 translations "\<exists>!x. P" \<rightleftharpoons> "CONST Ex1 (\<lambda>x. P)"
 
 print_translation \<open>
@@ -151,6 +157,9 @@ print_translation \<open>
 syntax
   "_Not_Ex" :: "idts \<Rightarrow> bool \<Rightarrow> bool"  ("(3\<nexists>_./ _)" [0, 10] 10)
   "_Not_Ex1" :: "pttrn \<Rightarrow> bool \<Rightarrow> bool"  ("(3\<nexists>!_./ _)" [0, 10] 10)
+syntax_consts
+  "_Not_Ex" \<rightleftharpoons> Ex and
+  "_Not_Ex1" \<rightleftharpoons> Ex1
 translations
   "\<nexists>x. P" \<rightleftharpoons> "\<not> (\<exists>x. P)"
   "\<nexists>!x. P" \<rightleftharpoons> "\<not> (\<exists>!x. P)"
@@ -171,19 +180,13 @@ abbreviation (iff)
   where "A \<longleftrightarrow> B \<equiv> A = B"
 
 syntax "_The" :: "[pttrn, bool] \<Rightarrow> 'a"  ("(3THE _./ _)" [0, 10] 10)
+syntax_consts "_The" \<rightleftharpoons> The
 translations "THE x. P" \<rightleftharpoons> "CONST The (\<lambda>x. P)"
 print_translation \<open>
   [(\<^const_syntax>\<open>The\<close>, fn _ => fn [Abs abs] =>
       let val (x, t) = Syntax_Trans.atomic_abs_tr' abs
       in Syntax.const \<^syntax_const>\<open>_The\<close> $ x $ t end)]
 \<close>  \<comment> \<open>To avoid eta-contraction of body\<close>
-
-nonterminal letbinds and letbind
-syntax
-  "_bind"       :: "[pttrn, 'a] \<Rightarrow> letbind"              ("(2_ =/ _)" 10)
-  ""            :: "letbind \<Rightarrow> letbinds"                 ("_")
-  "_binds"      :: "[letbind, letbinds] \<Rightarrow> letbinds"     ("_;/ _")
-  "_Let"        :: "[letbinds, 'a] \<Rightarrow> 'a"                ("(let (_)/ in (_))" [0, 10] 10)
 
 nonterminal case_syn and cases_syn
 syntax
@@ -227,6 +230,14 @@ definition If :: "bool \<Rightarrow> 'a \<Rightarrow> 'a \<Rightarrow> 'a" ("(if
 definition Let :: "'a \<Rightarrow> ('a \<Rightarrow> 'b) \<Rightarrow> 'b"
   where "Let s f \<equiv> f s"
 
+nonterminal letbinds and letbind
+syntax
+  "_bind"       :: "[pttrn, 'a] \<Rightarrow> letbind"              ("(2_ =/ _)" 10)
+  ""            :: "letbind \<Rightarrow> letbinds"                 ("_")
+  "_binds"      :: "[letbind, letbinds] \<Rightarrow> letbinds"     ("_;/ _")
+  "_Let"        :: "[letbinds, 'a] \<Rightarrow> 'a"                ("(let (_)/ in (_))" [0, 10] 10)
+syntax_consts
+  "_bind" "_binds" "_Let" \<rightleftharpoons> Let
 translations
   "_Let (_binds b bs) e"  \<rightleftharpoons> "_Let b (_Let bs e)"
   "let x = a in e"        \<rightleftharpoons> "CONST Let a (\<lambda>x. e)"
@@ -818,11 +829,11 @@ open Basic_Classical;
 setup \<open>
   (*prevent substitution on bool*)
   let
-    fun non_bool_eq (\<^const_name>\<open>HOL.eq\<close>, Type (_, [T, _])) = T <> \<^typ>\<open>bool\<close>
+    fun non_bool_eq \<^Const_>\<open>HOL.eq T\<close> = T <> \<^Type>\<open>bool\<close>
       | non_bool_eq _ = false;
     fun hyp_subst_tac' ctxt =
       SUBGOAL (fn (goal, i) =>
-        if Term.exists_Const non_bool_eq goal
+        if Term.exists_subterm non_bool_eq goal
         then Hypsubst.hyp_subst_tac ctxt i
         else no_tac);
   in
@@ -1263,7 +1274,7 @@ simproc_setup let_simp ("Let x f") = \<open>
       | count_loose (s $ t) k = count_loose s k + count_loose t k
       | count_loose (Abs (_, _, t)) k = count_loose  t (k + 1)
       | count_loose _ _ = 0;
-    fun is_trivial_let (Const (\<^const_name>\<open>Let\<close>, _) $ x $ t) =
+    fun is_trivial_let \<^Const_>\<open>Let _ _ for x t\<close> =
       (case t of
         Abs (_, _, t') => count_loose t' 0 <= 1
       | _ => true);
@@ -1277,7 +1288,7 @@ simproc_setup let_simp ("Let x f") = \<open>
           val (t', ctxt') = yield_singleton (Variable.import_terms false) t ctxt;
         in
           Option.map (hd o Variable.export ctxt' ctxt o single)
-            (case t' of Const (\<^const_name>\<open>Let\<close>,_) $ x $ f => (* x and f are already in normal form *)
+            (case t' of \<^Const_>\<open>Let _ _ for x f\<close> => (* x and f are already in normal form *)
               if is_Free x orelse is_Bound x orelse is_Const x
               then SOME @{thm Let_def}
               else
@@ -1334,25 +1345,27 @@ lemma implies_False_swap:
   "(False \<Longrightarrow> PROP P \<Longrightarrow> PROP Q) \<equiv> (PROP P \<Longrightarrow> False \<Longrightarrow> PROP Q)"
   by (rule swap_prems_eq)
 
-ML \<open>
-fun eliminate_false_implies ct =
+simproc_setup eliminate_false_implies ("False \<Longrightarrow> PROP P") = \<open>
   let
-    val (prems, concl) = Logic.strip_horn (Thm.term_of ct)
-    fun go n =
+    fun conv n =
       if n > 1 then
         Conv.rewr_conv @{thm Pure.swap_prems_eq}
-        then_conv Conv.arg_conv (go (n - 1))
+        then_conv Conv.arg_conv (conv (n - 1))
         then_conv Conv.rewr_conv @{thm HOL.implies_True_equals}
       else
         Conv.rewr_conv @{thm HOL.False_implies_equals}
   in
-    case concl of
-      Const (@{const_name HOL.Trueprop}, _) $ _ => SOME (go (length prems) ct)
-    | _ => NONE
+    fn _ => fn _ => fn ct =>
+      let
+        val t = Thm.term_of ct
+        val n = length (Logic.strip_imp_prems t)
+      in
+        (case Logic.strip_imp_concl t of
+          \<^Const_>\<open>Trueprop for _\<close> => SOME (conv n ct)
+        | _ => NONE)
+      end
   end
 \<close>
-
-simproc_setup eliminate_false_implies ("False \<Longrightarrow> PROP P") = \<open>K (K eliminate_false_implies)\<close>
 
 
 lemma ex_simps:
@@ -1536,7 +1549,7 @@ structure Induct = Induct
   val rulify = @{thms induct_rulify'}
   val rulify_fallback = @{thms induct_rulify_fallback}
   val equal_def = @{thm induct_equal_def}
-  fun dest_def (Const (\<^const_name>\<open>induct_equal\<close>, _) $ t $ u) = SOME (t, u)
+  fun dest_def \<^Const_>\<open>induct_equal _ for t u\<close> = SOME (t, u)
     | dest_def _ = NONE
   fun trivial_tac ctxt = match_tac ctxt @{thms induct_trueI}
 )
@@ -1565,11 +1578,12 @@ simproc_setup passive induct_equal_conj_curry ("induct_conj P Q \<Longrightarrow
       | _ => NONE)\<close>
 
 declaration \<open>
-  K (Induct.map_simpset (fn ss => ss
-      addsimprocs [\<^simproc>\<open>swap_induct_false\<close>, \<^simproc>\<open>induct_equal_conj_curry\<close>]
-    |> Simplifier.set_mksimps (fn ctxt =>
-      Simpdata.mksimps Simpdata.mksimps_pairs ctxt #>
-      map (rewrite_rule ctxt (map Thm.symmetric @{thms induct_rulify_fallback})))))
+  K (Induct.map_simpset
+     (Simplifier.add_proc \<^simproc>\<open>swap_induct_false\<close> #>
+      Simplifier.add_proc \<^simproc>\<open>induct_equal_conj_curry\<close> #>
+      Simplifier.set_mksimps (fn ctxt =>
+        Simpdata.mksimps Simpdata.mksimps_pairs ctxt #>
+        map (rewrite_rule ctxt (map Thm.symmetric @{thms induct_rulify_fallback})))))
 \<close>
 
 text \<open>Pre-simplification of induction and cases rules\<close>
@@ -1937,10 +1951,10 @@ declare eq_equal [code]
 simproc_setup passive equal (HOL.eq) =
   \<open>fn _ => fn _ => fn ct =>
     (case Thm.term_of ct of
-      Const (_, Type (\<^type_name>\<open>fun\<close>, [Type _, _])) => SOME @{thm eq_equal}
+      \<^Const_>\<open>HOL.eq T\<close> => if is_Type T then SOME @{thm eq_equal} else NONE
     | _ => NONE)\<close>
 
-setup \<open>Code_Preproc.map_pre (fn ctxt => ctxt addsimprocs [\<^simproc>\<open>equal\<close>])\<close>
+setup \<open>Code_Preproc.map_pre (Simplifier.add_proc \<^simproc>\<open>equal\<close>)\<close>
 
 
 subsubsection \<open>Generic code generator foundation\<close>
@@ -2153,7 +2167,7 @@ subsection \<open>Legacy tactics and ML bindings\<close>
 ML \<open>
   (* combination of (spec RS spec RS ...(j times) ... spec RS mp) *)
   local
-    fun wrong_prem (Const (\<^const_name>\<open>All\<close>, _) $ Abs (_, _, t)) = wrong_prem t
+    fun wrong_prem \<^Const_>\<open>All _ for \<open>Abs (_, _, t)\<close>\<close> = wrong_prem t
       | wrong_prem (Bound _) = true
       | wrong_prem _ = false;
     val filter_right = filter (not o wrong_prem o HOLogic.dest_Trueprop o hd o Thm.prems_of);

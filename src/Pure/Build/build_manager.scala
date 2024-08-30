@@ -67,6 +67,7 @@ object Build_Manager {
   }
 
   case class User_Build(
+    user: String,
     afp_rev: Option[String] = None,
     prefs: List[Options.Spec] = Nil,
     requirements: Boolean = false,
@@ -127,12 +128,17 @@ object Build_Manager {
   ) extends Build {
     def name: String = uuid.toString
     def kind: String = build_config.name
+    def user: Option[String] = Some(build_config).collect { case build: User_Build => build.user }
     def components: List[Component] = Component.isabelle(isabelle_rev) :: extra_components
     def extra_components: List[Component] = build_config.extra_components
 
     def build_cluster = build_config.build_cluster
     def build_hosts: List[Build_Cluster.Host] =
       Build_Cluster.Host.parse(Registry.global, hosts_spec)
+
+    def >(t: Task): Boolean =
+      priority.ordinal > t.priority.ordinal ||
+        (priority == t.priority && submit_date.time < t.submit_date.time)
   }
 
   sealed case class Job(
@@ -143,6 +149,7 @@ object Build_Manager {
     hostnames: List[String],
     components: List[Component],
     timeout: Time,
+    user: Option[String],
     start_date: Date = Date.now(),
     cancelled: Boolean = false
   ) extends Build { def name: String = Build.name(kind, id) }
@@ -167,6 +174,7 @@ object Build_Manager {
     end_date: Option[Date],
     isabelle_version: Option[String],
     afp_version: Option[String],
+    user: Option[String],
     serial: Long = 0,
   ) extends Build {
     def name: String = Build.name(kind, id)
@@ -323,6 +331,7 @@ object Build_Manager {
       val isabelle_rev = SQL.Column.string("isabelle_rev")
       val extra_components = SQL.Column.string("extra_components")
 
+      val user = SQL.Column.string("user")
       val prefs = SQL.Column.string("prefs")
       val requirements = SQL.Column.bool("requirements")
       val all_sessions = SQL.Column.bool("all_sessions")
@@ -340,7 +349,7 @@ object Build_Manager {
 
       val table =
         make_table(List(kind, build_cluster, hosts_spec, timeout, other_settings, uuid, submit_date,
-          priority, isabelle_rev, extra_components, prefs, requirements, all_sessions,
+          priority, isabelle_rev, extra_components, user, prefs, requirements, all_sessions,
           base_sessions, exclude_session_groups, exclude_sessions, session_groups, sessions,
           build_heap, clean_build, export_files, fresh_build, presentation, verbose),
         name = "pending")
@@ -364,6 +373,7 @@ object Build_Manager {
           val build_config =
             if (kind != User_Build.name) CI_Build(kind, build_cluster, extra_components)
             else {
+              val user = res.string(Pending.user)
               val prefs = Options.Spec.parse(res.string(Pending.prefs))
               val requirements = res.bool(Pending.requirements)
               val all_sessions = res.bool(Pending.all_sessions)
@@ -381,7 +391,7 @@ object Build_Manager {
               val verbose = res.bool(Pending.verbose)
 
               val afp_rev = extra_components.find(_.name == Component.AFP).map(_.rev)
-              User_Build(afp_rev, prefs, requirements, all_sessions, base_sessions,
+              User_Build(user, afp_rev, prefs, requirements, all_sessions, base_sessions,
                 exclude_session_groups, exclude_sessions, session_groups, sessions, build_heap,
                 clean_build, export_files, fresh_build, presentation, verbose)
             }
@@ -417,6 +427,7 @@ object Build_Manager {
             stmt.string(8) = task.priority.toString
             stmt.string(9) = task.isabelle_rev
             stmt.string(10) = task.extra_components.mkString(",")
+            stmt.string(11) = task.user
 
             def get[A](f: User_Build => A): Option[A] =
               task.build_config match {
@@ -424,20 +435,20 @@ object Build_Manager {
                 case _ => None
               }
 
-            stmt.string(11) = get(user_build => user_build.prefs.map(_.print).mkString(","))
-            stmt.bool(12) = get(_.requirements)
-            stmt.bool(13) = get(_.all_sessions)
-            stmt.string(14) = get(_.base_sessions.mkString(","))
-            stmt.string(15) = get(_.exclude_session_groups.mkString(","))
-            stmt.string(16) = get(_.exclude_sessions.mkString(","))
-            stmt.string(17) = get(_.session_groups.mkString(","))
-            stmt.string(18) = get(_.sessions.mkString(","))
-            stmt.bool(19) = get(_.build_heap)
-            stmt.bool(20) = get(_.clean_build)
-            stmt.bool(21) = get(_.export_files)
-            stmt.bool(22) = get(_.fresh_build)
-            stmt.bool(23) = get(_.presentation)
-            stmt.bool(24) = get(_.verbose)
+            stmt.string(12) = get(user_build => user_build.prefs.map(_.print).mkString(","))
+            stmt.bool(13) = get(_.requirements)
+            stmt.bool(14) = get(_.all_sessions)
+            stmt.string(15) = get(_.base_sessions.mkString(","))
+            stmt.string(16) = get(_.exclude_session_groups.mkString(","))
+            stmt.string(17) = get(_.exclude_sessions.mkString(","))
+            stmt.string(18) = get(_.session_groups.mkString(","))
+            stmt.string(19) = get(_.sessions.mkString(","))
+            stmt.bool(20) = get(_.build_heap)
+            stmt.bool(21) = get(_.clean_build)
+            stmt.bool(22) = get(_.export_files)
+            stmt.bool(23) = get(_.fresh_build)
+            stmt.bool(24) = get(_.presentation)
+            stmt.bool(25) = get(_.verbose)
           })
       }
 
@@ -455,12 +466,13 @@ object Build_Manager {
       val hostnames = SQL.Column.string("hostnames")
       val components = SQL.Column.string("components")
       val timeout = SQL.Column.long("timeout")
+      val user = SQL.Column.string("user")
       val start_date = SQL.Column.date("start_date")
       val cancelled = SQL.Column.bool("cancelled")
 
       val table =
-        make_table(List(uuid, kind, id, build_cluster, hostnames, components, timeout, start_date,
-          cancelled),
+        make_table(List(uuid, kind, id, build_cluster, hostnames, components, timeout, user,
+          start_date, cancelled),
         name = "running")
     }
 
@@ -474,11 +486,12 @@ object Build_Manager {
           val hostnames = space_explode(',', res.string(Running.hostnames))
           val components = space_explode(',', res.string(Running.components)).map(Component.parse)
           val timeout = Time.ms(res.long(Running.timeout))
+          val user = res.get_string(Running.user)
           val start_date = res.date(Running.start_date)
           val cancelled = res.bool(Running.cancelled)
 
           val job = Job(UUID.make(uuid), kind, id, build_cluster, hostnames, components, timeout,
-            start_date, cancelled)
+            user, start_date, cancelled)
 
           job.name -> job
         })
@@ -505,8 +518,9 @@ object Build_Manager {
             stmt.string(5) = job.hostnames.mkString(",")
             stmt.string(6) = job.components.mkString(",")
             stmt.long(7) = job.timeout.ms
-            stmt.date(8) = job.start_date
-            stmt.bool(9) = job.cancelled
+            stmt.string(8) = job.user
+            stmt.date(9) = job.start_date
+            stmt.bool(10) = job.cancelled
           })
       }
       update
@@ -525,12 +539,13 @@ object Build_Manager {
       val end_date = SQL.Column.date("end_date")
       val isabelle_version = SQL.Column.string("isabelle_version")
       val afp_version = SQL.Column.string("afp_version")
+      val user = SQL.Column.string("user")
       val serial = SQL.Column.long("serial").make_primary_key
 
       val table =
         make_table(
           List(kind, id, status, uuid, build_host, start_date, end_date, isabelle_version,
-            afp_version, serial),
+            afp_version, user, serial),
           name = "finished")
     }
 
@@ -559,10 +574,11 @@ object Build_Manager {
           val end_date = res.get_date(Finished.end_date)
           val isabelle_version = res.get_string(Finished.isabelle_version)
           val afp_version = res.get_string(Finished.afp_version)
+          val user = res.get_string(Finished.user)
           val serial = res.long(Finished.serial)
 
           val result = Result(kind, id, status, uuid, build_host, start_date, end_date,
-            isabelle_version, afp_version, serial)
+            isabelle_version, afp_version, user, serial)
           result.name -> result
         }
       )
@@ -590,7 +606,8 @@ object Build_Manager {
             stmt.date(7) = result.end_date
             stmt.string(8) = result.isabelle_version
             stmt.string(9) = result.afp_version
-            stmt.long(10) = result.serial
+            stmt.string(10) = result.user
+            stmt.long(11) = result.serial
           })
 
       old ++ insert.map(result => result.serial.toString -> result)
@@ -664,7 +681,7 @@ object Build_Manager {
         if (diff.nonEmpty) File.write_gzip(dir + Path.basic(component).ext(diff_ext).gz, diff)
       }
 
-    def result(uuid: Option[UUID.T]): Result = {
+    def result(uuid: Option[UUID.T] = None, user: Option[String] = None): Result = {
       val End = """^Job ended at [^,]+, with status (\w+)$""".r
 
       val build_log_file = Build_Log.Log_File(log_name, Library.trim_split_lines(read.build_log))
@@ -687,7 +704,7 @@ object Build_Manager {
       }
 
       Result(kind, id, status, uuid, build_host, start_date, end_date, isabelle_version,
-        afp_version)
+        afp_version, user)
     }
   }
 
@@ -753,13 +770,22 @@ object Build_Manager {
 
   object Runner {
     object State {
-      def empty: State = new State(Map.empty, Map.empty)
+      def init(options: Options): State =
+        new State(Map.empty, Map.empty, Map.empty, options.seconds("build_manager_cancel_timeout"))
     }
 
     class State private(
       process_futures: Map[String, Future[Build_Process]],
-      result_futures: Map[String, Future[Process_Result]]
+      result_futures: Map[String, Future[Process_Result]],
+      cancelling_until: Map[String, Time],
+      cancel_timeout: Time
     ) {
+      private def copy(
+        process_futures: Map[String, Future[Build_Process]] = process_futures,
+        result_futures: Map[String, Future[Process_Result]] = result_futures,
+        cancelling_until: Map[String, Time] = cancelling_until,
+      ): State = new State(process_futures, result_futures, cancelling_until, cancel_timeout)
+
       def is_empty = process_futures.isEmpty && result_futures.isEmpty
 
       def init(context: Context): State = {
@@ -770,36 +796,67 @@ object Build_Manager {
               case Exn.Res(process) => process.run()
               case Exn.Exn(exn) => Process_Result(Process_Result.RC.interrupt).error(exn.getMessage)
             })
-        new State(
+
+        copy(
           process_futures + (context.name -> process_future),
           result_futures + (context.name -> result_future))
       }
 
-      def running: List[String] = process_futures.keys.toList
+      def running: List[String] = process_futures.keys.toList.filterNot(cancelling_until.contains)
+
+      private def maybe_result(name: String): Option[Process_Result] =
+        for (future <- result_futures.get(name) if future.is_finished) yield
+          future.join_result match {
+            case Exn.Res(result) => result
+            case Exn.Exn(exn) => Process_Result(Process_Result.RC.interrupt).error(exn.getMessage)
+          }
+
+      private def do_terminate(name: String): Boolean = {
+        val is_late = Time.now() > cancelling_until(name)
+        if (is_late) process_futures(name).join.terminate()
+        is_late
+      }
 
       def update: (State, Map[String, Process_Result]) = {
+        val finished0 =
+          for {
+            (name, _) <- result_futures
+            result <- maybe_result(name)
+          } yield name -> result
+
+        val (terminated, cancelling_until1) =
+          cancelling_until
+            .filterNot((name, _) => finished0.contains(name))
+            .partition((name, _) => do_terminate(name))
+
         val finished =
-          for ((name, future) <- result_futures if future.is_finished)
-          yield name ->
-            (future.join_result match {
-              case Exn.Res(result) => result
-              case Exn.Exn(exn) => Process_Result(Process_Result.RC.interrupt).error(exn.getMessage)
-            })
+          finished0 ++
+            terminated.map((name, _) =>
+              name -> maybe_result(name).getOrElse(Process_Result(Process_Result.RC.timeout)))
 
-        val process_futures1 = process_futures.filterNot((name, _) => finished.contains(name))
-        val result_futures1 = result_futures.filterNot((name, _) => finished.contains(name))
+        val state1 =
+          copy(
+            process_futures.filterNot((name, _) => finished.contains(name)),
+            result_futures.filterNot((name, _) => finished.contains(name)),
+            cancelling_until1)
+        (state1, finished)
+      }
 
-        (new State(process_futures1, result_futures1), finished)
+      private def do_cancel(process_future: Future[Build_Process]): Boolean = {
+        val is_finished = process_future.is_finished
+        if (is_finished) process_future.join.cancel() else process_future.cancel()
+        is_finished
       }
 
       def cancel(cancelled: List[String]): State = {
-        for (name <- cancelled) {
-          val process_future = process_futures(name)
-          if (process_future.is_finished) process_future.join.cancel()
-          else process_future.cancel()
-        }
+        val cancelling_until1 =
+          for {
+            name <- cancelled
+            process_future <- process_futures.get(name)
+            if do_cancel(process_future)
+          } yield name -> (Time.now() + cancel_timeout)
 
-        new State(process_futures.filterNot((name, _) => cancelled.contains(name)), result_futures)
+        copy(cancelling_until = cancelling_until ++ cancelling_until1)
       }
     }
   }
@@ -820,7 +877,7 @@ object Build_Manager {
 
       Exn.capture(repository.id(File.read(target + Mercurial.Hg_Sync.PATH_ID))) match {
         case Exn.Res(res) => res
-        case Exn.Exn(exn) => ""
+        case Exn.Exn(_) => ""
       }
     }
 
@@ -895,8 +952,10 @@ object Build_Manager {
               }
             }
 
-            Job(task.uuid, task.kind, id, task.build_cluster, hostnames,
-              Component.isabelle(isabelle_rev) :: extra_components, task.timeout, start_date)
+            val components = Component.isabelle(isabelle_rev) :: extra_components
+
+            Job(task.uuid, task.kind, id, task.build_cluster, hostnames, components, task.timeout,
+              task.user, start_date)
           } match {
             case Exn.Res(job) =>
               _state = _state.add_running(job)
@@ -911,7 +970,7 @@ object Build_Manager {
 
               Isabelle_System.rm_tree(context.task_dir)
 
-              _state = _state.add_finished(context.report.result(Some(task.uuid)))
+              _state = _state.add_finished(context.report.result(Some(task.uuid), task.user))
 
               None
           }
@@ -933,8 +992,15 @@ object Build_Manager {
           echo(job.name + ": " + timeout_msg)
         }
 
-        val cancelled = for (name <- state.running if _state.running(name).cancelled) yield name
-        state.cancel(cancelled)
+        val cancelled =
+          for {
+            name <- state.running
+            job = _state.running(name)
+            if job.cancelled
+          } yield job
+
+        cancelled.foreach(job => store.report(job.kind, job.id).progress.echo("Cancelling ..."))
+        state.cancel(cancelled.map(_.name))
       }
 
     private def finish_job(name: String, process_result: Process_Result): Unit =
@@ -954,12 +1020,25 @@ object Build_Manager {
 
         _state = _state
           .remove_running(job.name)
-          .add_finished(report.result(Some(job.uuid)))
+          .add_finished(report.result(Some(job.uuid), job.user))
       }
 
     override def stopped(state: Runner.State): Boolean = progress.stopped && state.is_empty
 
-    def init: Runner.State = Runner.State.empty
+    def init: Runner.State = synchronized_database("init") {
+      for ((name, job) <- _state.running) {
+        echo("Cleaned up job " + job.uuid)
+
+        val report = store.report(job.kind, job.id)
+
+        _state = _state
+          .remove_running(job.name)
+          .add_finished(report.result(Some(job.uuid), job.user))
+      }
+
+      Runner.State.init(store.options)
+    }
+
     def loop_body(state: Runner.State): Runner.State = {
       val state1 =
         if (progress.stopped) state
@@ -1048,8 +1127,6 @@ object Build_Manager {
   class Timer(
     ci_jobs: List[Build_CI.Job],
     store: Store,
-    isabelle_repository: Mercurial.Repository,
-    sync_dirs: List[Sync.Dir],
     progress: Progress
   ) extends Loop_Process[Date]("Timer", store, progress) {
 
@@ -1121,8 +1198,12 @@ object Build_Manager {
     }
   }
 
-  class Web_Server(port: Int, store: Store, progress: Progress)
-    extends Loop_Process[Unit]("Web_Server", store, progress) {
+  class Web_Server(
+    port: Int,
+    store: Store,
+    build_hosts: List[Build_Cluster.Host],
+    progress: Progress
+  ) extends Loop_Process[Unit]("Web_Server", store, progress) {
     import Web_App.*
     import Web_Server.*
 
@@ -1135,7 +1216,7 @@ object Build_Manager {
       case Home(state: State) extends Model
       case Overview(kind: String, state: State) extends Model
       case Details(build: Build, state: State, public: Boolean = true) extends Model
-      case Diff(build: Build, state: State) extends Model
+      case Diff(build: Build) extends Model
     }
 
     object View {
@@ -1150,12 +1231,9 @@ object Build_Manager {
       def link_build(name: String, id: Long): XML.Elem =
         page_link(Page.BUILD, "#" + id, Markup.Name(name))
 
-      private def render_page(name: String)(body: => XML.Body): XML.Body = {
-        def nav_link(path: Path, s: String): XML.Elem = page_link(Page.HOME, "Home")
-
-        More_HTML.header(List(nav(List(nav_link(Page.HOME, "home"))))) ::
+      private def render_page(name: String)(body: => XML.Body): XML.Body =
+        More_HTML.header(List(nav(List(page_link(Page.HOME, "home"))))) ::
         main(chapter(name) :: body ::: Nil) :: Nil
-      }
 
       private def summary(start: Date): XML.Body =
         text(" running since " + Build_Log.print_date(start))
@@ -1202,8 +1280,28 @@ object Build_Manager {
             else Nil))
         }
 
-        text("Queue: " + state.pending.size + " tasks waiting") :::
-        section("Builds") :: par(text("Total: " + state.num_builds + " builds")) ::
+        val running = state.running.values.toList
+        val idle = (build_hosts.map(_.hostname).toSet -- running.flatMap(_.hostnames).toSet).toList
+
+        def render_rows(hostnames: List[String], body: XML.Body): XML.Body =
+          hostnames match {
+            case Nil => Nil
+            case hostname :: Nil => List(tr(List(td(text(hostname)), td(body))))
+            case hostname :: hostnames1 =>
+              tr(List(td(text(hostname)), td.apply(rowspan(hostnames.length), body))) ::
+              hostnames1.map(hostname => tr(List(td(text(hostname)))))
+          }
+
+        def render_job(job: Job): XML.Body =
+          render_rows(job.hostnames,
+            page_link(Page.BUILD, job.name, Markup.Name(job.name)) :: summary(job.start_date))
+
+        par(text("Queue: " + state.pending.size + " tasks waiting")) ::
+        table(tr(List(th(text("Host")), th(text("Activity")))) ::
+          running.sortBy(_.name).flatMap(render_job) :::
+          idle.sorted.map(List(_)).flatMap(render_rows(_, text("idle")))) ::
+        section("Builds") ::
+        par(text("Total: " + state.num_builds + " builds")) ::
         state.kinds.sorted.map(render_kind)
       }
 
@@ -1239,16 +1337,40 @@ object Build_Manager {
             else text("Components: ") :+ page_link(Page.DIFF, s, Markup.Name(build.name))
           }
 
+          def waiting_for(host: Build_Cluster.Host): XML.Body =
+            build_hosts.find(_.hostname == host.hostname) match {
+              case None => break ::: text(quote(host.hostname) + " is not a build host")
+              case Some(host) =>
+                val active = state.running.values.filter(_.hostnames.contains(host.hostname))
+                if (active.isEmpty) Nil
+                else break :::
+                  text(host.hostname + " is busy with " + active.map(_.name).mkString(" and "))
+            }
+
+          def waiting(task: Task): XML.Body = {
+            val num_before = state.pending.values.count(_ > task)
+
+            if (num_before > 0) text("Waiting for " + num_before + " tasks to complete")
+            else Exn.capture(task.build_hosts) match {
+              case Exn.Res(hosts) => text("Hosts not ready:") ::: hosts.flatMap(waiting_for)
+              case _ => text("Unkown host spec")
+            }
+          }
+
+          def started(user: Option[String], date: Date): String =
+            "Started" + if_proper(user, " by " + user.get) + " on " + Build_Log.print_date(date)
+
           build match {
             case task: Task =>
               par(text("Task from " + Build_Log.print_date(task.submit_date) + ". ")) ::
-              par(text(task.components.mkString(", "))) ::
+              par(text("Components: " + task.components.mkString(", "))) ::
+              par(List(bold(waiting(task)))) ::
               render_cancel(task.uuid)
 
             case job: Job =>
               val report_data = cache.lookup(store.report(job.kind, job.id))
 
-              par(text("Start: " + Build_Log.print_date(job.start_date))) ::
+              par(text(started(job.user, job.start_date))) ::
               par(
                 if (job.cancelled) text("Cancelling ...")
                 else text("Running ...") ::: render_cancel(job.uuid)) ::
@@ -1258,7 +1380,7 @@ object Build_Manager {
             case result: Result =>
               val report_data = cache.lookup(store.report(result.kind, result.id))
 
-              par(text("Start: " + Build_Log.print_date(result.start_date) +
+              par(text(started(result.user, result.start_date) +
                 if_proper(result.end_date,
                   ", took " + (result.end_date.get - result.start_date).message_hms))) ::
               par(text("Status: " + result.status)) ::
@@ -1267,7 +1389,7 @@ object Build_Manager {
           }
         }
 
-      def render_diff(build: Build, state: State): XML.Body = render_page("Diff: " + build.name) {
+      def render_diff(build: Build): XML.Body = render_page("Diff: " + build.name) {
         def colored(s: String): XML.Body = {
           val Colored = "([^\u001b]*)\u001b\\[([0-9;]+)m(.*)\u001b\\[0m([^\u001b]*)".r
           val colors = List("black", "maroon", "green", "olive", "navy", "purple", "teal", "silver")
@@ -1340,9 +1462,7 @@ object Build_Manager {
 
       def get_diff(props: Properties.T): Option[Model.Diff] =
         props match {
-          case Markup.Name(name) =>
-            val state = _state
-            state.get(name).map(Model.Diff(_, state))
+          case Markup.Name(name) => _state.get(name).map(Model.Diff(_))
           case _ => None
         }
 
@@ -1370,7 +1490,7 @@ object Build_Manager {
             case Model.Home(state) => View.render_home(state)
             case Model.Overview(kind, state) => View.render_overview(kind, state)
             case Model.Details(build, state, public) => View.render_details(build, state, public)
-            case Model.Diff(build, state) => View.render_diff(build, state)
+            case Model.Diff(build) => View.render_diff(build)
             case Model.Cancelled => View.render_cancelled
           })
 
@@ -1387,14 +1507,22 @@ object Build_Manager {
           HTML.title("Isabelle Build Manager"),
           Web_App.More_HTML.icon("data:image/x-icon;base64," + logo.encode_base64.text),
           HTML.style_file("https://hawkz.github.io/gdcss/gd.css"),
-          HTML.style("html { background-color: white; }"))
+          HTML.style("""
+:root { 
+  --color-secondary: var(--color-tertiary);
+  --color-secondary-hover: var(--color-tertiary-hover);
+}
+html { background-color: white; }"""))
+    }
+
+    override def close(): Unit = {
+      server.stop()
+      super.close()
     }
 
     def init: Unit = server.start()
-    def loop_body(u: Unit): Unit = {
-      if (progress.stopped) server.stop()
-      else synchronized_database("iterate") { cache.update() }
-    }
+    def loop_body(u: Unit): Unit =
+      if (!progress.stopped) synchronized_database("iterate") { cache.update() }
   }
 
 
@@ -1465,6 +1593,7 @@ object Build_Manager {
       catch { case exn: Throwable => close(); throw exn }
 
     def cancel(): Unit = Option(_process).foreach(_.interrupt())
+    def terminate(): Unit = Option(_process).foreach(_.terminate())
 
     def close(): Unit = {
       Option(_dir).foreach(ssh.rm_tree)
@@ -1559,8 +1688,8 @@ object Build_Manager {
     val processes = List(
       new Runner(store, build_hosts, isabelle_repository, sync_dirs, progress),
       new Poller(ci_jobs, store, isabelle_repository, sync_dirs, progress),
-      new Timer(ci_jobs, store, isabelle_repository, sync_dirs, progress),
-      new Web_Server(port, store, progress))
+      new Timer(ci_jobs, store, progress),
+      new Web_Server(port, store, build_hosts, progress))
 
     val threads = processes.map(Isabelle_Thread.create(_))
     POSIX_Interrupt.handler {
@@ -1656,7 +1785,7 @@ Usage: isabelle build_manager [OPTIONS]
           if report.ok
         } yield report
 
-      val results = reports.map(report => report -> report.result(None))
+      val results = reports.map(report => report -> report.result())
 
       if (update_reports) {
         val isabelle_repository = Mercurial.self_repository()
@@ -1762,15 +1891,17 @@ Usage: isabelle build_manager_database [OPTIONS]
     val timeout = options.seconds("build_manager_timeout")
     val paths = Web_Server.paths(store)
 
-    val build_config = User_Build(afp_rev, prefs, requirements, all_sessions,
-      base_sessions, exclude_session_groups, exclude_sessions, session_groups, sessions, build_heap,
-      clean_build, export_files, fresh_build, presentation, verbose)
-    val task = Task(build_config, hosts_spec, timeout, uuid = uuid, priority = Priority.high)
-
-    val dir = store.task_dir(task)
-
     progress.interrupt_handler {
       using(store.open_ssh()) { ssh =>
+        val user = ssh.execute("whoami").check.out
+        
+        val build_config = User_Build(user, afp_rev, prefs, requirements, all_sessions,
+          base_sessions, exclude_session_groups, exclude_sessions, session_groups, sessions,
+          build_heap, clean_build, export_files, fresh_build, presentation, verbose)
+        val task = Task(build_config, hosts_spec, timeout, uuid = uuid, priority = Priority.high)
+
+        val dir = store.task_dir(task)
+
         val rsync_context = Rsync.Context(ssh = ssh)
         progress.echo("Transferring repositories ...")
         Sync.sync(store.options, rsync_context, dir, preserve_jars = true,

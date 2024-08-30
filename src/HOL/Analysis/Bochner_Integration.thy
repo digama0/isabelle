@@ -892,11 +892,17 @@ definition\<^marker>\<open>tag important\<close> lebesgue_integral ("integral\<^
 syntax
   "_lebesgue_integral" :: "pttrn \<Rightarrow> real \<Rightarrow> 'a measure \<Rightarrow> real" ("\<integral>((2 _./ _)/ \<partial>_)" [60,61] 110)
 
+syntax_consts
+  "_lebesgue_integral" == lebesgue_integral
+
 translations
   "\<integral> x. f \<partial>M" == "CONST lebesgue_integral M (\<lambda>x. f)"
 
 syntax
   "_ascii_lebesgue_integral" :: "pttrn \<Rightarrow> 'a measure \<Rightarrow> real \<Rightarrow> real" ("(3LINT (1_)/|(_)./ _)" [0,110,60] 60)
+
+syntax_consts
+  "_ascii_lebesgue_integral" == lebesgue_integral
 
 translations
   "LINT x|M. f" == "CONST lebesgue_integral M (\<lambda>x. f)"
@@ -2510,6 +2516,16 @@ proof -
     by (simp add: integrable_count_space integrable_density )
   then show ?thesis
     by (smt (verit) AE_I2 borel_measurable_count_space density_cong ennreal_neg point_measure_def)
+qed
+
+lemma integral_uniform_count_measure:
+  assumes "finite A" 
+  shows "integral\<^sup>L (uniform_count_measure A) f = sum f A / (card A)"
+proof -
+  have "integral\<^sup>L (uniform_count_measure A) f = (\<Sum>x\<in>A. f x / card A)" 
+    using assms by (simp add: uniform_count_measure_def lebesgue_integral_point_measure_finite)
+  with assms show ?thesis
+    by (simp add: sum_divide_distrib nn_integral_count_space_finite)
 qed
 
 subsection \<open>Lebesgue integration on \<^const>\<open>null_measure\<close>\<close>

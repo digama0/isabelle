@@ -319,12 +319,12 @@ val alias =
 val alias_cmd =
   gen_alias Local_Theory.const_alias
     (fn flags => fn ctxt => fn (c, pos) =>
-      apfst (#1 o dest_Const) (Proof_Context.check_const flags ctxt (c, [pos])));
+      apfst dest_Const_name (Proof_Context.check_const flags ctxt (c, [pos])));
 
 val type_alias =
   gen_alias Local_Theory.type_alias (K (K (fn c => (c, []))));
 val type_alias_cmd =
-  gen_alias Local_Theory.type_alias (apfst (#1 o dest_Type) ooo Proof_Context.check_type_name);
+  gen_alias Local_Theory.type_alias (apfst dest_Type_name ooo Proof_Context.check_type_name);
 
 
 (* fact statements *)

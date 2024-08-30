@@ -307,7 +307,7 @@ in
 fun subtractProver ctxt (Const (\<^const_name>\<open>Tip\<close>, T)) ct dist_thm =
       let
         val ct' = dist_thm |> Thm.cprop_of |> Thm.dest_comb |> #2 |> Thm.dest_comb |> #2;
-        val [alphaI] = #2 (dest_Type T);
+        val [alphaI] = dest_Type_args T;
       in
         Thm.instantiate
           (TVars.make1 (alpha, Thm.ctyp_of ctxt alphaI),
@@ -366,6 +366,7 @@ fun distinctFieldSolver names =
 fun distinct_simproc names =
   Simplifier.make_simproc \<^context>
    {name = "DistinctTreeProver.distinct_simproc",
+    kind = Simproc,
     lhss = [\<^term>\<open>x = y\<close>],
     proc = fn _ => fn ctxt => fn ct =>
       (case Thm.term_of ct of
