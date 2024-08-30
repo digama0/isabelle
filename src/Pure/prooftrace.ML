@@ -182,7 +182,7 @@ fun export_proof thy header tvar_map shyps hyps p =
     val data = (header, tvar_map, shyps, hyps, p)
   in
     Export.export thy (Path.binding0 (Path.make ["proof_trace", string_of_int (#serial header)]))
-      [XML.Text (Byte.bytesToString (PolyML.exportSmall data))]
+      [XML.Text (YXML.escape (Byte.bytesToString (PolyML.exportSmall data)))]
   end;
 
 end;
