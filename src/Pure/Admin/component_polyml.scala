@@ -195,7 +195,9 @@ not affect the running ML session. *)
     /* component */
 
     val component_name1 = if (component_name.isEmpty) "polyml-" + polyml_version else component_name
-    val component_dir = Components.Directory(target_dir + Path.basic(component_name1)).create()
+    val component_dir = Components.Directory(target_dir + Path.basic(component_name1))
+    Isabelle_System.rm_tree(component_dir.path)
+    component_dir.create()
     progress.echo("Component " + component_dir)
 
 
