@@ -46,6 +46,8 @@ definition
 
 syntax
   "_QSUM"   :: "[idt, i, i] \<Rightarrow> i"               (\<open>(3QSUM _ \<in> _./ _)\<close> 10)
+syntax_consts
+  "_QSUM" \<rightleftharpoons> QSigma
 translations
   "QSUM x \<in> A. B" => "CONST QSigma(A, \<lambda>x. B)"
 

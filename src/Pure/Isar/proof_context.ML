@@ -155,6 +155,7 @@ sig
   val apply_case: Rule_Cases.T -> Proof.context -> (string * term list) list * Proof.context
   val check_case: Proof.context -> bool ->
     string * Position.T -> binding option list -> Rule_Cases.T
+  val is_syntax_const: Proof.context -> string -> bool
   val check_syntax_const: Proof.context -> string * Position.T -> string
   val syntax: bool -> Syntax.mode -> (string * typ * mixfix) list ->
     Proof.context -> Proof.context
@@ -570,8 +571,7 @@ fun check_const {proper, strict} ctxt (c, ps) =
           let
             val reports = ps
               |> filter (Context_Position.is_reported ctxt)
-              |> map (fn pos =>
-                (pos, Markup.name x (if Name.is_skolem x then Markup.skolem else Markup.free)));
+              |> map (fn pos => (pos, Markup.name x (Variable.markup ctxt x)));
           in (Free (x, infer_type ctxt (x, dummyT)), reports) end
       | (_, SOME d) =>
           let
@@ -608,7 +608,7 @@ fun prep_arity prep_tycon prep_sort ctxt (t, Ss, S) =
 in
 
 val read_arity =
-  prep_arity ((#1 o dest_Type) oo read_type_name {proper = true, strict = true}) Syntax.read_sort;
+  prep_arity (dest_Type_name oo read_type_name {proper = true, strict = true}) Syntax.read_sort;
 
 val cert_arity = prep_arity (K I) (Type.cert_sort o tsig_of);
 
@@ -1126,8 +1126,10 @@ end;
 
 (* syntax *)
 
+val is_syntax_const = Syntax.is_const o syntax_of;
+
 fun check_syntax_const ctxt (c, pos) =
-  if is_some (Syntax.lookup_const (syntax_of ctxt) c) then c
+  if is_syntax_const ctxt c then c
   else error ("Unknown syntax const: " ^ quote c ^ Position.here pos);
 
 fun syntax add mode args ctxt =

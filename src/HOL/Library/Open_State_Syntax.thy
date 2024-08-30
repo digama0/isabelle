@@ -119,6 +119,8 @@ subsection \<open>Do-syntax\<close>
 
 nonterminal sdo_binds and sdo_bind
 
+definition "sdo_syntax = ()"
+
 syntax
   "_sdo_block" :: "sdo_binds \<Rightarrow> 'a" ("exec {//(2  _)//}" [12] 62)
   "_sdo_bind"  :: "[pttrn, 'a] \<Rightarrow> sdo_bind" ("(_ \<leftarrow>/ _)" 13)
@@ -129,6 +131,11 @@ syntax
 
 syntax (ASCII)
   "_sdo_bind" :: "[pttrn, 'a] \<Rightarrow> sdo_bind" ("(_ <-/ _)" 13)
+
+syntax_consts
+  "_sdo_block" "_sdo_cons" == sdo_syntax and
+  "_sdo_bind" == scomp and
+  "_sdo_let" == Let
 
 translations
   "_sdo_block (_sdo_cons (_sdo_bind p t) (_sdo_final e))"

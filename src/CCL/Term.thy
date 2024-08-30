@@ -49,6 +49,7 @@ definition "let1" :: "[i,i\<Rightarrow>i]\<Rightarrow>i"
   where let_def: "let1(t, f) == case(t,f(true),f(false), \<lambda>x y. f(<x,y>), \<lambda>u. f(lam x. u(x)))"
 
 syntax "_let1" :: "[idt,i,i]\<Rightarrow>i"  ("(3let _ be _/ in _)" [0,0,60] 60)
+syntax_consts "_let1" == let1
 translations "let x be a in e" == "CONST let1(a, \<lambda>x. e)"
 
 definition letrec :: "[[i,i\<Rightarrow>i]\<Rightarrow>i,(i\<Rightarrow>i)\<Rightarrow>i]\<Rightarrow>i"
@@ -67,6 +68,10 @@ syntax
   "_letrec" :: "[idt,idt,i,i]\<Rightarrow>i"  ("(3letrec _ _ be _/ in _)" [0,0,0,60] 60)
   "_letrec2" :: "[idt,idt,idt,i,i]\<Rightarrow>i"  ("(3letrec _ _ _ be _/ in _)" [0,0,0,0,60] 60)
   "_letrec3" :: "[idt,idt,idt,idt,i,i]\<Rightarrow>i"  ("(3letrec _ _ _ _ be _/ in _)" [0,0,0,0,0,60] 60)
+syntax_consts
+  "_letrec" == letrec and
+  "_letrec2" == letrec2 and
+  "_letrec3" == letrec3
 parse_translation \<open>
   let
     fun abs_tr t u = Syntax_Trans.abs_tr [t, u];

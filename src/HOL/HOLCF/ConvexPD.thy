@@ -178,9 +178,13 @@ abbreviation
     (infixl "\<union>\<natural>" 65) where
   "xs \<union>\<natural> ys == convex_plus\<cdot>xs\<cdot>ys"
 
+nonterminal convex_pd_args
 syntax
-  "_convex_pd" :: "args \<Rightarrow> logic" ("{_}\<natural>")
-
+  "" :: "logic \<Rightarrow> convex_pd_args"  ("_")
+  "_convex_pd_args" :: "logic \<Rightarrow> convex_pd_args \<Rightarrow> convex_pd_args"  ("_,/ _")
+  "_convex_pd" :: "convex_pd_args \<Rightarrow> logic"  ("{_}\<natural>")
+syntax_consts
+  "_convex_pd_args" "_convex_pd" == convex_add
 translations
   "{x,xs}\<natural>" == "{x}\<natural> \<union>\<natural> {xs}\<natural>"
   "{x}\<natural>" == "CONST convex_unit\<cdot>x"
@@ -347,6 +351,9 @@ definition
 syntax
   "_convex_bind" :: "[logic, logic, logic] \<Rightarrow> logic"
     ("(3\<Union>\<natural>_\<in>_./ _)" [0, 0, 10] 10)
+
+syntax_consts
+  "_convex_bind" == convex_bind
 
 translations
   "\<Union>\<natural>x\<in>xs. e" == "CONST convex_bind\<cdot>xs\<cdot>(\<Lambda> x. e)"

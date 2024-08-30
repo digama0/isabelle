@@ -313,7 +313,7 @@ fun apply_binding thy prob_name orig_parent_fmla target_fmla bindings =
                 then should still be able to handle formulas like
                 (! X, X. F).*)
               if x = bound_var andalso
-                 fst (dest_Const t1) = \<^const_name>\<open>All\<close> then
+                 dest_Const_name t1 = \<^const_name>\<open>All\<close> then
                   (*Body might contain free variables, so bind them using "var_ctxt".
                     this involves replacing instances of Free with instances of Bound
                     at the right index.*)
@@ -417,9 +417,7 @@ fun apply_binding thy prob_name orig_parent_fmla target_fmla bindings =
     fold safe_instantiate_bound bindings' ([], HOLogic.dest_Trueprop orig_parent_fmla)
     |> snd (*discard var typing context*)
     |> close_formula
-    |> single
-    |> Type_Infer_Context.infer_types (Context.proof_of (Context.Theory thy))
-    |> the_single
+    |> singleton (Type_Infer_Context.infer_types (Context.proof_of (Context.Theory thy)))
     |> HOLogic.mk_Trueprop
     |> rpair bindings'
   end

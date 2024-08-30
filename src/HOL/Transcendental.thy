@@ -1494,6 +1494,16 @@ lemma exp_le_cancel_iff [iff]: "exp x \<le> exp y \<longleftrightarrow> x \<le> 
   for x y :: real
   by (auto simp: linorder_not_less [symmetric])
 
+lemma exp_mono:
+  fixes x y :: real
+  assumes "x \<le> y"
+  shows "exp x \<le> exp y"
+  using assms exp_le_cancel_iff by fastforce
+
+lemma exp_minus': "exp (-x) = 1 / (exp x)"
+  for x :: "'a::{real_normed_field,banach}"
+  by (simp add: exp_minus inverse_eq_divide)
+
 lemma exp_inj_iff [iff]: "exp x = exp y \<longleftrightarrow> x = y"
   for x y :: real
   by (simp add: order_eq_iff)
@@ -1668,8 +1678,11 @@ lemma ln_le_cancel_iff [simp]: "0 < x \<Longrightarrow> 0 < y \<Longrightarrow> 
   for x :: real
   by (simp add: linorder_not_less [symmetric])
 
-lemma ln_mono: "\<And>x::real. \<lbrakk>x \<le> y; 0 < x; 0 < y\<rbrakk> \<Longrightarrow> ln x \<le> ln y"
-  using ln_le_cancel_iff by presburger
+lemma ln_mono: "\<And>x::real. \<lbrakk>x \<le> y; 0 < x\<rbrakk> \<Longrightarrow> ln x \<le> ln y"
+  by simp
+
+lemma ln_strict_mono: "\<And>x::real. \<lbrakk>x < y; 0 < x\<rbrakk> \<Longrightarrow> ln x < ln y"
+  by simp
 
 lemma ln_inj_iff [simp]: "0 < x \<Longrightarrow> 0 < y \<Longrightarrow> ln x = ln y \<longleftrightarrow> x = y"
   for x :: real
@@ -2327,6 +2340,9 @@ definition log :: "real \<Rightarrow> real \<Rightarrow> real"
   \<comment> \<open>logarithm of \<^term>\<open>x\<close> to base \<^term>\<open>a\<close>\<close>
   where "log a x = ln x / ln a"
 
+lemma log_exp [simp]: "log b (exp x) = x / ln b"
+  by (simp add: log_def)
+
 lemma tendsto_log [tendsto_intros]:
   "(f \<longlongrightarrow> a) F \<Longrightarrow> (g \<longlongrightarrow> b) F \<Longrightarrow> 0 < a \<Longrightarrow> a \<noteq> 1 \<Longrightarrow> b\<noteq>0 \<Longrightarrow>
     ((\<lambda>x. log (f x) (g x)) \<longlongrightarrow> log a b) F"
@@ -2385,12 +2401,12 @@ lemma prod_powr_distrib:
   shows "(prod x I) powr r = (\<Prod>i\<in>I. x i powr r)"
   by (induction I rule: infinite_finite_induct) (auto simp add: powr_mult prod_nonneg)
 
-lemma powr_ge_pzero [simp]: "0 \<le> x powr y"
+lemma powr_ge_zero [simp]: "0 \<le> x powr y"
   for x y :: real
   by (simp add: powr_def)
 
 lemma powr_non_neg[simp]: "\<not> a powr x < 0" for a x::real
-  using powr_ge_pzero[of a x] by arith
+  using powr_ge_zero[of a x] by arith
 
 lemma inverse_powr: "\<And>y::real. inverse y powr a = inverse (y powr a)"
     by (simp add: exp_minus ln_inverse powr_def)
@@ -2962,7 +2978,7 @@ lemma powr_half_sqrt: "0 \<le> x \<Longrightarrow> x powr (1/2) = sqrt x"
   by (simp add: powr_def root_powr_inverse sqrt_def)
 
 lemma powr_half_sqrt_powr: "0 \<le> x \<Longrightarrow> x powr (a/2) = sqrt(x powr a)"
-  by (metis divide_inverse mult.left_neutral powr_ge_pzero powr_half_sqrt powr_powr)
+  by (metis divide_inverse mult.left_neutral powr_ge_zero powr_half_sqrt powr_powr)
 
 lemma square_powr_half [simp]:
   fixes x::real shows "x\<^sup>2 powr (1/2) = \<bar>x\<bar>"

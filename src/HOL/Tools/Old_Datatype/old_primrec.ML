@@ -60,7 +60,7 @@ fun process_eqn is_fixed spec rec_fns =
       else strip_comb (hd middle);
     val (cname, T) = dest_Const constr
       handle TERM _ => primrec_error "ill-formed constructor";
-    val (tname, _) = dest_Type (body_type T) handle TYPE _ =>
+    val tname = dest_Type_name (body_type T) handle TYPE _ =>
       primrec_error "cannot determine datatype associated with function"
 
     val (ls, cargs, rs) =
@@ -144,7 +144,7 @@ fun process_fun descr eqns (i, fname) (fnames, fnss) =
       (case AList.lookup (op =) eqns cname of
         NONE => (warning ("No equation for constructor " ^ quote cname ^
           "\nin definition of function " ^ quote fname);
-            (fnames', fnss', (Const (\<^const_name>\<open>undefined\<close>, dummyT)) :: fns))
+            (fnames', fnss', \<^Const>\<open>undefined dummyT\<close> :: fns))
       | SOME (ls, cargs', rs, rhs, eq) =>
           let
             val recs = filter (Old_Datatype_Aux.is_rec_type o snd) (cargs' ~~ cargs);
@@ -183,9 +183,9 @@ fun get_fns fns ((i : int, (tname, _, constrs)), rec_name) (fs, defs) =
   (case AList.lookup (op =) fns i of
     NONE =>
       let
-        val dummy_fns = map (fn (_, cargs) => Const (\<^const_name>\<open>undefined\<close>,
-          replicate (length cargs + length (filter Old_Datatype_Aux.is_rec_type cargs))
-            dummyT ---> HOLogic.unitT)) constrs;
+        val dummy_fns = map (fn (_, cargs) => \<^Const>\<open>undefined
+          \<open>replicate (length cargs + length (filter Old_Datatype_Aux.is_rec_type cargs))
+            dummyT ---> HOLogic.unitT\<close>\<close>) constrs;
         val _ = warning ("No function definition for datatype " ^ quote tname)
       in
         (dummy_fns @ fs, defs)

@@ -112,7 +112,7 @@ fun get_vars_avoiding
     : (term list * term list) =
   let
     val Ts = map snd args
-    val ns = Name.variant_list taken (Old_Datatype_Prop.make_tnames Ts)
+    val ns = Name.variant_list taken (Case_Translation.make_tnames Ts)
     val vs = map Free (ns ~~ Ts)
     val nonlazy = map snd (filter_out (fst o fst) (args ~~ vs))
   in
@@ -167,7 +167,7 @@ fun add_constructors
     fun vars_of args =
       let
         val Ts = map snd args
-        val ns = Old_Datatype_Prop.make_tnames Ts
+        val ns = Case_Translation.make_tnames Ts
       in
         map Free (ns ~~ Ts)
       end
@@ -409,7 +409,7 @@ fun add_case_combinator
     val tns = map fst (Term.add_tfreesT lhsT [])
     val resultT = TFree (singleton (Name.variant_list tns) "'t", \<^sort>\<open>pcpo\<close>)
     fun fTs T = map (fn (_, args) => map snd args -->> T) spec
-    val fns = Old_Datatype_Prop.indexify_names (map (K "f") spec)
+    val fns = Case_Translation.indexify_names (map (K "f") spec)
     val fs = map Free (fns ~~ fTs resultT)
     fun caseT T = fTs T -->> (lhsT ->> T)
 
@@ -424,7 +424,7 @@ fun add_case_combinator
       fun one_con f (_, args) =
         let
           val Ts = map snd args
-          val ns = Name.variant_list fns (Old_Datatype_Prop.make_tnames Ts)
+          val ns = Name.variant_list fns (Case_Translation.make_tnames Ts)
           val vs = map Free (ns ~~ Ts)
         in
           lambda_args (map fst args ~~ vs) (list_ccomb (f, vs))
@@ -446,8 +446,8 @@ fun add_case_combinator
     (* define syntax for case combinator *)
     (* TODO: re-implement case syntax using a parse translation *)
     local
-      fun syntax c = Lexicon.mark_const (fst (dest_Const c))
-      fun xconst c = Long_Name.base_name (fst (dest_Const c))
+      fun syntax c = Lexicon.mark_const (dest_Const_name c)
+      fun xconst c = Long_Name.base_name (dest_Const_name c)
       fun c_ast authentic con = Ast.Constant (if authentic then syntax con else xconst con)
       fun showint n = string_of_int (n+1)
       fun expvar n = Ast.Variable ("e" ^ showint n)
@@ -606,7 +606,7 @@ fun add_selectors
         fun sel_apps_of (i, (con, args: (bool * term option * typ) list)) =
           let
             val Ts : typ list = map #3 args
-            val ns : string list = Old_Datatype_Prop.make_tnames Ts
+            val ns : string list = Case_Translation.make_tnames Ts
             val vs : term list = map Free (ns ~~ Ts)
             val con_app : term = list_ccomb (con, vs)
             val vs' : (bool * term) list = map #1 args ~~ vs
@@ -803,8 +803,8 @@ fun add_match_combinators
 
     (* register match combinators with fixrec package *)
     local
-      val con_names = map (fst o dest_Const o fst) spec
-      val mat_names = map (fst o dest_Const) match_consts
+      val con_names = map (dest_Const_name o fst) spec
+      val mat_names = map dest_Const_name match_consts
     in
       val thy = Fixrec.add_matchers (con_names ~~ mat_names) thy
     end
@@ -930,7 +930,7 @@ fun add_domain_constructors
       let
         fun qualified name = Binding.qualify_name true dbind name
         val names = "bottom" :: map (fn (b,_,_) => Binding.name_of b) spec
-        val dname = fst (dest_Type lhsT)
+        val dname = dest_Type_name lhsT
         val simp = Simplifier.simp_add
         val case_names = Rule_Cases.case_names names
         val cases_type = Induct.cases_type dname

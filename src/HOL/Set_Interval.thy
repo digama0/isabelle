@@ -84,6 +84,10 @@ syntax
   "_INTER_le"   :: "'a => 'a => 'b set => 'b set"       ("(3\<Inter>_\<le>_./ _)" [0, 0, 10] 10)
   "_INTER_less" :: "'a => 'a => 'b set => 'b set"       ("(3\<Inter>_<_./ _)" [0, 0, 10] 10)
 
+syntax_consts
+  "_UNION_le" "_UNION_less" \<rightleftharpoons> Union and
+  "_INTER_le" "_INTER_less" \<rightleftharpoons> Inter
+
 translations
   "\<Union>i\<le>n. A" \<rightleftharpoons> "\<Union>i\<in>{..n}. A"
   "\<Union>i<n. A" \<rightleftharpoons> "\<Union>i\<in>{..<n}. A"
@@ -1697,6 +1701,34 @@ proof (rule classical)
     by simp
 qed
 
+lemma finite_countable_subset:
+  assumes "finite A" and A: "A \<subseteq> (\<Union>i::nat. B i)"
+  obtains n where "A \<subseteq> (\<Union>i<n. B i)"
+proof -
+  obtain f where f: "\<And>x. x \<in> A \<Longrightarrow> x \<in> B(f x)"
+    by (metis in_mono UN_iff A)
+  define n where "n = Suc (Max (f`A))"
+  have "finite (f ` A)"
+    by (simp add: \<open>finite A\<close>)
+  then have "A \<subseteq> (\<Union>i<n. B i)"
+    unfolding UN_iff f n_def subset_iff
+    by (meson Max_ge f imageI le_imp_less_Suc lessThan_iff)
+  then show ?thesis ..
+qed
+
+lemma finite_countable_equals:
+  assumes "finite A" "A = (\<Union>i::nat. B i)"
+  obtains n where "A = (\<Union>i<n. B i)"
+proof -
+  obtain n where "A \<subseteq> (\<Union>i<n. B i)"
+  proof (rule finite_countable_subset)
+    show "A \<subseteq> \<Union> (range B)"
+      by (force simp: assms)
+  qed (use assms in auto)
+  with that show ?thesis
+    by (force simp: assms)
+qed
+
 subsection \<open>Lemmas useful with the summation operator sum\<close>
 
 text \<open>For examples, see Algebra/poly/UnivPoly2.thy\<close>
@@ -1976,6 +2008,9 @@ syntax
   "_from_upto_sum" :: "idt \<Rightarrow> 'a \<Rightarrow> 'a \<Rightarrow> 'b \<Rightarrow> 'b"  ("(3\<Sum>_ = _..<_./ _)" [0,0,0,10] 10)
   "_upt_sum" :: "idt \<Rightarrow> 'a \<Rightarrow> 'b \<Rightarrow> 'b"  ("(3\<Sum>_<_./ _)" [0,0,10] 10)
   "_upto_sum" :: "idt \<Rightarrow> 'a \<Rightarrow> 'b \<Rightarrow> 'b"  ("(3\<Sum>_\<le>_./ _)" [0,0,10] 10)
+
+syntax_consts
+  "_from_to_sum" "_from_upto_sum" "_upt_sum" "_upto_sum" == sum
 
 translations
   "\<Sum>x=a..b. t" == "CONST sum (\<lambda>x. t) {a..b}"
@@ -2666,6 +2701,9 @@ syntax
   "_from_upto_prod" :: "idt \<Rightarrow> 'a \<Rightarrow> 'a \<Rightarrow> 'b \<Rightarrow> 'b"  ("(3\<Prod>_ = _..<_./ _)" [0,0,0,10] 10)
   "_upt_prod" :: "idt \<Rightarrow> 'a \<Rightarrow> 'b \<Rightarrow> 'b"  ("(3\<Prod>_<_./ _)" [0,0,10] 10)
   "_upto_prod" :: "idt \<Rightarrow> 'a \<Rightarrow> 'b \<Rightarrow> 'b"  ("(3\<Prod>_\<le>_./ _)" [0,0,10] 10)
+
+syntax_consts
+  "_from_to_prod" "_from_upto_prod" "_upt_prod" "_upto_prod" \<rightleftharpoons> prod
 
 translations
   "\<Prod>x=a..b. t" \<rightleftharpoons> "CONST prod (\<lambda>x. t) {a..b}"

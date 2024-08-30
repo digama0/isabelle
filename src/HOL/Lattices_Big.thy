@@ -470,6 +470,10 @@ syntax
   "_MAX1"     :: "pttrns \<Rightarrow> 'b \<Rightarrow> 'b"           ("(3MAX _./ _)" [0, 10] 10)
   "_MAX"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b \<Rightarrow> 'b"  ("(3MAX _\<in>_./ _)" [0, 0, 10] 10)
 
+syntax_consts
+  "_MIN1" "_MIN" \<rightleftharpoons> Min and
+  "_MAX1" "_MAX" \<rightleftharpoons> Max
+
 translations
   "MIN x y. f"   \<rightleftharpoons> "MIN x. MIN y. f"
   "MIN x. f"     \<rightleftharpoons> "CONST Min (CONST range (\<lambda>x. f))"
@@ -477,6 +481,7 @@ translations
   "MAX x y. f"   \<rightleftharpoons> "MAX x. MAX y. f"
   "MAX x. f"     \<rightleftharpoons> "CONST Max (CONST range (\<lambda>x. f))"
   "MAX x\<in>A. f"   \<rightleftharpoons> "CONST Max ((\<lambda>x. f) ` A)"
+
 
 text \<open>An aside: \<^const>\<open>Min\<close>/\<^const>\<open>Max\<close> on linear orders as special case of \<^const>\<open>Inf_fin\<close>/\<^const>\<open>Sup_fin\<close>\<close>
 
@@ -919,6 +924,8 @@ end
 syntax
   "_arg_min" :: "('b \<Rightarrow> 'a) \<Rightarrow> pttrn \<Rightarrow> bool \<Rightarrow> 'b"
     ("(3ARG'_MIN _ _./ _)" [1000, 0, 10] 10)
+syntax_consts
+  "_arg_min" \<rightleftharpoons> arg_min
 translations
   "ARG_MIN f x. P" \<rightleftharpoons> "CONST arg_min f (\<lambda>x. P)"
 
@@ -935,41 +942,33 @@ lemma arg_minI:
     \<And>y. P y \<Longrightarrow> \<not> f y < f x;
     \<And>x. \<lbrakk> P x; \<forall>y. P y \<longrightarrow> \<not> f y < f x \<rbrakk> \<Longrightarrow> Q x \<rbrakk>
   \<Longrightarrow> Q (arg_min f P)"
-apply (simp add: arg_min_def is_arg_min_def)
-apply (rule someI2_ex)
- apply blast
-apply blast
-done
+  unfolding arg_min_def is_arg_min_def
+  by (blast intro!: someI2_ex)
 
 lemma arg_min_equality:
   "\<lbrakk> P k; \<And>x. P x \<Longrightarrow> f k \<le> f x \<rbrakk> \<Longrightarrow> f (arg_min f P) = f k"
   for f :: "_ \<Rightarrow> 'a::order"
-apply (rule arg_minI)
-  apply assumption
- apply (simp add: less_le_not_le)
-by (metis le_less)
+  by (rule arg_minI; force simp: not_less less_le_not_le)
 
 lemma wf_linord_ex_has_least:
   "\<lbrakk> wf r; \<forall>x y. (x, y) \<in> r\<^sup>+ \<longleftrightarrow> (y, x) \<notin> r\<^sup>*; P k \<rbrakk>
    \<Longrightarrow> \<exists>x. P x \<and> (\<forall>y. P y \<longrightarrow> (m x, m y) \<in> r\<^sup>*)"
-apply (drule wf_trancl [THEN wf_eq_minimal [THEN iffD1]])
-apply (drule_tac x = "m ` Collect P" in spec)
-by force
+  by (force dest!:  wf_trancl [THEN wf_eq_minimal [THEN iffD1, THEN spec], where x = "m ` Collect P"])
 
 lemma ex_has_least_nat: "P k \<Longrightarrow> \<exists>x. P x \<and> (\<forall>y. P y \<longrightarrow> m x \<le> m y)"
   for m :: "'a \<Rightarrow> nat"
-apply (simp only: pred_nat_trancl_eq_le [symmetric])
-apply (rule wf_pred_nat [THEN wf_linord_ex_has_least])
- apply (simp add: less_eq linorder_not_le pred_nat_trancl_eq_le)
-by assumption
+  unfolding pred_nat_trancl_eq_le [symmetric]
+  apply (rule wf_pred_nat [THEN wf_linord_ex_has_least])
+   apply (simp add: less_eq linorder_not_le pred_nat_trancl_eq_le)
+  by assumption
 
 lemma arg_min_nat_lemma:
   "P k \<Longrightarrow> P(arg_min m P) \<and> (\<forall>y. P y \<longrightarrow> m (arg_min m P) \<le> m y)"
   for m :: "'a \<Rightarrow> nat"
-apply (simp add: arg_min_def is_arg_min_linorder)
-apply (rule someI_ex)
-apply (erule ex_has_least_nat)
-done
+  unfolding arg_min_def is_arg_min_linorder
+  apply (rule someI_ex)
+  apply (erule ex_has_least_nat)
+  done
 
 lemmas arg_min_natI = arg_min_nat_lemma [THEN conjunct1]
 
@@ -979,35 +978,35 @@ by (metis arg_min_nat_lemma is_arg_min_linorder)
 
 lemma arg_min_nat_le: "P x \<Longrightarrow> m (arg_min m P) \<le> m x"
   for m :: "'a \<Rightarrow> nat"
-by (rule arg_min_nat_lemma [THEN conjunct2, THEN spec, THEN mp])
+  by (rule arg_min_nat_lemma [THEN conjunct2, THEN spec, THEN mp])
 
 lemma ex_min_if_finite:
   "\<lbrakk> finite S; S \<noteq> {} \<rbrakk> \<Longrightarrow> \<exists>m\<in>S. \<not>(\<exists>x\<in>S. x < (m::'a::order))"
-by(induction rule: finite.induct) (auto intro: order.strict_trans)
+  by(induction rule: finite.induct) (auto intro: order.strict_trans)
 
 lemma ex_is_arg_min_if_finite: fixes f :: "'a \<Rightarrow> 'b :: order"
-shows "\<lbrakk> finite S; S \<noteq> {} \<rbrakk> \<Longrightarrow> \<exists>x. is_arg_min f (\<lambda>x. x \<in> S) x"
-unfolding is_arg_min_def
-using ex_min_if_finite[of "f ` S"]
-by auto
+  shows "\<lbrakk> finite S; S \<noteq> {} \<rbrakk> \<Longrightarrow> \<exists>x. is_arg_min f (\<lambda>x. x \<in> S) x"
+  unfolding is_arg_min_def
+  using ex_min_if_finite[of "f ` S"]
+  by auto
 
 lemma arg_min_SOME_Min:
   "finite S \<Longrightarrow> arg_min_on f S = (SOME y. y \<in> S \<and> f y = Min(f ` S))"
-unfolding arg_min_on_def arg_min_def is_arg_min_linorder
-apply(rule arg_cong[where f = Eps])
-apply (auto simp: fun_eq_iff intro: Min_eqI[symmetric])
-done
+  unfolding arg_min_on_def arg_min_def is_arg_min_linorder
+  apply(rule arg_cong[where f = Eps])
+  apply (auto simp: fun_eq_iff intro: Min_eqI[symmetric])
+  done
 
 lemma arg_min_if_finite: fixes f :: "'a \<Rightarrow> 'b :: order"
-assumes "finite S" "S \<noteq> {}"
-shows  "arg_min_on f S \<in> S" and "\<not>(\<exists>x\<in>S. f x < f (arg_min_on f S))"
-using ex_is_arg_min_if_finite[OF assms, of f]
-unfolding arg_min_on_def arg_min_def is_arg_min_def
-by(auto dest!: someI_ex)
+  assumes "finite S" "S \<noteq> {}"
+  shows  "arg_min_on f S \<in> S" and "\<not>(\<exists>x\<in>S. f x < f (arg_min_on f S))"
+  using ex_is_arg_min_if_finite[OF assms, of f]
+  unfolding arg_min_on_def arg_min_def is_arg_min_def
+  by(auto dest!: someI_ex)
 
 lemma arg_min_least: fixes f :: "'a \<Rightarrow> 'b :: linorder"
-shows "\<lbrakk> finite S;  S \<noteq> {};  y \<in> S \<rbrakk> \<Longrightarrow> f(arg_min_on f S) \<le> f y"
-by(simp add: arg_min_SOME_Min inv_into_def2[symmetric] f_inv_into_f)
+  shows "\<lbrakk> finite S;  S \<noteq> {};  y \<in> S \<rbrakk> \<Longrightarrow> f(arg_min_on f S) \<le> f y"
+  by(simp add: arg_min_SOME_Min inv_into_def2[symmetric] f_inv_into_f)
 
 lemma arg_min_inj_eq: fixes f :: "'a \<Rightarrow> 'b :: order"
 shows "\<lbrakk> inj_on f {x. P x}; P a; \<forall>y. P y \<longrightarrow> f a \<le> f y \<rbrakk> \<Longrightarrow> arg_min f P = a"
@@ -1036,6 +1035,8 @@ end
 syntax
   "_arg_max" :: "('b \<Rightarrow> 'a) \<Rightarrow> pttrn \<Rightarrow> bool \<Rightarrow> 'a"
     ("(3ARG'_MAX _ _./ _)" [1000, 0, 10] 10)
+syntax_consts
+  "_arg_max" \<rightleftharpoons> arg_max
 translations
   "ARG_MAX f x. P" \<rightleftharpoons> "CONST arg_max f (\<lambda>x. P)"
 
@@ -1048,11 +1049,8 @@ lemma arg_maxI:
     (\<And>y. P y \<Longrightarrow> \<not> f y > f x) \<Longrightarrow>
     (\<And>x. P x \<Longrightarrow> \<forall>y. P y \<longrightarrow> \<not> f y > f x \<Longrightarrow> Q x) \<Longrightarrow>
     Q (arg_max f P)"
-apply (simp add: arg_max_def is_arg_max_def)
-apply (rule someI2_ex)
- apply blast
-apply blast
-done
+  unfolding arg_max_def is_arg_max_def
+  by (blast intro!: someI2_ex elim: )
 
 lemma arg_max_equality:
   "\<lbrakk> P k; \<And>x. P x \<Longrightarrow> f x \<le> f k \<rbrakk> \<Longrightarrow> f (arg_max f P) = f k"
@@ -1086,15 +1084,13 @@ lemma arg_max_nat_lemma:
   "\<lbrakk> P k;  \<forall>y. P y \<longrightarrow> f y < b \<rbrakk>
   \<Longrightarrow> P (arg_max f P) \<and> (\<forall>y. P y \<longrightarrow> f y \<le> f (arg_max f P))"
   for f :: "'a \<Rightarrow> nat"
-apply (simp add: arg_max_def is_arg_max_linorder)
-apply (rule someI_ex)
-apply (erule (1) ex_has_greatest_nat)
-done
+  unfolding arg_max_def is_arg_max_linorder
+  by (rule someI_ex) (metis ex_has_greatest_nat)
 
 lemmas arg_max_natI = arg_max_nat_lemma [THEN conjunct1]
 
 lemma arg_max_nat_le: "P x \<Longrightarrow> \<forall>y. P y \<longrightarrow> f y < b \<Longrightarrow> f x \<le> f (arg_max f P)"
   for f :: "'a \<Rightarrow> nat"
-by (blast dest: arg_max_nat_lemma [THEN conjunct2, THEN spec, of P])
+  using arg_max_nat_lemma by metis
 
 end

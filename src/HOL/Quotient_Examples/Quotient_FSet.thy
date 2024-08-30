@@ -288,9 +288,13 @@ quotient_definition
   "insert_fset :: 'a \<Rightarrow> 'a fset \<Rightarrow> 'a fset"
   is "Cons" by auto
 
+nonterminal fset_args
 syntax
-  "_insert_fset"     :: "args => 'a fset"  ("{|(_)|}")
-
+  "" :: "'a \<Rightarrow> fset_args"  ("_")
+  "_fset_args" :: "'a \<Rightarrow> fset_args \<Rightarrow> fset_args"  ("_,/ _")
+  "_fset" :: "fset_args => 'a fset"  ("{|(_)|}")
+syntax_consts
+  "_fset_args" "_fset" == insert_fset
 translations
   "{|x, xs|}" == "CONST insert_fset x {|xs|}"
   "{|x|}"     == "CONST insert_fset x {||}"
@@ -1147,7 +1151,7 @@ lemma fset_eq_induct:
   by (lifting list_eq2.induct[simplified list_eq2_equiv[symmetric]])
 
 ML \<open>
-fun dest_fsetT (Type (\<^type_name>\<open>fset\<close>, [T])) = T
+fun dest_fsetT \<^Type>\<open>fset T\<close> = T
   | dest_fsetT T = raise TYPE ("dest_fsetT: fset type expected", [T], []);
 \<close>
 

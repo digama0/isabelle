@@ -38,6 +38,9 @@ definition Bex :: "[i, i \<Rightarrow> o] \<Rightarrow> o"
 syntax
   "_Ball" :: "[pttrn, i, o] \<Rightarrow> o"  (\<open>(3\<forall>_\<in>_./ _)\<close> 10)
   "_Bex" :: "[pttrn, i, o] \<Rightarrow> o"  (\<open>(3\<exists>_\<in>_./ _)\<close> 10)
+syntax_consts
+  "_Ball" \<rightleftharpoons> Ball and
+  "_Bex" \<rightleftharpoons> Bex
 translations
   "\<forall>x\<in>A. P" \<rightleftharpoons> "CONST Ball(A, \<lambda>x. P)"
   "\<exists>x\<in>A. P" \<rightleftharpoons> "CONST Bex(A, \<lambda>x. P)"
@@ -52,7 +55,9 @@ definition Replace :: "[i, [i, i] \<Rightarrow> o] \<Rightarrow> i"
   where "Replace(A,P) \<equiv> PrimReplace(A, \<lambda>x y. (\<exists>!z. P(x,z)) \<and> P(x,y))"
 
 syntax
-  "_Replace"  :: "[pttrn, pttrn, i, o] \<Rightarrow> i"  (\<open>(1{_ ./ _ \<in> _, _})\<close>)
+  "_Replace" :: "[pttrn, pttrn, i, o] \<Rightarrow> i"  (\<open>(1{_ ./ _ \<in> _, _})\<close>)
+syntax_consts
+  "_Replace" \<rightleftharpoons> Replace
 translations
   "{y. x\<in>A, Q}" \<rightleftharpoons> "CONST Replace(A, \<lambda>x y. Q)"
 
@@ -64,9 +69,10 @@ definition RepFun :: "[i, i \<Rightarrow> i] \<Rightarrow> i"
 
 syntax
   "_RepFun" :: "[i, pttrn, i] \<Rightarrow> i"  (\<open>(1{_ ./ _ \<in> _})\<close> [51,0,51])
+syntax_consts
+  "_RepFun" \<rightleftharpoons> RepFun
 translations
   "{b. x\<in>A}" \<rightleftharpoons> "CONST RepFun(A, \<lambda>x. b)"
-
 
 (* Separation and Pairing can be derived from the Replacement
    and Powerset Axioms using the following definitions. *)
@@ -75,6 +81,8 @@ definition Collect :: "[i, i \<Rightarrow> o] \<Rightarrow> i"
 
 syntax
   "_Collect" :: "[pttrn, i, o] \<Rightarrow> i"  (\<open>(1{_ \<in> _ ./ _})\<close>)
+syntax_consts
+  "_Collect" \<rightleftharpoons> Collect
 translations
   "{x\<in>A. P}" \<rightleftharpoons> "CONST Collect(A, \<lambda>x. P)"
 
@@ -87,6 +95,9 @@ definition Inter :: "i \<Rightarrow> i"  (\<open>\<Inter>_\<close> [90] 90)
 syntax
   "_UNION" :: "[pttrn, i, i] \<Rightarrow> i"  (\<open>(3\<Union>_\<in>_./ _)\<close> 10)
   "_INTER" :: "[pttrn, i, i] \<Rightarrow> i"  (\<open>(3\<Inter>_\<in>_./ _)\<close> 10)
+syntax_consts
+  "_UNION" == Union and
+  "_INTER" == Inter
 translations
   "\<Union>x\<in>A. B" == "CONST Union({B. x\<in>A})"
   "\<Inter>x\<in>A. B" == "CONST Inter({B. x\<in>A})"
@@ -118,11 +129,13 @@ definition cons :: "[i, i] \<Rightarrow> i"
 definition succ :: "i \<Rightarrow> i"
   where "succ(i) \<equiv> cons(i, i)"
 
-nonterminal "is"
+nonterminal "finset_args"
 syntax
-  "" :: "i \<Rightarrow> is"  (\<open>_\<close>)
-  "_Enum" :: "[i, is] \<Rightarrow> is"  (\<open>_,/ _\<close>)
-  "_Finset" :: "is \<Rightarrow> i"  (\<open>{(_)}\<close>)
+  "" :: "i \<Rightarrow> finset_args"  (\<open>_\<close>)
+  "_Finset_args" :: "[i, finset_args] \<Rightarrow> finset_args"  (\<open>_,/ _\<close>)
+  "_Finset" :: "finset_args \<Rightarrow> i"  (\<open>{(_)}\<close>)
+syntax_consts
+  "_Finset_args" "_Finset" == cons
 translations
   "{x, xs}" == "CONST cons(x, {xs})"
   "{x}" == "CONST cons(x, 0)"
@@ -179,16 +192,26 @@ definition snd :: "i \<Rightarrow> i"
 definition split :: "[[i, i] \<Rightarrow> 'a, i] \<Rightarrow> 'a::{}"  \<comment> \<open>for pattern-matching\<close>
   where "split(c) \<equiv> \<lambda>p. c(fst(p), snd(p))"
 
+nonterminal "tuple_args"
+syntax
+  "" :: "i \<Rightarrow> tuple_args"  (\<open>_\<close>)
+  "_Tuple_args" :: "[i, tuple_args] \<Rightarrow> tuple_args"  (\<open>_,/ _\<close>)
+  "_Tuple" :: "[i, tuple_args] \<Rightarrow> i"              (\<open>\<langle>(_,/ _)\<rangle>\<close>)
+syntax_consts
+  "_Tuple_args" "_Tuple" == Pair
+translations
+  "\<langle>x, y, z\<rangle>"   == "\<langle>x, \<langle>y, z\<rangle>\<rangle>"
+  "\<langle>x, y\<rangle>"      == "CONST Pair(x, y)"
+
 (* Patterns -- extends pre-defined type "pttrn" used in abstractions *)
 nonterminal patterns
 syntax
   "_pattern"  :: "patterns \<Rightarrow> pttrn"         (\<open>\<langle>_\<rangle>\<close>)
   ""          :: "pttrn \<Rightarrow> patterns"         (\<open>_\<close>)
   "_patterns" :: "[pttrn, patterns] \<Rightarrow> patterns"  (\<open>_,/_\<close>)
-  "_Tuple"    :: "[i, is] \<Rightarrow> i"              (\<open>\<langle>(_,/ _)\<rangle>\<close>)
+syntax_consts
+  "_pattern" "_patterns" == split
 translations
-  "\<langle>x, y, z\<rangle>"   == "\<langle>x, \<langle>y, z\<rangle>\<rangle>"
-  "\<langle>x, y\<rangle>"      == "CONST Pair(x, y)"
   "\<lambda>\<langle>x,y,zs\<rangle>.b" == "CONST split(\<lambda>x \<langle>y,zs\<rangle>.b)"
   "\<lambda>\<langle>x,y\<rangle>.b"    == "CONST split(\<lambda>x y. b)"
 
@@ -252,6 +275,10 @@ syntax
   "_PROD"     :: "[pttrn, i, i] \<Rightarrow> i"        (\<open>(3\<Prod>_\<in>_./ _)\<close> 10)
   "_SUM"      :: "[pttrn, i, i] \<Rightarrow> i"        (\<open>(3\<Sum>_\<in>_./ _)\<close> 10)
   "_lam"      :: "[pttrn, i, i] \<Rightarrow> i"        (\<open>(3\<lambda>_\<in>_./ _)\<close> 10)
+syntax_consts
+  "_PROD" == Pi and
+  "_SUM" == Sigma and
+  "_lam" == Lambda
 translations
   "\<Prod>x\<in>A. B"   == "CONST Pi(A, \<lambda>x. B)"
   "\<Sum>x\<in>A. B"   == "CONST Sigma(A, \<lambda>x. B)"
@@ -280,7 +307,7 @@ syntax (ASCII)
   "_PROD"     :: "[pttrn, i, i] \<Rightarrow> i"        (\<open>(3PROD _:_./ _)\<close> 10)
   "_SUM"      :: "[pttrn, i, i] \<Rightarrow> i"        (\<open>(3SUM _:_./ _)\<close> 10)
   "_lam"      :: "[pttrn, i, i] \<Rightarrow> i"        (\<open>(3lam _:_./ _)\<close> 10)
-  "_Tuple"    :: "[i, is] \<Rightarrow> i"              (\<open><(_,/ _)>\<close>)
+  "_Tuple"    :: "[i, tuple_args] \<Rightarrow> i"      (\<open><(_,/ _)>\<close>)
   "_pattern"  :: "patterns \<Rightarrow> pttrn"         (\<open><_>\<close>)
 
 

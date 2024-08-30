@@ -133,9 +133,13 @@ abbreviation
     (infixl "\<union>\<flat>" 65) where
   "xs \<union>\<flat> ys == lower_plus\<cdot>xs\<cdot>ys"
 
+nonterminal lower_pd_args
 syntax
-  "_lower_pd" :: "args \<Rightarrow> logic" ("{_}\<flat>")
-
+  "" :: "logic \<Rightarrow> lower_pd_args"  ("_")
+  "_lower_pd_args" :: "logic \<Rightarrow> lower_pd_args \<Rightarrow> lower_pd_args"  ("_,/ _")
+  "_lower_pd" :: "lower_pd_args \<Rightarrow> logic" ("{_}\<flat>")
+syntax_consts
+  "_lower_pd_args" "_lower_pd" == lower_add
 translations
   "{x,xs}\<flat>" == "{x}\<flat> \<union>\<flat> {xs}\<flat>"
   "{x}\<flat>" == "CONST lower_unit\<cdot>x"
@@ -341,6 +345,9 @@ definition
 syntax
   "_lower_bind" :: "[logic, logic, logic] \<Rightarrow> logic"
     ("(3\<Union>\<flat>_\<in>_./ _)" [0, 0, 10] 10)
+
+syntax_consts
+  "_lower_bind" == lower_bind
 
 translations
   "\<Union>\<flat>x\<in>xs. e" == "CONST lower_bind\<cdot>xs\<cdot>(\<Lambda> x. e)"

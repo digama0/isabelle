@@ -100,16 +100,12 @@ fun interpretation f =
 
 val typedef_overloaded = Attrib.setup_config_bool \<^binding>\<open>typedef_overloaded\<close> (K false);
 
-fun mk_inhabited A =
-  let val T = HOLogic.dest_setT (Term.fastype_of A)
-  in HOLogic.mk_Trueprop (HOLogic.exists_const T $ Abs ("x", T, HOLogic.mk_mem (Bound 0, A))) end;
+fun mk_inhabited T A =
+  \<^instantiate>\<open>'a = T and A in prop \<open>\<exists>x::'a. x \<in> A\<close>\<close>;
 
 fun mk_typedef newT oldT RepC AbsC A =
-  let
-    val typedefC =
-      Const (\<^const_name>\<open>type_definition\<close>,
-        (newT --> oldT) --> (oldT --> newT) --> HOLogic.mk_setT oldT --> HOLogic.boolT);
-  in Logic.mk_implies (mk_inhabited A, HOLogic.mk_Trueprop (typedefC $ RepC $ AbsC $ A)) end;
+  let val type_definition = \<^Const>\<open>type_definition newT oldT for RepC AbsC A\<close>
+  in Logic.mk_implies (mk_inhabited oldT A, HOLogic.mk_Trueprop type_definition) end;
 
 fun primitive_typedef {overloaded} type_definition_name newT oldT Rep_name Abs_name A lthy =
   let
@@ -210,8 +206,9 @@ fun prepare_typedef prep_term overloaded (name, raw_args, mx) raw_set opt_bindin
       error ("Not a set type: " ^ quote (Syntax.string_of_typ lthy setT));
 
     val bname = Binding.name_of name;
-    val goal = mk_inhabited set;
-    val goal_pat = mk_inhabited (Var (the_default (bname, 0) (Lexicon.read_variable bname), setT));
+    val goal = mk_inhabited oldT set;
+    val goal_pat =
+      mk_inhabited oldT (Var (the_default (bname, 0) (Lexicon.read_variable bname), setT));
 
 
     (* lhs *)
@@ -221,7 +218,7 @@ fun prepare_typedef prep_term overloaded (name, raw_args, mx) raw_set opt_bindin
       |> Typedecl.typedecl {final = false} (name, args, mx)
       ||> Variable.declare_term set;
 
-    val Type (full_name, _) = newT;
+    val full_name = dest_Type_name newT;
 
 
     (* axiomatization *)
@@ -232,8 +229,8 @@ fun prepare_typedef prep_term overloaded (name, raw_args, mx) raw_set opt_bindin
       |> primitive_typedef overloaded type_definition_name newT oldT Rep_name Abs_name set;
 
     val alias_lthy = typedef_lthy
-      |> Local_Theory.const_alias Rep_name (#1 (Term.dest_Const RepC))
-      |> Local_Theory.const_alias Abs_name (#1 (Term.dest_Const AbsC));
+      |> Local_Theory.const_alias Rep_name (Term.dest_Const_name RepC)
+      |> Local_Theory.const_alias Abs_name (Term.dest_Const_name AbsC);
 
 
     (* result *)
@@ -275,8 +272,8 @@ fun prepare_typedef prep_term overloaded (name, raw_args, mx) raw_set opt_bindin
               make @{thm type_definition.Abs_induct});
 
         val info =
-          ({rep_type = oldT, abs_type = newT, Rep_name = #1 (Term.dest_Const RepC),
-            Abs_name = #1 (Term.dest_Const AbsC), axiom_name = axiom_name},
+          ({rep_type = oldT, abs_type = newT, Rep_name = dest_Const_name RepC,
+            Abs_name = dest_Const_name AbsC, axiom_name = axiom_name},
            {inhabited = inhabited, type_definition = type_definition,
             Rep = Rep, Rep_inverse = Rep_inverse, Abs_inverse = Abs_inverse,
             Rep_inject = Rep_inject, Abs_inject = Abs_inject, Rep_cases = Rep_cases,

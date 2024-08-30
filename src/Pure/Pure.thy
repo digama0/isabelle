@@ -7,17 +7,18 @@ The Pure theory, with definitions of Isar commands and some lemmas.
 theory Pure
 keywords
     "!!" "!" "+" ":" ";" "<" "<=" "==" "=>" "?" "[" "\<comment>" "\<equiv>" "\<leftharpoondown>" "\<rightharpoonup>" "\<rightleftharpoons>"
-    "\<subseteq>" "]" "binder" "by" "identifier" "in" "infix" "infixl" "infixr" "is" "open" "output"
-    "overloaded" "passive" "pervasive" "premises" "structure" "unchecked"
+    "\<subseteq>" "]" "binder" "by" "congproc" "identifier" "in" "infix" "infixl" "infixr" "is" "open"
+    "output" "overloaded" "passive" "pervasive" "premises" "structure" "unchecked" "weak_congproc"
   and "private" "qualified" :: before_command
   and "assumes" "constrains" "defines" "fixes" "for" "if" "includes" "notes" "rewrites"
     "obtains" "shows" "when" "where" "|" :: quasi_command
   and "text" "txt" :: document_body
   and "text_raw" :: document_raw
   and "default_sort" :: thy_decl
-  and "typedecl" "nonterminal" "judgment" "consts" "syntax" "no_syntax" "translations"
-    "no_translations" "type_notation" "no_type_notation" "notation" "no_notation" "alias"
-    "type_alias" "declare" "hide_class" "hide_type" "hide_const" "hide_fact" :: thy_decl
+  and "typedecl" "nonterminal" "judgment" "consts" "syntax" "no_syntax" "syntax_consts"
+    "syntax_types" "translations" "no_translations" "type_notation" "no_type_notation" "notation"
+    "no_notation" "alias" "type_alias" "declare" "hide_class" "hide_type" "hide_const"
+    "hide_fact" :: thy_decl
   and "type_synonym" "definition" "abbreviation" "lemmas" :: thy_defn
   and "axiomatization" :: thy_stmt
   and "external_file" "bibtex_file" "ROOTS_file" :: thy_load
@@ -401,6 +402,19 @@ val _ =
     (Parse.syntax_mode -- Scan.repeat1 Parse.const_decl
       >> uncurry (Local_Theory.syntax_cmd false));
 
+val syntax_consts =
+  Parse.and_list1
+    ((Scan.repeat1 Parse.name_position --| (\<^keyword>\<open>\<rightleftharpoons>\<close> || \<^keyword>\<open>==\<close>)) --
+      Parse.!!! (Scan.repeat1 Parse.name_position));
+
+val _ =
+  Outer_Syntax.command \<^command_keyword>\<open>syntax_consts\<close> "declare syntax const dependencies"
+    (syntax_consts >> (Toplevel.theory o Isar_Cmd.syntax_consts));
+
+val _ =
+  Outer_Syntax.command \<^command_keyword>\<open>syntax_types\<close> "declare syntax const dependencies (type names)"
+    (syntax_consts >> (Toplevel.theory o Isar_Cmd.syntax_types));
+
 val trans_pat =
   Scan.optional
     (\<^keyword>\<open>(\<close> |-- Parse.!!! (Parse.inner_syntax Parse.name --| \<^keyword>\<open>)\<close>)) "logic"
@@ -605,11 +619,11 @@ val _ =
 
 val _ =
   hide_names \<^command_keyword>\<open>hide_type\<close> "types" Sign.hide_type Parse.type_const
-    ((#1 o dest_Type) oo Proof_Context.read_type_name {proper = true, strict = false});
+    (dest_Type_name oo Proof_Context.read_type_name {proper = true, strict = false});
 
 val _ =
   hide_names \<^command_keyword>\<open>hide_const\<close> "consts" Sign.hide_const Parse.const
-    ((#1 o dest_Const) oo Proof_Context.read_const {proper = true, strict = false});
+    (dest_Const_name oo Proof_Context.read_const {proper = true, strict = false});
 
 val _ =
   hide_names \<^command_keyword>\<open>hide_fact\<close> "facts" Global_Theory.hide_fact

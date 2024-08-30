@@ -16,7 +16,7 @@ import scala.collection.mutable
 object Isabelle_Cronjob {
   /* global resources: owned by main cronjob */
 
-  val backup = "lxbroy10:cronjob"
+  val backup = "isabelle.in.tum.de:cronjob"
   val main_dir: Path = Path.explode("~/cronjob")
   val main_state_file: Path = main_dir + Path.explode("run/main.state")
   val build_release_log: Path = main_dir + Path.explode("run/build_release.log")
@@ -389,7 +389,7 @@ object Isabelle_Cronjob {
       List(
         Remote_Build("AFP Windows", "windows2",
           java_heap = "8g",
-          options = "-m32 -M1x6 -t AFP",
+          options = "-m32 -M1x5 -t AFP",
           args = "-a -X large -X slow",
           afp = true,
           detect = Build_Log.Prop.build_tags.toString + " = " + SQL.string("AFP")))

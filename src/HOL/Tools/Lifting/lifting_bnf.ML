@@ -11,6 +11,7 @@ end
 structure Lifting_BNF : LIFTING_BNF =
 struct
 
+open Lifting_Util
 open BNF_Util
 open BNF_Def
 open Transfer_BNF
@@ -22,7 +23,7 @@ fun Quotient_tac bnf ctxt i =
     val rel_Grp = rel_Grp_of_bnf bnf
     fun get_lhs thm = thm |> Thm.concl_of |> HOLogic.dest_Trueprop |> HOLogic.dest_eq |> fst
     val vars = get_lhs rel_Grp |> strip_comb |> snd |> map_filter (try (strip_comb #> snd #> hd))
-    val UNIVs = map (fn var => HOLogic.mk_UNIV (var |> dest_Var |> snd |> dest_Type |> snd |> hd)) vars
+    val UNIVs = map (fn var => HOLogic.mk_UNIV (var |> dest_Var |> snd |> dest_Type_args |> hd)) vars
     val inst = map dest_Var vars ~~ map (Thm.cterm_of ctxt) UNIVs
     val rel_Grp_UNIV_sym = rel_Grp |> Drule.instantiate_normalize (TVars.empty, Vars.make inst) 
       |> Local_Defs.unfold0 ctxt @{thms subset_UNIV[THEN eqTrueI] UNIV_def[symmetric] simp_thms(21)}
@@ -38,13 +39,6 @@ fun Quotient_tac bnf ctxt i =
       hyp_subst_tac ctxt, rtac ctxt refl] i
   end
 
-fun mk_Quotient args =
-  let
-    val argTs = map fastype_of args
-  in
-    list_comb (Const (\<^const_name>\<open>Quotient\<close>, argTs ---> HOLogic.boolT), args)
-  end
-
 fun prove_Quotient_map bnf ctxt =
   let
     val live = live_of_bnf bnf
@@ -57,12 +51,13 @@ fun prove_Quotient_map bnf ctxt =
       |> @{fold_map 2} mk_Frees ["R", "Abs", "Rep", "T"] (transpose argTss)
       |>> `transpose
    
-    val assms = map (mk_Quotient #> HOLogic.mk_Trueprop) argss
+    val assms = argss |> map (fn [rel, abs, rep, cr] =>
+      HOLogic.mk_Trueprop (mk_Quotient (rel, abs, rep, cr)))
     val R_rel = list_comb (mk_rel_of_bnf Ds As As bnf, nth argss' 0)
     val Abs_map = list_comb (mk_map_of_bnf Ds As Bs bnf, nth argss' 1)
     val Rep_map = list_comb (mk_map_of_bnf Ds Bs As bnf, nth argss' 2)
     val T_rel = list_comb (mk_rel_of_bnf Ds As Bs bnf, nth argss' 3)
-    val concl = mk_Quotient [R_rel, Abs_map, Rep_map, T_rel] |> HOLogic.mk_Trueprop
+    val concl = HOLogic.mk_Trueprop (mk_Quotient (R_rel, Abs_map, Rep_map, T_rel))
     val goal = Logic.list_implies (assms, concl)
   in
     Goal.prove_sorry ctxt'' [] [] goal

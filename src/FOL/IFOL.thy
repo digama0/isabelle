@@ -102,6 +102,7 @@ abbreviation not_equal :: \<open>['a, 'a] \<Rightarrow> o\<close>  (infixl \<ope
   where \<open>x \<noteq> y \<equiv> \<not> (x = y)\<close>
 
 syntax "_Uniq" :: "pttrn \<Rightarrow> o \<Rightarrow> o"  ("(2\<exists>\<^sub>\<le>\<^sub>1 _./ _)" [0, 10] 10)
+syntax_consts "_Uniq" \<rightleftharpoons> Uniq
 translations "\<exists>\<^sub>\<le>\<^sub>1x. P" \<rightleftharpoons> "CONST Uniq (\<lambda>x. P)"
 
 print_translation \<open>
@@ -746,7 +747,7 @@ syntax
   ""            :: \<open>letbind => letbinds\<close>              (\<open>_\<close>)
   "_binds"      :: \<open>[letbind, letbinds] => letbinds\<close>  (\<open>_;/ _\<close>)
   "_Let"        :: \<open>[letbinds, 'a] => 'a\<close>             (\<open>(let (_)/ in (_))\<close> 10)
-
+syntax_consts "_Let" \<rightleftharpoons> Let
 translations
   "_Let(_binds(b, bs), e)"  == "_Let(b, _Let(bs, e))"
   "let x = a in e"          == "CONST Let(a, \<lambda>x. e)"

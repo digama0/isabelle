@@ -164,9 +164,13 @@ subsection \<open>Other operations\<close>
 lift_definition finsert :: "'a \<Rightarrow> 'a fset \<Rightarrow> 'a fset" is insert parametric Lifting_Set.insert_transfer
   by simp
 
+nonterminal fset_args
 syntax
-  "_insert_fset"     :: "args => 'a fset"  ("{|(_)|}")
-
+  "" :: "'a \<Rightarrow> fset_args"  ("_")
+  "_fset_args" :: "'a \<Rightarrow> fset_args \<Rightarrow> fset_args"  ("_,/ _")
+  "_fset" :: "fset_args => 'a fset"  ("{|(_)|}")
+syntax_consts
+  "_fset_args" "_fset" == finsert
 translations
   "{|x, xs|}" == "CONST finsert x {|xs|}"
   "{|x|}"     == "CONST finsert x {||}"
@@ -199,6 +203,10 @@ syntax (input)
 syntax
   "_fBall"       :: "pttrn \<Rightarrow> 'a fset \<Rightarrow> bool \<Rightarrow> bool"      ("(3\<forall>(_/|\<in>|_)./ _)" [0, 0, 10] 10)
   "_fBex"        :: "pttrn \<Rightarrow> 'a fset \<Rightarrow> bool \<Rightarrow> bool"      ("(3\<exists>(_/|\<in>|_)./ _)" [0, 0, 10] 10)
+
+syntax_consts
+  "_fBall" \<rightleftharpoons> FSet.Ball and
+  "_fBex" \<rightleftharpoons> FSet.Bex
 
 translations
   "\<forall>x|\<in>|A. P" \<rightleftharpoons> "CONST FSet.Ball A (\<lambda>x. P)"

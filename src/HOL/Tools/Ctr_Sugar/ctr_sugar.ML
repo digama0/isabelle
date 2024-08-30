@@ -296,7 +296,7 @@ fun mk_case Ts T t =
   end;
 
 fun mk_disc_or_sel Ts t =
-  subst_nonatomic_types (snd (Term.dest_Type (domain_type (fastype_of t))) ~~ Ts) t;
+  subst_nonatomic_types (Term.dest_Type_args (domain_type (fastype_of t)) ~~ Ts) t;
 
 val name_of_ctr = name_of_const "constructor" body_type;
 
@@ -362,7 +362,7 @@ fun extract_sel_default ctxt t =
       |> HOLogic.dest_eq
       |>> (Term.dest_comb
         #>> const_or_free_name
-        ##> (Term.strip_comb #>> (Term.dest_Const #> fst)))
+        ##> (Term.strip_comb #>> dest_Const_name))
       handle TERM _ => malformed ();
   in
     if forall (is_Free orf is_Var) vars andalso not (has_duplicates (op aconv) vars) then

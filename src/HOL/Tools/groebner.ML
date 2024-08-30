@@ -349,23 +349,21 @@ fun grobner_strong vars pols pol =
 
 fun refute_disj rfn tm =
  case Thm.term_of tm of
-  Const(\<^const_name>\<open>HOL.disj\<close>,_)$_$_ =>
+  \<^Const_>\<open>disj for _ _\<close> =>
    Drule.compose
     (refute_disj rfn (Thm.dest_arg tm), 2,
       Drule.compose (refute_disj rfn (Thm.dest_arg1 tm), 2, disjE))
   | _ => rfn tm ;
 
-val notnotD = @{thm notnotD};
-fun mk_binop ct x y = Thm.apply (Thm.apply ct x) y
-
 fun is_neg t =
-    case Thm.term_of t of
-      (Const(\<^const_name>\<open>Not\<close>,_)$_) => true
-    | _  => false;
+  case Thm.term_of t of
+    \<^Const_>\<open>Not for _\<close> => true
+  | _  => false;
+
 fun is_eq t =
- case Thm.term_of t of
- (Const(\<^const_name>\<open>HOL.eq\<close>,_)$_$_) => true
-| _  => false;
+  case Thm.term_of t of
+    \<^Const_>\<open>HOL.eq _ for _ _\<close> => true
+  | _  => false;
 
 fun end_itlist f l =
   case l of
@@ -373,7 +371,7 @@ fun end_itlist f l =
       | [x]    => x
       | (h::t) => f h (end_itlist f t);
 
-val list_mk_binop = fn b => end_itlist (mk_binop b);
+val list_mk_binop = fn b => end_itlist (Thm.mk_binop b);
 
 val list_dest_binop = fn b =>
  let fun h acc t =
@@ -392,9 +390,9 @@ val strip_exists =
  end;
 
 fun is_forall t =
- case Thm.term_of t of
-  (Const(\<^const_name>\<open>All\<close>,_)$Abs(_,_,_)) => true
-| _ => false;
+  case Thm.term_of t of
+    \<^Const_>\<open>All _ for \<open>Abs _\<close>\<close> => true
+  | _ => false;
 
 val nnf_simps = @{thms nnf_simps};
 
@@ -411,13 +409,9 @@ fun initial_conv ctxt =
 
 val specl = fold_rev (fn x => fn th => Thm.instantiate' [] [SOME x] (th RS spec));
 
-val cTrp = \<^cterm>\<open>Trueprop\<close>;
-val cConj = \<^cterm>\<open>HOL.conj\<close>;
-val (cNot,false_tm) = (\<^cterm>\<open>Not\<close>, \<^cterm>\<open>False\<close>);
-val assume_Trueprop = Thm.apply cTrp #> Thm.assume;
-val list_mk_conj = list_mk_binop cConj;
-val conjs = list_dest_binop cConj;
-val mk_neg = Thm.apply cNot;
+val list_mk_conj = list_mk_binop \<^cterm>\<open>conj\<close>;
+val conjs = list_dest_binop \<^cterm>\<open>conj\<close>;
+val mk_neg = Thm.apply \<^cterm>\<open>Not\<close>;
 
 fun striplist dest =
  let
@@ -436,21 +430,21 @@ fun sym_conv eq =
 
   (* FIXME : copied from cqe.ML -- complex QE*)
 fun conjuncts ct =
- case Thm.term_of ct of
-  \<^term>\<open>HOL.conj\<close>$_$_ => (Thm.dest_arg1 ct)::(conjuncts (Thm.dest_arg ct))
-| _ => [ct];
+  case Thm.term_of ct of
+    \<^Const_>\<open>conj for _ _\<close> => (Thm.dest_arg1 ct)::(conjuncts (Thm.dest_arg ct))
+  | _ => [ct];
 
 fun fold1 f = foldr1 (uncurry f);
 
 fun mk_conj_tab th =
- let fun h acc th =
-   case Thm.prop_of th of
-   \<^term>\<open>Trueprop\<close>$(\<^term>\<open>HOL.conj\<close>$_$_) =>
-     h (h acc (th RS conjunct2)) (th RS conjunct1)
-  | \<^term>\<open>Trueprop\<close>$p => (p,th)::acc
-in fold (Termtab.insert Thm.eq_thm) (h [] th) Termtab.empty end;
+  let fun h acc th =
+    case Thm.prop_of th of
+      \<^Const_>\<open>Trueprop for \<^Const_>\<open>conj for _ _\<close>\<close> =>
+        h (h acc (th RS conjunct2)) (th RS conjunct1)
+    | \<^Const_>\<open>Trueprop for p\<close> => (p,th)::acc
+  in fold (Termtab.insert Thm.eq_thm) (h [] th) Termtab.empty end;
 
-fun is_conj (\<^term>\<open>HOL.conj\<close>$_$_) = true
+fun is_conj \<^Const_>\<open>conj for _ _\<close> = true
   | is_conj _ = false;
 
 fun prove_conj tab cjs =
@@ -474,11 +468,11 @@ fun conj_ac_rule eq =
 
    (* Conversion for the equivalence of existential statements where
       EX quantifiers are rearranged differently *)
-fun ext ctxt T = Thm.cterm_of ctxt (Const (\<^const_name>\<open>Ex\<close>, (T --> \<^typ>\<open>bool\<close>) --> \<^typ>\<open>bool\<close>))
+fun ext ctxt T = Thm.cterm_of ctxt \<^Const>\<open>Ex T\<close>
 fun mk_ex ctxt v t = Thm.apply (ext ctxt (Thm.typ_of_cterm v)) (Thm.lambda v t)
 
 fun choose v th th' = case Thm.concl_of th of
-  \<^term>\<open>Trueprop\<close> $ (Const(\<^const_name>\<open>Ex\<close>,_)$_) =>
+  \<^Const_>\<open>Trueprop for \<^Const_>\<open>Ex _ for _\<close>\<close> =>
    let
     val p = (funpow 2 Thm.dest_arg o Thm.cprop_of) th
     val T = Thm.dest_ctyp0 (Thm.ctyp_of_cterm p)
@@ -488,7 +482,7 @@ fun choose v th th' = case Thm.concl_of th of
           (Thm.apply \<^cterm>\<open>Trueprop\<close> (Thm.apply p v))
     val th1 = Thm.forall_intr v (Thm.implies_intr pv th')
    in Thm.implies_elim (Thm.implies_elim th0 th) th1  end
-| _ => error ""  (* FIXME ? *)
+  | _ => error ""  (* FIXME ? *)
 
 fun simple_choose ctxt v th =
    choose v (Thm.assume ((Thm.apply \<^cterm>\<open>Trueprop\<close> o mk_ex ctxt v)
@@ -572,13 +566,13 @@ let
         else raise CTERM ("field_dest_inv", [t])
     end
  val ring_dest_add = dest_binary ring_add_tm;
- val ring_mk_add = mk_binop ring_add_tm;
+ val ring_mk_add = Thm.mk_binop ring_add_tm;
  val ring_dest_sub = dest_binary ring_sub_tm;
  val ring_dest_mul = dest_binary ring_mul_tm;
- val ring_mk_mul = mk_binop ring_mul_tm;
+ val ring_mk_mul = Thm.mk_binop ring_mul_tm;
  val field_dest_div = dest_binary field_div_tm;
  val ring_dest_pow = dest_binary ring_pow_tm;
- val ring_mk_pow = mk_binop ring_pow_tm ;
+ val ring_mk_pow = Thm.mk_binop ring_pow_tm ;
  fun grobvars tm acc =
     if can dest_const tm then acc
     else if can ring_dest_neg tm then grobvars (Thm.dest_arg tm) acc
@@ -662,16 +656,17 @@ val holify_polynomial =
  end ;
 
 fun idom_rule ctxt = simplify (put_simpset HOL_basic_ss ctxt addsimps [idom_thm]);
-fun prove_nz n = eqF_elim
-                 (ring_eq_conv(mk_binop eq_tm (mk_const n) (mk_const @0)));
+fun prove_nz n = eqF_elim (ring_eq_conv (Thm.mk_binop eq_tm (mk_const n) (mk_const @0)));
 val neq_01 = prove_nz @1;
 fun neq_rule n th = [prove_nz n, th] MRS neq_thm;
 fun mk_add th1 = Thm.combination (Drule.arg_cong_rule ring_add_tm th1);
 
 fun refute ctxt tm =
- if tm aconvc false_tm then assume_Trueprop tm else
+ if Thm.term_of tm aconv \<^Const>\<open>False\<close> then Thm.assume (Thm.apply \<^cterm>\<open>Trueprop\<close> tm) else
  ((let
-   val (nths0,eths0) = List.partition (is_neg o concl) (HOLogic.conj_elims ctxt (assume_Trueprop tm))
+   val (nths0,eths0) =
+    List.partition (is_neg o concl)
+     (HOLogic.conj_elims ctxt (Thm.assume (Thm.apply \<^cterm>\<open>Trueprop\<close> tm)))
    val  nths = filter (is_eq o Thm.dest_arg o concl) nths0
    val eths = filter (is_eq o concl) eths0
   in
@@ -683,8 +678,8 @@ fun refute ctxt tm =
           ((Conv.arg_conv #> Conv.arg_conv) (Conv.binop_conv ring_normalize_conv)) th1
       val conc = th2 |> concl |> Thm.dest_arg
       val (l,_) = conc |> dest_eq
-    in Thm.implies_intr (Thm.apply cTrp tm)
-                    (Thm.equal_elim (Drule.arg_cong_rule cTrp (eqF_intr th2))
+    in Thm.implies_intr (Thm.apply \<^cterm>\<open>Trueprop\<close> tm)
+                    (Thm.equal_elim (Drule.arg_cong_rule \<^cterm>\<open>Trueprop\<close> (eqF_intr th2))
                            (HOLogic.mk_obj_eq (Thm.reflexive l)))
     end
    else
@@ -723,8 +718,8 @@ fun refute ctxt tm =
       Conv.fconv_rule ((Conv.arg_conv o Conv.arg_conv o Conv.binop_conv) ring_normalize_conv)
         (neq_rule l th3)
     val (l, _) = dest_eq(Thm.dest_arg(concl th4))
-   in Thm.implies_intr (Thm.apply cTrp tm)
-                        (Thm.equal_elim (Drule.arg_cong_rule cTrp (eqF_intr th4))
+   in Thm.implies_intr (Thm.apply \<^cterm>\<open>Trueprop\<close> tm)
+                        (Thm.equal_elim (Drule.arg_cong_rule \<^cterm>\<open>Trueprop\<close> (eqF_intr th4))
                    (HOLogic.mk_obj_eq (Thm.reflexive l)))
    end
   end) handle ERROR _ => raise CTERM ("Groebner-refute: unable to refute",[tm]))
@@ -734,7 +729,7 @@ fun ring ctxt tm =
   fun mk_forall x p =
     let
       val T = Thm.typ_of_cterm x;
-      val all = Thm.cterm_of ctxt (Const (\<^const_name>\<open>All\<close>, (T --> \<^typ>\<open>bool\<close>) --> \<^typ>\<open>bool\<close>))
+      val all = Thm.cterm_of ctxt \<^Const>\<open>All T\<close>
     in Thm.apply all (Thm.lambda x p) end
   val avs = Cterms.build (Drule.add_frees_cterm tm)
   val P' = fold mk_forall (Cterms.list_set_rev avs) tm
@@ -753,7 +748,7 @@ fun ring ctxt tm =
         (Simplifier.rewrite (put_simpset HOL_basic_ss ctxt addsimps [not_ex RS sym])
           (th2 |> Thm.cprop_of)) th2
     in specl (Cterms.list_set_rev avs)
-             ([[[HOLogic.mk_obj_eq th1, th3 RS PFalse'] MRS trans] MRS PFalse] MRS notnotD)
+             ([[[HOLogic.mk_obj_eq th1, th3 RS PFalse'] MRS trans] MRS PFalse] MRS @{thm notnotD})
    end
  end
 fun ideal tms tm ord =
@@ -781,6 +776,7 @@ val poly_eq_simproc =
   in
     Simplifier.cert_simproc (Thm.theory_of_thm idl_sub)
      {name = "poly_eq_simproc",
+      kind = Simproc,
       lhss = [Thm.term_of (Thm.lhs_of idl_sub)],
       proc = Morphism.entity (fn _ => fn _ => proc),
       identifier = []}
@@ -789,7 +785,7 @@ val poly_eq_simproc =
 val poly_eq_ss =
   simpset_of (put_simpset HOL_basic_ss \<^context>
     addsimps @{thms simp_thms}
-    addsimprocs [poly_eq_simproc])
+    |> Simplifier.add_proc poly_eq_simproc)
 
  local
   fun is_defined v t =
@@ -889,18 +885,18 @@ end;
 
 fun find_term tm ctxt =
   (case Thm.term_of tm of
-    Const (\<^const_name>\<open>HOL.eq\<close>, T) $ _ $ _ =>
-      if domain_type T = HOLogic.boolT then find_args tm ctxt
+    \<^Const_>\<open>HOL.eq T for _ _\<close> =>
+      if T = \<^Type>\<open>bool\<close> then find_args tm ctxt
       else (Thm.dest_arg tm, ctxt)
-  | Const (\<^const_name>\<open>Not\<close>, _) $ _ => find_term (Thm.dest_arg tm) ctxt
-  | Const (\<^const_name>\<open>All\<close>, _) $ _ => find_body (Thm.dest_arg tm) ctxt
-  | Const (\<^const_name>\<open>Ex\<close>, _) $ _ => find_body (Thm.dest_arg tm) ctxt
-  | Const (\<^const_name>\<open>HOL.conj\<close>, _) $ _ $ _ => find_args tm ctxt
-  | Const (\<^const_name>\<open>HOL.disj\<close>, _) $ _ $ _ => find_args tm ctxt
-  | Const (\<^const_name>\<open>HOL.implies\<close>, _) $ _ $ _ => find_args tm ctxt
-  | \<^term>\<open>Pure.imp\<close> $_$_ => find_args tm ctxt
-  | Const("(==)",_)$_$_ => find_args tm ctxt  (* FIXME proper const name *)
-  | \<^term>\<open>Trueprop\<close>$_ => find_term (Thm.dest_arg tm) ctxt
+  | \<^Const_>\<open>Not for _\<close> => find_term (Thm.dest_arg tm) ctxt
+  | \<^Const_>\<open>All _ for _\<close> => find_body (Thm.dest_arg tm) ctxt
+  | \<^Const_>\<open>Ex _ for _\<close> => find_body (Thm.dest_arg tm) ctxt
+  | \<^Const_>\<open>conj for _ _\<close> => find_args tm ctxt
+  | \<^Const_>\<open>disj for _ _\<close> => find_args tm ctxt
+  | \<^Const_>\<open>implies for _ _\<close> => find_args tm ctxt
+  | \<^Const_>\<open>Pure.imp for _ _\<close> => find_args tm ctxt
+  | \<^Const_>\<open>Pure.eq _ for _ _\<close> => find_args tm ctxt
+  | \<^Const_>\<open>Trueprop for _\<close> => find_term (Thm.dest_arg tm) ctxt
   | _ => raise TERM ("find_term", []))
 and find_args tm ctxt =
   let val (t, u) = Thm.dest_binop tm
@@ -941,9 +937,11 @@ fun ring_tac add_ths del_ths ctxt =
         | THM _ => no_tac);
 
 local
- fun lhs t = case Thm.term_of t of
-  Const(\<^const_name>\<open>HOL.eq\<close>,_)$_$_ => Thm.dest_arg1 t
- | _=> raise CTERM ("ideal_tac - lhs",[t])
+ fun lhs t =
+   case Thm.term_of t of
+     \<^Const_>\<open>HOL.eq _ for _ _\<close> => Thm.dest_arg1 t
+   | _=> raise CTERM ("ideal_tac - lhs",[t])
+
  fun exitac _ NONE = no_tac
    | exitac ctxt (SOME y) =
       resolve_tac ctxt [Thm.instantiate' [SOME (Thm.ctyp_of_cterm y)] [NONE,SOME y] exI] 1

@@ -179,12 +179,10 @@ fun unique_Tname (rty, qty) =
 
 (** witnesses **)
 
-fun mk_undefined T = Const (\<^const_name>\<open>undefined\<close>, T);
-
 fun mk_witness quot_thm =
   let
     val wit_thm = quot_thm RS @{thm type_definition_Quotient_not_empty_witness}
-    val wit = quot_thm_rep quot_thm $ mk_undefined (quot_thm_rty_qty quot_thm |> snd)
+    val wit = quot_thm_rep quot_thm $ \<^Const>\<open>undefined \<open>quot_thm_rty_qty quot_thm |> snd\<close>\<close>
   in
     (wit, wit_thm)
   end
@@ -238,9 +236,8 @@ and add_lift_def_code_dt config var qty rhs rsp_thm par_thms lthy =
     fun binop_conv2 cv1 cv2 = Conv.combination_conv (Conv.arg_conv cv1) cv2
     fun ret_rel_conv conv ctm =
       case (Thm.term_of ctm) of
-        Const (\<^const_name>\<open>rel_fun\<close>, _) $ _ $ _ =>
-          binop_conv2 Conv.all_conv conv ctm
-        | _ => conv ctm
+        \<^Const_>\<open>rel_fun _ _ _ _ for _ _\<close> => binop_conv2 Conv.all_conv conv ctm
+      | _ => conv ctm
     fun R_conv rel_eq_onps ctxt =
       Conv.top_sweep_rewrs_conv @{thms eq_onp_top_eq_eq[symmetric, THEN eq_reflection]} ctxt
       then_conv Conv.bottom_rewrs_conv rel_eq_onps ctxt
@@ -276,7 +273,7 @@ and add_lift_def_code_dt config var qty rhs rsp_thm par_thms lthy =
             val qty_code_dt_bundle_name = bundle_name_of_rep_isom_data rep_isom_data
             val rep_isom = mk_rep_isom_of_code_dt qty_ret code_dt |> the
             val lthy3 = if quot_active then lthy2 else Bundle.includes [qty_code_dt_bundle_name] lthy2
-            fun qty_isom_of_rep_isom rep = rep |> dest_Const |> snd |> domain_type
+            fun qty_isom_of_rep_isom rep = domain_type (dest_Const_type rep)
             val qty_isom = qty_isom_of_rep_isom rep_isom
             val f'_var = (Binding.suffix_name "_aux" (fst var), NoSyn);
             val f'_qty = strip_type qty |> fst |> rpair qty_isom |> op --->
@@ -353,15 +350,15 @@ and mk_rep_isom qty_isom_bundle (rty, qty, qty_isom) lthy0 =
     (* in order to make the qty qty_isom isomorphism executable we have to define discriminators 
       and selectors for qty_isom *)
     val (rty_name, typs) = dest_Type rty
-    val (_, qty_typs) = dest_Type qty
+    val qty_typs = dest_Type_args qty
     val fp = BNF_FP_Def_Sugar.fp_sugar_of lthy3 rty_name
     val fp = if is_some fp then the fp
       else error ("code_dt: " ^ quote rty_name ^ " is not a datatype.")
     val ctr_sugar = fp |> #fp_ctr_sugar |> #ctr_sugar
     val ctrs = map (Ctr_Sugar.mk_ctr typs) (#ctrs ctr_sugar);
     val qty_ctrs = map (Ctr_Sugar.mk_ctr qty_typs) (#ctrs ctr_sugar);
-    val ctr_Tss = map (dest_Const #> snd #> binder_types) ctrs;
-    val qty_ctr_Tss = map (dest_Const #> snd #> binder_types) qty_ctrs;
+    val ctr_Tss = map (binder_types o dest_Const_type) ctrs;
+    val qty_ctr_Tss = map (binder_types o dest_Const_type) qty_ctrs;
 
     val n = length ctrs;
     val ks = 1 upto n;
@@ -392,7 +389,7 @@ and mk_rep_isom qty_isom_bundle (rty, qty, qty_isom) lthy0 =
             SOME code_dt =>
               (fold_rev (Term.lambda o curry Free Name.uu) Ts (mk_witness_of_code_dt qty_ret code_dt),
                 wit_thm_of_code_dt code_dt :: wits)
-            | NONE => (fold_rev (Term.lambda o curry Free Name.uu) Ts (mk_undefined T), wits)
+            | NONE => (fold_rev (Term.lambda o curry Free Name.uu) Ts \<^Const>\<open>undefined T\<close>, wits)
       in
         @{fold_map 2} (fn Ts => fn k' => fn wits =>
           (if k = k' then (fold_rev Term.lambda xs x, wits) else gen_undef_wit Ts wits)) ctr_Tss ks []
@@ -434,13 +431,8 @@ and mk_rep_isom qty_isom_bundle (rty, qty, qty_isom) lthy0 =
       |>> mk_lift_const_of_lift_def (qty_isom --> qty_ret))) sel_names sel_rhs lthy5
 
     (* now we can execute the qty qty_isom isomorphism *)
-    fun mk_type_definition newT oldT RepC AbsC A =
-      let
-        val typedefC =
-          Const (\<^const_name>\<open>type_definition\<close>,
-            (newT --> oldT) --> (oldT --> newT) --> HOLogic.mk_setT oldT --> HOLogic.boolT);
-      in typedefC $ RepC $ AbsC $ A end;
-    val typedef_goal = mk_type_definition qty_isom qty rep_isom abs_isom (HOLogic.mk_UNIV qty) |>
+    val typedef_goal =
+      \<^Const>\<open>type_definition qty_isom qty for rep_isom abs_isom \<open>HOLogic.mk_UNIV qty\<close>\<close> |>
       HOLogic.mk_Trueprop;
     fun typ_isom_tac ctxt i =
       EVERY' [ SELECT_GOAL (Local_Defs.unfold0_tac ctxt @{thms type_definition_def}),
@@ -478,14 +470,14 @@ and mk_rep_isom qty_isom_bundle (rty, qty, qty_isom) lthy0 =
 
     fun mk_ctr ctr ctr_Ts sels =
       let
-        val sel_ret_Ts = map (dest_Const #> snd #> body_type) sels;
+        val sel_ret_Ts = map (body_type o dest_Const_type) sels;
 
         fun rep_isom lthy t (rty, qty) =
           let
             val rep = quot_isom_rep lthy (rty, qty)
           in
-            if is_Const rep andalso (rep |> dest_Const |> fst) = \<^const_name>\<open>id\<close> then
-              t else rep $ t
+            if is_Const rep andalso dest_Const_name rep = \<^const_name>\<open>id\<close>
+            then t else rep $ t
           end;
       in
         @{fold 3} (fn sel => fn ctr_T => fn sel_ret_T => fn ctr =>
@@ -700,7 +692,7 @@ fun mk_readable_rsp_thm_eq tm ctxt =
           (K (Conv.try_conv (Conv.rewrs_conv (Transfer.get_relator_eq ctxt)))) ctxt
       in
         case (Thm.term_of ctm) of
-          Const (\<^const_name>\<open>rel_fun\<close>, _) $ _ $ _ => 
+          \<^Const_>\<open>rel_fun _ _ _ _ for _ _\<close> =>
             (binop_conv2 simp_arrows_conv simp_arrows_conv then_conv unfold_conv) ctm
           | _ => (relator_eq_onp_conv then_conv relator_eq_conv) ctm
       end
@@ -723,15 +715,15 @@ end
 
 fun rename_to_tnames ctxt term =
   let
-    fun all_typs (Const (\<^const_name>\<open>Pure.all\<close>, _) $ Abs (_, T, t)) = T :: all_typs t
+    fun all_typs \<^Const_>\<open>Pure.all _ for \<open>Abs (_, T, t)\<close>\<close> = T :: all_typs t
       | all_typs _ = []
 
-    fun rename (Const (\<^const_name>\<open>Pure.all\<close>, T1) $ Abs (_, T2, t)) (new_name :: names) = 
-        (Const (\<^const_name>\<open>Pure.all\<close>, T1) $ Abs (new_name, T2, rename t names)) 
+    fun rename \<^Const_>\<open>Pure.all T1 for \<open>Abs (_, T2, t)\<close>\<close> (new_name :: names) =
+          \<^Const>\<open>Pure.all T1 for \<open>Abs (new_name, T2, rename t names)\<close>\<close>
       | rename t _ = t
 
     val (fixed_def_t, _) = yield_singleton (Variable.importT_terms) term ctxt
-    val new_names = Old_Datatype_Prop.make_tnames (all_typs fixed_def_t)
+    val new_names = Case_Translation.make_tnames (all_typs fixed_def_t)
   in
     rename term new_names
   end

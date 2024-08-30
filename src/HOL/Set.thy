@@ -40,6 +40,8 @@ text \<open>Set comprehensions\<close>
 
 syntax
   "_Coll" :: "pttrn \<Rightarrow> bool \<Rightarrow> 'a set"    ("(1{_./ _})")
+syntax_consts
+  "_Coll" \<rightleftharpoons> Collect
 translations
   "{x. P}" \<rightleftharpoons> "CONST Collect (\<lambda>x. P)"
 
@@ -47,6 +49,8 @@ syntax (ASCII)
   "_Collect" :: "pttrn \<Rightarrow> 'a set \<Rightarrow> bool \<Rightarrow> 'a set"  ("(1{(_/: _)./ _})")
 syntax
   "_Collect" :: "pttrn \<Rightarrow> 'a set \<Rightarrow> bool \<Rightarrow> 'a set"  ("(1{(_/ \<in> _)./ _})")
+syntax_consts
+  "_Collect" \<rightleftharpoons> Collect
 translations
   "{p:A. P}" \<rightharpoonup> "CONST Collect (\<lambda>p. p \<in> A \<and> P)"
 
@@ -139,8 +143,13 @@ abbreviation empty :: "'a set" ("{}")
 definition insert :: "'a \<Rightarrow> 'a set \<Rightarrow> 'a set"
   where insert_compr: "insert a B = {x. x = a \<or> x \<in> B}"
 
+nonterminal finset_args
 syntax
-  "_Finset" :: "args \<Rightarrow> 'a set"    ("{(_)}")
+  "" :: "'a \<Rightarrow> finset_args"  ("_")
+  "_Finset_args" :: "'a \<Rightarrow> finset_args \<Rightarrow> finset_args"  ("_,/ _")
+  "_Finset" :: "finset_args \<Rightarrow> 'a set"    ("{(_)}")
+syntax_consts
+  "_Finset_args" "_Finset" \<rightleftharpoons> insert
 translations
   "{x, xs}" \<rightleftharpoons> "CONST insert x {xs}"
   "{x}" \<rightleftharpoons> "CONST insert x {}"
@@ -203,6 +212,12 @@ syntax
   "_Bex1"       :: "pttrn \<Rightarrow> 'a set \<Rightarrow> bool \<Rightarrow> bool"      ("(3\<exists>!(_/\<in>_)./ _)" [0, 0, 10] 10)
   "_Bleast"     :: "id \<Rightarrow> 'a set \<Rightarrow> bool \<Rightarrow> 'a"           ("(3LEAST(_/\<in>_)./ _)" [0, 0, 10] 10)
 
+syntax_consts
+  "_Ball" \<rightleftharpoons> Ball and
+  "_Bex" \<rightleftharpoons> Bex and
+  "_Bex1" \<rightleftharpoons> Ex1 and
+  "_Bleast" \<rightleftharpoons> Least
+
 translations
   "\<forall>x\<in>A. P" \<rightleftharpoons> "CONST Ball A (\<lambda>x. P)"
   "\<exists>x\<in>A. P" \<rightleftharpoons> "CONST Bex A (\<lambda>x. P)"
@@ -223,12 +238,17 @@ syntax
   "_setleEx"    :: "[idt, 'a, bool] \<Rightarrow> bool"   ("(3\<exists>_\<subseteq>_./ _)" [0, 0, 10] 10)
   "_setleEx1"   :: "[idt, 'a, bool] \<Rightarrow> bool"   ("(3\<exists>!_\<subseteq>_./ _)" [0, 0, 10] 10)
 
+syntax_consts
+  "_setlessAll" "_setleAll" \<rightleftharpoons> All and
+  "_setlessEx" "_setleEx" \<rightleftharpoons> Ex and
+  "_setleEx1" \<rightleftharpoons> Ex1
+
 translations
- "\<forall>A\<subset>B. P" \<rightharpoonup> "\<forall>A. A \<subset> B \<longrightarrow> P"
- "\<exists>A\<subset>B. P" \<rightharpoonup> "\<exists>A. A \<subset> B \<and> P"
- "\<forall>A\<subseteq>B. P" \<rightharpoonup> "\<forall>A. A \<subseteq> B \<longrightarrow> P"
- "\<exists>A\<subseteq>B. P" \<rightharpoonup> "\<exists>A. A \<subseteq> B \<and> P"
- "\<exists>!A\<subseteq>B. P" \<rightharpoonup> "\<exists>!A. A \<subseteq> B \<and> P"
+  "\<forall>A\<subset>B. P" \<rightharpoonup> "\<forall>A. A \<subset> B \<longrightarrow> P"
+  "\<exists>A\<subset>B. P" \<rightharpoonup> "\<exists>A. A \<subset> B \<and> P"
+  "\<forall>A\<subseteq>B. P" \<rightharpoonup> "\<forall>A. A \<subseteq> B \<longrightarrow> P"
+  "\<exists>A\<subseteq>B. P" \<rightharpoonup> "\<exists>A. A \<subseteq> B \<and> P"
+  "\<exists>!A\<subseteq>B. P" \<rightharpoonup> "\<exists>!A. A \<subseteq> B \<and> P"
 
 print_translation \<open>
   let
@@ -251,7 +271,7 @@ print_translation \<open>
       else raise Match;
 
     fun tr' q = (q, fn _ =>
-      (fn [Const (\<^syntax_const>\<open>_bound\<close>, _) $ Free (v, Type (\<^type_name>\<open>set\<close>, _)),
+      (fn [Const (\<^syntax_const>\<open>_bound\<close>, _) $ Free (v, \<^Type>\<open>set _\<close>),
           Const (c, _) $
             (Const (d, _) $ (Const (\<^syntax_const>\<open>_bound\<close>, _) $ Free (v', T)) $ n) $ P] =>
           (case AList.lookup (=) trans (q, c, d) of
@@ -272,6 +292,8 @@ text \<open>
 
 syntax
   "_Setcompr" :: "'a \<Rightarrow> idts \<Rightarrow> bool \<Rightarrow> 'a set"    ("(1{_ |/_./ _})")
+syntax_consts
+  "_Setcompr" \<rightleftharpoons> Collect
 
 parse_translation \<open>
   let
