@@ -100,7 +100,7 @@ datatype T =
   | PTImpIntr of term * T
   | PTImpElim of T * T
   | PTForallIntr of term * T
-  | PTForallElim of T * term
+  | PTForallElim of term * T
   | PTAxiom of string * term * Theory.axiom_source
   | PTOracle of string * term
   | PTRefl of term
@@ -126,8 +126,8 @@ datatype T =
   | PTLegacyFreezeT of T
   | PTLift of term * int * T
   | PTIncrIndexes of int * T
-  | PTAssumption of (T * int) * int
-  | PTEqAssumption of T * int
+  | PTAssumption of int * int * T
+  | PTEqAssumption of int * T
   | PTRotate of int * int * T
   | PTPermutePrems of int * int * T
   | PTBicompose of Envir.env * (term * term) list * int * bool * term list *
@@ -141,7 +141,7 @@ fun oracle_proof name prop = PTOracle (name, prop);
 fun implies_intr_proof A p = PTImpIntr (A, p);
 fun implies_elim_proof p q = PTImpElim (p, q);
 fun forall_intr_proof x p = PTForallIntr (x, p);
-fun forall_elim_proof p t = PTForallElim (p, t);
+fun forall_elim_proof p t = PTForallElim (t, p);
 val assume_proof = PTHyp;
 val reflexive_proof = PTRefl;
 val symmetric_proof = PTSymm;
@@ -166,8 +166,8 @@ fun varifyT_proof al p = PTVarify (al, p);
 val legacy_freezeT_proof = PTLegacyFreezeT;
 fun lift_proof gprop inc p = PTLift (gprop, inc, p);
 fun incr_indexes_proof i p = PTIncrIndexes (i, p);
-fun assumption_proof i n p = PTAssumption ((p, i), n);
-fun eq_assumption_proof i p = PTEqAssumption (p, i);
+fun assumption_proof i n p = PTAssumption (i, n, p);
+fun eq_assumption_proof i p = PTEqAssumption (i, p);
 fun rotate_proof k i p = PTRotate (k, i, p);
 fun permute_prems_proof j k p = PTPermutePrems (j, k, p);
 fun bicompose_proof env tpairs nsubgoal flatten As A n nlift p q =
