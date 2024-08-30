@@ -156,8 +156,8 @@ object Component_PolyML {
   /** skeleton for component **/
 
   val default_polyml_url = "https://github.com/digama0/polyml/archive"
-  val default_polyml_version = "c1988c0cea1d"
-  val default_polyml_name = "polyml-5.9.1-exportSmall"
+  val default_polyml_version = "fa3af29446ad"
+  val default_polyml_name = "polyml-exportSmall"
 
   val default_sha1_url = "https://isabelle.sketis.net/repos/sha1/archive"
   val default_sha1_version = "0ce12663fe76"
