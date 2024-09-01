@@ -88,10 +88,10 @@ fun write_body path body =
 
 local
 
-val Z_char = Char.chr 7;
+val Z_char = Char.chr 251;
 val X_sub = Substring.full (String.implode [Z_char, Char.chr 0])
 val Y_sub = Substring.full (String.implode [Z_char, Char.chr 1])
-val Z_sub = Substring.full (String.implode [Z_char, Z_char])
+val Z_sub = Substring.full (String.implode [Z_char, Char.chr 2])
 
 in
 
