@@ -39,6 +39,7 @@ sig
   val result: Properties.T -> string list -> unit
   val protocol_message: protocol_message_fn
   val try_protocol_message: protocol_message_fn
+  val buffer_protocol_message: protocol_message_fn
 end;
 
 signature PRIVATE_OUTPUT =
@@ -56,6 +57,7 @@ sig
   val report_fn: (output list -> unit) Unsynchronized.ref
   val result_fn: (Properties.T -> output list -> unit) Unsynchronized.ref
   val protocol_message_fn: Output_Primitives.protocol_message_fn Unsynchronized.ref
+  val send_buffered_messages: unit -> unit
 end;
 
 structure Private_Output: PRIVATE_OUTPUT =
@@ -139,6 +141,9 @@ fun init_channels () =
 
 val _ = if Thread_Data.is_virtual then () else init_channels ();
 
+val message_buffer = Unsynchronized.ref
+  ([]: (Output_Primitives.properties * Output_Primitives.XML.body list) list);
+
 fun writelns ss = ! writeln_fn (map output ss);
 fun writeln s = writelns [s];
 fun state s = ! state_fn [output s];
@@ -154,6 +159,12 @@ fun report ss = ! report_fn (map output ss);
 fun result props ss = ! result_fn props (map output ss);
 fun protocol_message props body = ! protocol_message_fn props body;
 fun try_protocol_message props body = protocol_message props body handle Protocol_Message _ => ();
+fun buffer_protocol_message props body = protocol_message props body handle Protocol_Message _ =>
+  message_buffer := (props, body) :: !message_buffer;
+
+fun send_buffered_messages () =
+ (app (uncurry protocol_message) (rev (!message_buffer));
+  message_buffer := []);
 
 end;
 

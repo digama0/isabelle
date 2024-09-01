@@ -173,6 +173,7 @@ fun init_protocol modes = Thread_Attributes.uninterruptible (fn _ => fn (address
     fun protocol () =
      (message Markup.initN [] [[XML.Text (Session.welcome ())]];
       ml_statistics ();
+      Private_Output.send_buffered_messages ();
       protocol_loop ());
 
     val result = Exn.capture_body (message_context protocol);
