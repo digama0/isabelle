@@ -130,8 +130,8 @@ datatype T =
   | PTEqAssumption of int * T
   | PTRotate of int * int * T
   | PTPermutePrems of int * int * T
-  | PTBicompose of Envir.env * (term * term) list * int * bool * term list *
-    term option * int * int * T * T
+  | PTBicompose of (Envir.env * (term * term) list * int * bool * term list *
+    term option * int * int) * T * T
   | PTPruned;
 
 val sorry = PTSorry;
@@ -171,7 +171,7 @@ fun eq_assumption_proof i p = PTEqAssumption (i, p);
 fun rotate_proof k i p = PTRotate (k, i, p);
 fun permute_prems_proof j k p = PTPermutePrems (j, k, p);
 fun bicompose_proof env tpairs nsubgoal flatten As A n nlift p q =
-  PTBicompose (env, tpairs, nsubgoal, flatten, As, A, n, nlift, p, q);
+  PTBicompose ((env, tpairs, nsubgoal, flatten, As, A, n, nlift), p, q);
 
 fun enabled () = Options.default_bool "prooftrace_enabled";
 fun when f = if enabled () then f () else PTSorry;
