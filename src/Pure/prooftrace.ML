@@ -203,10 +203,9 @@ fun export_proof thy header tvar_map shyps hyps p =
     val () = if logit then
       let val {elapsed, ...} = Timing.result start in
         log ("trace " ^ string_of_int (#serial header) ^
-          "(" ^ string_of_int (size s) ^ " bytes, " ^ Value.print_time elapsed ^ "s): " ^
+          "(" ^ string_of_int (size s) ^ " bytes, " ^ Time.message elapsed ^ "): " ^
             (Print_Mode.with_modes [""]
-              (fn () => Output.output
-                (Syntax.string_of_term (Syntax.init_pretty_global thy) (#prop header))) ()
+              (fn () => Syntax.string_of_term (Syntax.init_pretty_global thy) (#prop header)) ()
               handle Fail _ => "..."))
       end
       else ()

@@ -116,7 +116,7 @@ fun init_channels () =
 val _ = if Thread_Data.is_virtual then () else init_channels ();
 
 val message_buffer = Unsynchronized.ref
-  ([]: (Output_Primitives.properties * Output_Primitives.XML.body list) list);
+  ([]: (Output_Primitives.properties * XML.body list) list);
 
 fun writelns ss = ! writeln_fn ss;
 fun writeln s = writelns [s];
