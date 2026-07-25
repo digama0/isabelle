@@ -467,6 +467,15 @@ option export_proofs : bool = false for content
 option prune_proofs : bool = false for content
   -- "prune proof terms after export (do not store in Isabelle/ML)"
 
+option prooftrace_enabled : bool = false for content
+  -- "enable prooftrace module"
+
+option prooftrace_out : bool = true for content
+  -- "export prooftrace values (requires prooftrace_enabled)"
+
+option prooftrace_log : bool = false for content
+  -- "log prooftrace exports to $ISABELLE_HOME_USER/prooftrace.log"
+
 
 section "Theory update"
 

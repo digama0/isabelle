@@ -189,7 +189,8 @@ fun make_proof_body prf =
         thms = Ord_List.make Proofterm.thm_ord thms,
         zboxes = [],
         zproof = ZNop,
-        proof = prf};
+        proof = prf,
+        trace = Prooftrace.sorry};
   in Proofterm.thm_body body end;
 
 

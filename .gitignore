@@ -2,4 +2,5 @@
 .scala-build
 .metals
 .vscode
+exportTraces
 *~

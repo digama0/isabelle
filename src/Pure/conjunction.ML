@@ -76,7 +76,7 @@ val ABC = read_prop "A \<Longrightarrow> B \<Longrightarrow> C";
 val A_B = read_prop "A &&& B";
 
 val conjunction_def =
-  Thm.unvarify_axiom (Context.the_global_context ()) "Pure.conjunction_def";
+  Thm.unvarify_axiom (Context.the_global_context ()) ("Pure.conjunction_def", Theory.ASPrev);
 
 fun conjunctionD which =
   Drule.implies_intr_list [A, B] (Thm.assume (which (A, B))) COMP

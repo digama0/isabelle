@@ -211,9 +211,10 @@ object Component_PolyML {
 
   val default_gmp_url = "https://gmplib.org/download/gmp/gmp-6.3.0.tar.bz2"
 
-  val default_polyml_url = "https://github.com/polyml/polyml/archive"
-  val default_polyml_version = "ccd3e3717f72"
-  val default_polyml_name = "polyml-5.9.2"
+  // fork of polyml-5.9.2 (ccd3e3717f72) adding PolyML.exportSmall / exportSmallToFD
+  val default_polyml_url = "https://github.com/digama0/polyml/archive"
+  val default_polyml_version = "5612ede0c13a"
+  val default_polyml_name = "polyml-exportSmall"
 
   private def init_src_root(src_dir: Path, input: String, output: String): Unit = {
     val lines = split_lines(File.read(src_dir + Path.explode(input)))
@@ -254,8 +255,9 @@ not affect the running ML session. *)
     /* component */
 
     val component_name1 = if (component_name.isEmpty) "polyml-" + polyml_version else component_name
-    val component_dir =
-      Components.Directory(target_dir + Path.basic(component_name1)).create(progress = progress)
+    val component_dir = Components.Directory(target_dir + Path.basic(component_name1))
+    Isabelle_System.rm_tree(component_dir.path)
+    component_dir.create(progress = progress)
 
 
     /* download and build */

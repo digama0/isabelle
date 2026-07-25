@@ -153,7 +153,6 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
     val encode_standard_zterm = ZTerm.encode_zterm {typed_vars = false};
     val encode_standard_zproof = ZTerm.encode_zproof {typed_vars = false};
 
-
     (* strict parents *)
 
     val parents = Theory.parents_of thy;
@@ -193,7 +192,7 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
         val entry as {serial, ...} = Name_Space.the_entry space name;
       in make_entity_markup name xname (Name_Space.entry_pos entry) serial end;
 
-    fun export_entities export_name get_space decls export =
+    fun export_entities export_name enabled get_space decls export =
       let
         val parent_spaces = map get_space parents;
         val space = get_space thy;
@@ -220,7 +219,7 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
       in triple encode_syntax (list string) (option typ) end;
 
     val _ =
-      export_entities "types" Sign.type_space (Name_Space.dest_table (#types rep_tsig))
+      export_entities "types" enabled Sign.type_space (Name_Space.dest_table (#types rep_tsig))
         (fn c =>
           (fn Type.Logical_Type n =>
                 SOME (fn () =>
@@ -238,7 +237,7 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
       in pair encode_syntax (pair (list string) (pair typ (pair (option encode_zterm) bool))) end;
 
     val _ =
-      export_entities "consts" Sign.const_space (#constants (Consts.dest consts))
+      export_entities "consts" enabled Sign.const_space (#constants (Consts.dest consts))
         (fn c => fn (T, abbrev) =>
           SOME (fn () =>
             let
@@ -269,6 +268,20 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
     fun standard_prop_of thm =
       standard_prop Name.context (Thm.extra_shyps thm) (Thm.full_prop_of thm);
 
+    val () = Prooftrace.log ("exporting " ^ Context.theory_base_name thy ^
+      ", enabled = " ^ (if enabled then "true" else "false"));
+
+    val encode_reason: Theory.axiom_reason XML.Encode.T =
+      let open XML.Encode in variant
+       [fn Theory.ARForgot => ([], []),
+        fn Theory.ARAxiom => ([], []),
+        fn Theory.ARPrim => ([], []),
+        fn Theory.ARDef (a, b) => ([], pair bool bool (a, b)),
+        fn Theory.ARClassRel => ([], []),
+        fn Theory.ARArity => ([], []),
+        fn Theory.ARTypedef => ([], [])]
+      end
+
     val encode_prop =
       let open XML.Encode Term_XML.Encode
       in triple (list (pair string sort)) (list (pair string encode_ztyp)) encode_zterm end;
@@ -276,9 +289,12 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
     fun encode_axiom used prop =
       encode_prop (#1 (standard_prop used [] prop NONE));
 
+    fun encode_axiom_full used =
+      XML.Encode.pair (encode_axiom used) encode_reason;
+
     val _ =
-      export_entities "axioms" Theory.axiom_space (Theory.all_axioms_of thy)
-        (fn _ => fn prop => SOME (fn () => encode_axiom Name.context prop));
+      export_entities "axioms" true Theory.axiom_space (Theory.all_axioms_of' thy)
+        (fn _ => fn prop => SOME (fn () => encode_axiom_full Name.context prop));
 
 
     (* theorems and proof terms *)
@@ -338,7 +354,7 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
       in pair (list (pair string typ)) (list (encode_axiom Name.context)) end;
 
     val _ =
-      export_entities "classes" Sign.class_space
+      export_entities "classes" enabled Sign.class_space
         (map (rpair ()) (Graph.keys (Sorts.classes_of (#2 (#classes rep_tsig)))))
         (fn name => fn () => SOME (fn () =>
           (case try (Axclass.get_info thy) name of
@@ -386,7 +402,7 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
       end;
 
     val _ =
-      export_entities "locales" Locale.locale_space (get_locales thy)
+      export_entities "locales" enabled Locale.locale_space (get_locales thy)
         (fn loc => fn () => SOME (fn () =>
           let
             val {typargs, args, axioms} = locale_content thy loc;
@@ -462,7 +478,7 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
         val space = get_space thy;
         val export_name = "other/" ^ Name_Space.kind_of space;
         val decls = Name_Space.get_names space |> map (rpair ());
-      in export_entities export_name get_space decls (fn _ => fn () => SOME (K [])) end;
+      in export_entities export_name enabled get_space decls (fn _ => fn () => SOME (K [])) end;
 
     val other_spaces = other_name_spaces thy;
     val other_kinds = map (fn get_space => Name_Space.kind_of (get_space thy)) other_spaces;

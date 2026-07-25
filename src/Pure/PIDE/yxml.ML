@@ -17,6 +17,7 @@ Markup <elem att="val" ...>...body...</elem> is encoded as:
 signature YXML =
 sig
   include YXML
+  val escape: string -> string
   val traverse: (string -> 'a -> 'a) -> XML.tree -> 'a -> 'a
   val tree_size: XML.tree -> int
   val body_size: XML.body -> int
@@ -71,6 +72,37 @@ val bytes_of = bytes_of_body o single;
 fun write_body path body =
   path |> File_Stream.open_output (fn file =>
     fold (traverse (fn s => fn () => File_Stream.output file s)) body ());
+
+local
+
+val Z_char = Char.chr 251;
+val X_sub = Substring.full (String.implode [Z_char, Char.chr 0])
+val Y_sub = Substring.full (String.implode [Z_char, Char.chr 1])
+val Z_sub = Substring.full (String.implode [Z_char, Char.chr 2])
+
+in
+
+fun escape s =
+  if Char.contains s X_char orelse Char.contains s Y_char orelse Char.contains s Z_char then
+    let
+      fun push i j ss =
+        if i = j then ss else Substring.substring (s, i, j-i) :: ss
+      fun loop i j ss =
+        if i = 0 then push i j ss else
+        let
+          val i' = i - 1
+          val c = String.sub (s, i')
+        in
+          if c = X_char then loop i' i' (X_sub :: push i j ss) else
+          if c = Y_char then loop i' i' (Y_sub :: push i j ss) else
+          if c = Z_char then loop i' i' (Z_sub :: push i j ss) else
+          loop i' j ss
+        end
+      val i = size s
+    in Substring.concat (loop i i []) end
+  else s;
+
+end;
 
 
 (* markup elements *)

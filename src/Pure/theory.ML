@@ -6,6 +6,20 @@ Logical theory content: axioms, definitions, and begin/end wrappers.
 
 signature THEORY =
 sig
+
+  datatype axiom_reason =
+      ARForgot
+    | ARAxiom
+    | ARPrim
+    | ARDef of bool * bool
+    | ARClassRel
+    | ARArity
+    | ARTypedef
+
+  datatype axiom_source =
+      ASForgot
+    | ASPrev
+
   val parents_of: theory -> theory list
   val ancestors_of: theory -> theory list
   val nodes_of: theory -> theory list
@@ -20,15 +34,16 @@ sig
   val check_theory: {get: string -> theory, all: unit -> string list} ->
     Proof.context -> string * Position.T -> theory
   val check: {long: bool} -> Proof.context -> string * Position.T -> theory
-  val axiom_table: theory -> term Name_Space.table
+  val axiom_table: theory -> (term * axiom_reason) Name_Space.table
   val axiom_space: theory -> Name_Space.T
+  val all_axioms_of': theory -> (string * (term * axiom_reason)) list
   val all_axioms_of: theory -> (string * term) list
   val defs_of: theory -> Defs.T
   val at_begin: (theory -> theory option) -> theory -> theory
   val at_end: (theory -> theory option) -> theory -> theory
   val begin_theory: string * Position.T -> theory list -> theory
   val end_theory: theory -> theory
-  val add_axiom: Proof.context -> binding * term -> theory -> theory
+  val add_axiom: Proof.context -> binding * (term * axiom_reason) -> theory -> theory
   val const_dep: theory -> string * typ -> Defs.entry
   val type_dep: string * typ list -> Defs.entry
   val add_deps: Defs.context -> string -> Defs.entry -> Defs.entry list -> theory -> theory
@@ -43,6 +58,19 @@ end
 
 structure Theory: THEORY =
 struct
+
+  datatype axiom_reason =
+      ARForgot
+    | ARAxiom
+    | ARPrim
+    | ARDef of bool * bool
+    | ARClassRel
+    | ARArity
+    | ARTypedef
+
+  datatype axiom_source =
+      ASForgot
+    | ASPrev
 
 
 (** theory context operations **)
@@ -86,7 +114,7 @@ fun apply_wrappers (wrappers: wrapper list) =
 datatype thy = Thy of
  {pos: Position.T,
   id: serial,
-  axioms: term Name_Space.table,
+  axioms: (term * axiom_reason) Name_Space.table,
   defs: Defs.T,
   wrappers: wrapper list * wrapper list};
 
@@ -173,7 +201,8 @@ fun check long ctxt arg =
 val axiom_table = #axioms o rep_theory;
 val axiom_space = Name_Space.space_of_table o axiom_table;
 
-val all_axioms_of = Name_Space.dest_table o axiom_table;
+val all_axioms_of' = Name_Space.dest_table o axiom_table;
+val all_axioms_of = map (fn (a, (b, _)) => (a, b)) o all_axioms_of';
 
 val defs_of = #defs o rep_theory;
 
@@ -232,13 +261,13 @@ fun cert_axm ctxt (b, raw_tm) =
   in (b, Sign.no_vars ctxt t) end
   handle ERROR msg => cat_error msg ("The error(s) above occurred in axiom " ^ Binding.print b);
 
-fun add_axiom ctxt raw_axm thy = thy |> map_axioms (fn axioms =>
+fun add_axiom ctxt (b, (raw_axm, reason)) thy = thy |> map_axioms (fn axioms =>
   let
-    val axm = apsnd Logic.varify_global (cert_axm ctxt raw_axm);
+    val (b, axm) = apsnd Logic.varify_global (cert_axm ctxt (b, raw_axm));
     val context = ctxt
       |> Sign.inherit_naming thy
       |> Context_Position.set_visible_generic false;
-    val (_, axioms') = Name_Space.define context true axm axioms;
+    val (_, axioms') = Name_Space.define context true (b, (axm, reason)) axioms;
   in axioms' end);
 
 
@@ -350,11 +379,11 @@ fun check_def (context as (ctxt, _)) thy unchecked overloaded (b, tm) defs =
 
 in
 
-fun add_def (context as (ctxt, _)) unchecked overloaded raw_axm thy =
-  let val axm = cert_axm ctxt raw_axm in
+fun add_def (context as (ctxt, _)) unchecked overloaded (b, raw_axm) thy =
+  let val axm = cert_axm ctxt (b, raw_axm) in
     thy
     |> map_defs (check_def context thy unchecked overloaded axm)
-    |> add_axiom ctxt axm
+    |> add_axiom ctxt (#1 axm, (#2 axm, ARDef (unchecked, overloaded)))
   end;
 
 end;
