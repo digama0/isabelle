@@ -37,7 +37,7 @@ keywords
     "declaration" "syntax_declaration"
     "parse_ast_translation" "parse_translation" "print_translation"
     "typed_print_translation" "print_ast_translation" "oracle" :: thy_decl % "ML"
-  and "bundle" :: thy_decl_block
+  and "bundle" "open_bundle" :: thy_decl_block
   and "unbundle" :: thy_decl
   and "include" "including" :: prf_decl
   and "print_bundles" :: diag
@@ -96,6 +96,7 @@ keywords
   and "realizers" :: thy_decl
   and "realizability" :: thy_decl
   and "extract_type" "extract" :: thy_decl
+  and "adhoc_overloading" "no_adhoc_overloading" :: thy_decl
   and "find_theorems" "find_consts" :: diag
   and "named_theorems" :: thy_decl
 abbrevs "\\tag" = "\<^marker>\<open>tag \<close>"
@@ -114,25 +115,25 @@ ML \<open>
 local
   val _ =
     Outer_Syntax.command \<^command_keyword>\<open>external_file\<close> "formal dependency on external file"
-      (Resources.provide_parse_file >> (fn get_file => Toplevel.theory (#2 o get_file)));
+      (Resources.parse_file >> (fn get_file => Toplevel.theory (tap get_file)));
 
   val _ =
     Outer_Syntax.command \<^command_keyword>\<open>bibtex_file\<close> "check bibtex database file in Prover IDE"
-      (Resources.provide_parse_file >> (fn get_file =>
+      (Resources.parse_file >> (fn get_file =>
         Toplevel.theory (fn thy =>
           let
-            val ({lines, pos, ...}, thy') = get_file thy;
+            val {lines, pos, ...} = get_file thy;
             val _ = Bibtex.check_database_output pos (cat_lines lines);
-          in thy' end)));
+          in thy end)));
 
   val _ =
     Outer_Syntax.command \<^command_keyword>\<open>ROOTS_file\<close> "session ROOTS file"
-      (Resources.provide_parse_file >> (fn get_file =>
+      (Resources.parse_file >> (fn get_file =>
         Toplevel.theory (fn thy =>
           let
-            val ({src_path, lines, pos = pos0, ...}, thy') = get_file thy;
-            val ctxt = Proof_Context.init_global thy';
-            val dir = Path.dir (Path.expand (Resources.master_directory thy' + src_path));
+            val {src_path, lines, pos = pos0, ...} = get_file thy;
+            val ctxt = Proof_Context.init_global thy;
+            val dir = Path.dir (Path.expand (Resources.master_directory thy + src_path));
             val _ =
               (lines, pos0) |-> fold (fn line => fn pos1 =>
                 let
@@ -147,7 +148,7 @@ local
                       (ignore (Resources.check_session_dir ctxt (SOME dir) source)
                         handle ERROR msg => Output.error_message msg);
                 in pos2 |> Position.symbol "\n" end);
-          in thy' end)));
+          in thy end)));
 
   val _ =
     Outer_Syntax.local_theory \<^command_keyword>\<open>generate_file\<close>
@@ -408,12 +409,12 @@ val syntax_consts =
       Parse.!!! (Scan.repeat1 Parse.name_position));
 
 val _ =
-  Outer_Syntax.command \<^command_keyword>\<open>syntax_consts\<close> "declare syntax const dependencies"
-    (syntax_consts >> (Toplevel.theory o Isar_Cmd.syntax_consts));
+  Outer_Syntax.local_theory \<^command_keyword>\<open>syntax_consts\<close> "declare syntax const dependencies"
+    (syntax_consts >> Isar_Cmd.syntax_consts);
 
 val _ =
-  Outer_Syntax.command \<^command_keyword>\<open>syntax_types\<close> "declare syntax const dependencies (type names)"
-    (syntax_consts >> (Toplevel.theory o Isar_Cmd.syntax_types));
+  Outer_Syntax.local_theory \<^command_keyword>\<open>syntax_types\<close> "declare syntax const dependencies (type names)"
+    (syntax_consts >> Isar_Cmd.syntax_types);
 
 val trans_pat =
   Scan.optional
@@ -430,12 +431,12 @@ val trans_line =
     >> (fn (left, (arr, right)) => arr (left, right));
 
 val _ =
-  Outer_Syntax.command \<^command_keyword>\<open>translations\<close> "add syntax translation rules"
-    (Scan.repeat1 trans_line >> (Toplevel.theory o Isar_Cmd.translations));
+  Outer_Syntax.local_theory \<^command_keyword>\<open>translations\<close> "add syntax translation rules"
+    (Scan.repeat1 trans_line >> Local_Theory.translations_cmd true);
 
 val _ =
-  Outer_Syntax.command \<^command_keyword>\<open>no_translations\<close> "delete syntax translation rules"
-    (Scan.repeat1 trans_line >> (Toplevel.theory o Isar_Cmd.no_translations));
+  Outer_Syntax.local_theory \<^command_keyword>\<open>no_translations\<close> "delete syntax translation rules"
+    (Scan.repeat1 trans_line >> Local_Theory.translations_cmd false);
 
 in end\<close>
 
@@ -479,15 +480,16 @@ ML \<open>
 local
 
 val _ =
-  Outer_Syntax.local_theory' \<^command_keyword>\<open>definition\<close> "constant definition"
+  Outer_Syntax.local_theory \<^command_keyword>\<open>definition\<close> "constant definition"
     (Scan.option Parse_Spec.constdecl -- (Parse_Spec.opt_thm_name ":" -- Parse.prop) --
       Parse_Spec.if_assumes -- Parse.for_fixes >> (fn (((decl, spec), prems), params) =>
-        #2 oo Specification.definition_cmd decl params prems spec));
+        #2 o Specification.definition_cmd {verbose = true} decl params prems spec));
 
 val _ =
-  Outer_Syntax.local_theory' \<^command_keyword>\<open>abbreviation\<close> "constant abbreviation"
+  Outer_Syntax.local_theory \<^command_keyword>\<open>abbreviation\<close> "constant abbreviation"
     (Parse.syntax_mode -- Scan.option Parse_Spec.constdecl -- Parse.prop -- Parse.for_fixes
-      >> (fn (((mode, decl), spec), params) => Specification.abbreviation_cmd mode decl params spec));
+      >> (fn (((mode, decl), spec), params) =>
+        Specification.abbreviation_cmd {verbose = true} mode decl params spec));
 
 val axiomatization =
   Parse.and_list1 (Parse_Spec.thm_name ":" -- Parse.prop) --
@@ -565,10 +567,10 @@ val short_statement =
         Element.Shows shows));
 
 fun theorem spec schematic descr =
-  Outer_Syntax.local_theory_to_proof' spec ("state " ^ descr)
+  Outer_Syntax.local_theory_to_proof spec ("state " ^ descr)
     ((long_statement || short_statement) >> (fn (long, binding, includes, elems, concl) =>
       ((if schematic then Specification.schematic_theorem_cmd else Specification.theorem_cmd)
-        long Thm.theoremK NONE (K I) binding includes elems concl)));
+        {verbose = true, long = long, kind = Thm.theoremK} NONE (K I) binding includes elems concl)));
 
 val _ = theorem \<^command_keyword>\<open>theorem\<close> false "theorem";
 val _ = theorem \<^command_keyword>\<open>lemma\<close> false "lemma";
@@ -582,15 +584,17 @@ ML \<open>
 local
 
 val _ =
-  Outer_Syntax.local_theory' \<^command_keyword>\<open>lemmas\<close> "define theorems"
+  Outer_Syntax.local_theory \<^command_keyword>\<open>lemmas\<close> "define theorems"
     (Parse_Spec.name_facts -- Parse.for_fixes >>
-      (fn (facts, fixes) => #2 oo Specification.theorems_cmd Thm.theoremK facts fixes));
+      (fn (facts, fixes) =>
+        #2 o Specification.theorems_cmd {verbose = true, kind = Thm.theoremK} facts fixes));
 
 val _ =
-  Outer_Syntax.local_theory' \<^command_keyword>\<open>declare\<close> "declare theorems"
+  Outer_Syntax.local_theory \<^command_keyword>\<open>declare\<close> "declare theorems"
     (Parse.and_list1 Parse.thms1 -- Parse.for_fixes
       >> (fn (facts, fixes) =>
-          #2 oo Specification.theorems_cmd "" [(Binding.empty_atts, flat facts)] fixes));
+          #2 o Specification.theorems_cmd {verbose = true, kind = ""}
+            [(Binding.empty_atts, flat facts)] fixes));
 
 val _ =
   Outer_Syntax.local_theory \<^command_keyword>\<open>named_theorems\<close>
@@ -637,27 +641,32 @@ subsection \<open>Bundled declarations\<close>
 ML \<open>
 local
 
+fun bundle_cmd open_bundle =
+  (Parse.binding --| \<^keyword>\<open>=\<close>) -- Parse.thms1 -- Parse.for_fixes
+    >> (uncurry (Bundle.bundle_cmd {open_bundle = open_bundle}));
+
+fun bundle_begin open_bundle =
+  Parse.binding --| Parse.begin >> Bundle.init {open_bundle = open_bundle};
+
 val _ =
   Outer_Syntax.maybe_begin_local_theory \<^command_keyword>\<open>bundle\<close>
-    "define bundle of declarations"
-    ((Parse.binding --| \<^keyword>\<open>=\<close>) -- Parse.thms1 -- Parse.for_fixes
-      >> (uncurry Bundle.bundle_cmd))
-    (Parse.binding --| Parse.begin >> Bundle.init);
+    "define bundle of declarations" (bundle_cmd false) (bundle_begin false);
+
+val _ =
+  Outer_Syntax.maybe_begin_local_theory \<^command_keyword>\<open>open_bundle\<close>
+    "define and open bundle of declarations" (bundle_cmd true) (bundle_begin true);
 
 val _ =
   Outer_Syntax.local_theory \<^command_keyword>\<open>unbundle\<close>
-    "activate declarations from bundle in local theory"
-    (Scan.repeat1 Parse.name_position >> Bundle.unbundle_cmd);
+    "open bundle in local theory" (Parse_Spec.bundles >> Bundle.unbundle_cmd);
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>include\<close>
-    "activate declarations from bundle in proof body"
-    (Scan.repeat1 Parse.name_position >> (Toplevel.proof o Bundle.include_cmd));
+    "open bundle in proof body" (Parse_Spec.bundles >> (Toplevel.proof o Bundle.include_cmd));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>including\<close>
-    "activate declarations from bundle in goal refinement"
-    (Scan.repeat1 Parse.name_position >> (Toplevel.proof o Bundle.including_cmd));
+    "open bundle in goal refinement" (Parse_Spec.bundles >> (Toplevel.proof o Bundle.including_cmd));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>print_bundles\<close>
@@ -686,7 +695,7 @@ val _ =
   Outer_Syntax.command \<^command_keyword>\<open>end\<close> "end context"
     (Scan.succeed
       (Toplevel.exit o Toplevel.end_main_target o Toplevel.end_nested_target o
-        Toplevel.end_proof (K Proof.end_notepad)));
+        Toplevel.end_proof Proof.end_notepad));
 
 in end\<close>
 
@@ -834,22 +843,22 @@ val structured_statement =
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>have\<close> "state local goal"
     (structured_statement >> (fn (a, b, c, d) =>
-      Toplevel.proof' (fn int => Proof.have_cmd a NONE (K I) b c d int #> #2)));
+      Toplevel.proof (Proof.have_cmd a NONE (K I) b c d #> #2)));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>show\<close> "state local goal, to refine pending subgoals"
     (structured_statement >> (fn (a, b, c, d) =>
-      Toplevel.proof' (fn int => Proof.show_cmd a NONE (K I) b c d int #> #2)));
+      Toplevel.proof (Proof.show_cmd a NONE (K I) b c d #> #2)));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>hence\<close> "old-style alias of \"then have\""
     (structured_statement >> (fn (a, b, c, d) =>
-      Toplevel.proof' (fn int => Proof.chain #> Proof.have_cmd a NONE (K I) b c d int #> #2)));
+      Toplevel.proof (Proof.chain #> Proof.have_cmd a NONE (K I) b c d #> #2)));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>thus\<close> "old-style alias of  \"then show\""
     (structured_statement >> (fn (a, b, c, d) =>
-      Toplevel.proof' (fn int => Proof.chain #> Proof.show_cmd a NONE (K I) b c d int #> #2)));
+      Toplevel.proof (Proof.chain #> Proof.show_cmd a NONE (K I) b c d #> #2)));
 
 in end\<close>
 
@@ -920,12 +929,12 @@ val _ =
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>consider\<close> "state cases rule"
-    (Parse_Spec.obtains >> (Toplevel.proof' o Obtain.consider_cmd));
+    (Parse_Spec.obtains >> (Toplevel.proof o Obtain.consider_cmd));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>obtain\<close> "generalized elimination"
     (Parse.parbinding -- Scan.optional (Parse.vars --| Parse.where_) [] -- structured_statement
-      >> (fn ((a, b), (c, d, e)) => Toplevel.proof' (Obtain.obtain_cmd a b c d e)));
+      >> (fn ((a, b), (c, d, e)) => Toplevel.proof (Obtain.obtain_cmd a b c d e)));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>let\<close> "bind text variables"
@@ -1084,21 +1093,21 @@ val calculation_args =
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>also\<close> "combine calculation and current facts"
-    (calculation_args >> (Toplevel.proofs' o Calculation.also_cmd));
+    (calculation_args >> (Toplevel.proofs o Calculation.also_cmd));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>finally\<close>
     "combine calculation and current facts, exhibit result"
-    (calculation_args >> (Toplevel.proofs' o Calculation.finally_cmd));
+    (calculation_args >> (Toplevel.proofs o Calculation.finally_cmd));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>moreover\<close> "augment calculation by current facts"
-    (Scan.succeed (Toplevel.proof' Calculation.moreover));
+    (Scan.succeed (Toplevel.proof Calculation.moreover));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>ultimately\<close>
     "augment calculation by current facts, exhibit result"
-    (Scan.succeed (Toplevel.proof' Calculation.ultimately));
+    (Scan.succeed (Toplevel.proof Calculation.ultimately));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>print_trans_rules\<close> "print transitivity rules"
@@ -1149,7 +1158,7 @@ val _ =
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>print_context\<close>
     "print context of local theory target"
-    (Scan.succeed (Toplevel.keep (Pretty.writeln_chunks o Toplevel.pretty_context)));
+    (Scan.succeed (Toplevel.keep (Pretty.writeln o Pretty.chunks o Toplevel.pretty_context)));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>print_theory\<close>
@@ -1205,7 +1214,8 @@ val _ =
       Toplevel.keep (fn state =>
         let
           val thy = Toplevel.theory_of state;
-          val name = Locale.check thy raw_name;
+          val ctxt = Toplevel.context_of state;
+          val name = Locale.check ctxt raw_name;
         in Pretty.writeln (Locale.pretty_locale thy show_facts name) end)));
 
 val _ =
@@ -1214,9 +1224,9 @@ val _ =
     (Parse.name_position >> (fn raw_name =>
       Toplevel.keep (fn state =>
         let
-          val ctxt = Toplevel.context_of state;
           val thy = Toplevel.theory_of state;
-          val name = Locale.check thy raw_name;
+          val ctxt = Toplevel.context_of state;
+          val name = Locale.check ctxt raw_name;
         in Pretty.writeln (Locale.pretty_registrations ctxt name) end)));
 
 val _ =
@@ -1252,19 +1262,23 @@ val _ =
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>locale_deps\<close> "visualize locale dependencies"
-    (Scan.succeed
-      (Toplevel.keep (Toplevel.theory_of #> (fn thy =>
+    (Scan.succeed (Toplevel.keep (fn state =>
+      let
+        val thy = Toplevel.theory_of state;
+        val ctxt = Toplevel.context_of state;
+      in
         Locale.pretty_locale_deps thy
         |> map (fn {name, parents, body} =>
-          ((name, Graph_Display.content_node (Locale.extern thy name) [body]), parents))
-        |> Graph_Display.display_graph_old))));
+          ((name, Graph_Display.content_node (Locale.extern ctxt name) [body]), parents))
+        |> Graph_Display.display_graph_old
+      end)));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>print_term_bindings\<close>
     "print term bindings of proof context"
     (Scan.succeed
       (Toplevel.keep
-        (Pretty.writeln_chunks o Proof_Context.pretty_term_bindings o Toplevel.context_of)));
+        (Pretty.writeln o Pretty.chunks o Proof_Context.pretty_term_bindings o Toplevel.context_of)));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>print_facts\<close> "print facts of proof context"
@@ -1274,7 +1288,8 @@ val _ =
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>print_cases\<close> "print cases of proof context"
     (Scan.succeed
-      (Toplevel.keep (Pretty.writeln_chunks o Proof_Context.pretty_cases o Toplevel.context_of)));
+      (Toplevel.keep
+        (Pretty.writeln o Pretty.chunks o Proof_Context.pretty_cases o Toplevel.context_of)));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>print_statement\<close>
@@ -1329,7 +1344,9 @@ val _ =
   Outer_Syntax.command \<^command_keyword>\<open>print_state\<close>
     "print current proof state (if present)"
     (opt_modes >> (fn modes =>
-      Toplevel.keep (Print_Mode.with_modes modes (Output.writeln o Toplevel.string_of_state))));
+      Toplevel.keep
+        (Print_Mode.with_modes modes
+          (Output.writelns o Pretty.strings_of o Pretty.chunks o Toplevel.pretty_state))));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>welcome\<close> "print welcome message"
@@ -1368,10 +1385,8 @@ val _ =
     "print theorem dependencies (immediate non-transitive)"
     (Parse.thms1 >> (fn args =>
       Toplevel.keep (fn st =>
-        let
-          val thy = Toplevel.theory_of st;
-          val ctxt = Toplevel.context_of st;
-        in Pretty.writeln (Thm_Deps.pretty_thm_deps thy (Attrib.eval_thms ctxt args)) end)));
+        let val ctxt = Toplevel.context_of st
+        in Pretty.writeln (Thm_Deps.pretty_thm_deps ctxt (Attrib.eval_thms ctxt args)) end)));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>thm_oracles\<close>
@@ -1402,10 +1417,35 @@ val _ =
                 NONE => (Theory.parents_of thy, [thy])
               | SOME (xs, NONE) => (map check xs, [thy])
               | SOME (xs, SOME ys) => (map check xs, map check ys))
-            |> map pretty_thm |> Pretty.writeln_chunks
+            |> map pretty_thm |> Pretty.chunks |> Pretty.writeln
           end)));
 
 in end\<close>
+
+
+subsubsection \<open>Adhoc overloading\<close>
+
+ML \<open>
+local
+
+val adhoc_overloading_args =
+  Parse.and_list1
+    ((Parse.const --| (\<^keyword>\<open>\<rightleftharpoons>\<close> || \<^keyword>\<open>==\<close>)) -- Parse.!!! (Scan.repeat1 Parse.term));
+
+val _ =
+  Outer_Syntax.local_theory \<^command_keyword>\<open>adhoc_overloading\<close>
+    "add adhoc overloading for constants / fixed variables"
+    (adhoc_overloading_args
+      >> Adhoc_Overloading.adhoc_overloading_cmd true);
+
+val _ =
+  Outer_Syntax.local_theory \<^command_keyword>\<open>no_adhoc_overloading\<close>
+    "delete adhoc overloading for constants / fixed variables"
+    (adhoc_overloading_args
+      >> Adhoc_Overloading.adhoc_overloading_cmd false);
+
+in end
+\<close>
 
 
 subsubsection \<open>Find consts and theorems\<close>
@@ -1569,6 +1609,35 @@ next
     from conj show "PROP B" by (rule conjunctionD2)
   qed
 qed
+
+
+section \<open>Misc\<close>
+
+bundle constrain_space_syntax  \<comment> \<open>type constraints with spacing\<close>
+begin
+no_syntax (output)
+  "_constrain" :: "logic \<Rightarrow> type \<Rightarrow> logic"  (\<open>_::_\<close> [4, 0] 3)
+  "_constrain" :: "prop' \<Rightarrow> type \<Rightarrow> prop'"  (\<open>_::_\<close> [4, 0] 3)
+syntax (output)
+  "_constrain" :: "logic \<Rightarrow> type \<Rightarrow> logic"  (\<open>_ :: _\<close> [4, 0] 3)
+  "_constrain" :: "prop' \<Rightarrow> type \<Rightarrow> prop'"  (\<open>_ :: _\<close> [4, 0] 3)
+end
+
+ML \<open>
+structure OS =
+struct
+  open OS;
+  structure IO = struct end;
+  structure Process =
+  struct
+    val getEnv = OS.Process.getEnv;
+  end;
+  structure FileSys = OS.FileSys;
+  structure Path = OS.Path;
+end;
+
+structure Posix = struct end;
+\<close>
 
 declare [[ML_write_global = false]]
 

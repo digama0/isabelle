@@ -8,7 +8,7 @@ signature TYPE_INFER_CONTEXT =
 sig
   val const_sorts: bool Config.T
   val const_type: Proof.context -> string -> typ option
-  val prepare_positions: Proof.context -> term list -> term list * (Position.T * typ) list
+  val prepare_positions: Proof.context -> term list -> term list * (Term_Position.T * typ) list
   val prepare: Proof.context -> term list -> int * term list
   val infer_types: Proof.context -> term list -> term list
   val infer_types_finished: Proof.context -> term list -> term list
@@ -125,10 +125,12 @@ fun prepare_positions ctxt tms =
           in (Type (a, Ts'), ps_idx') end
       | prepareT T (ps, idx) =
           (case Term_Position.decode_positionT T of
-            SOME pos =>
-              let val U = Type_Infer.mk_param idx []
-              in (U, ((pos, U) :: ps, idx + 1)) end
-          | NONE => (T, (ps, idx)));
+            [] => (T, (ps, idx))
+          | pos =>
+              let
+                val U = Type_Infer.mk_param idx [];
+                val ps' = map (rpair U) pos;
+              in (U, (ps' @ ps, idx + 1)) end);
 
     fun prepare (Const ("_type_constraint_", T)) ps_idx =
           let
@@ -246,7 +248,7 @@ fun infer ctxt =
         val (Ts_bTs', ts') = Type_Infer.finish ctxt tye (Ts @ map snd bs, ts);
         val (Ts', Ts'') = chop (length Ts) Ts_bTs';
         fun prep t =
-          let val xs = rev (Term.variant_frees t (rev (map fst bs ~~ Ts'')))
+          let val xs = rev (Syntax_Trans.variant_bounds ctxt t (rev (map fst bs ~~ Ts'')))
           in Term.subst_bounds (map Syntax_Trans.mark_bound_abs xs, t) end;
       in (map prep ts', Ts') end;
 

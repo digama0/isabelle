@@ -1,6 +1,7 @@
 (*  Title:      HOL/Import/import_rule.ML
     Author:     Cezary Kaliszyk, University of Innsbruck
     Author:     Alexander Krauss, QAware GmbH
+    Author:     Makarius
 
 Importer proof rules and processing of lines and files.
 
@@ -9,442 +10,401 @@ Based on earlier code by Steven Obua and Sebastian Skalberg.
 
 signature IMPORT_RULE =
 sig
-  val beta : cterm -> thm
-  val eq_mp : thm -> thm -> thm
-  val comb : thm -> thm -> thm
-  val trans : thm -> thm -> thm
-  val deduct : thm -> thm -> thm
-  val conj1 : thm -> thm
-  val conj2 : thm -> thm
-  val refl : cterm -> thm
-  val abs : cterm -> thm -> thm
-  val mdef : string -> theory -> thm
-  val def : string -> cterm -> theory -> thm * theory
-  val mtydef : string -> theory -> thm
-  val tydef :
-    string -> string -> string -> cterm -> cterm -> thm -> theory -> thm * theory
-  val inst_type : (ctyp * ctyp) list -> thm -> theory -> thm
-  val inst : (cterm * cterm) list -> thm -> thm
-
-  type state
-  val init_state : state
-  val process_line : string -> (theory * state) -> (theory * state)
-  val process_file : Path.T -> theory -> theory
+  val trace : bool Config.T
+  val import_file : Path.T -> theory -> theory
 end
 
 structure Import_Rule: IMPORT_RULE =
 struct
 
-val init_state = ((Inttab.empty, 0), (Inttab.empty, 0), (Inttab.empty, 0))
+(* tracing *)
 
-type state = (ctyp Inttab.table * int) * (cterm Inttab.table * int) * (thm Inttab.table * int)
+val trace = Attrib.setup_config_bool \<^binding>\<open>import_trace\<close> (K false)
 
-fun implies_elim_all th = implies_elim_list th (map Thm.assume (cprems_of th))
+type name = {hol: string, isabelle: string}
 
-fun meta_mp th1 th2 =
+fun print_name {hol, isabelle} =
+  if hol = isabelle then quote hol
+  else quote hol ^ " = " ^ quote isabelle
+
+fun print_item kind name =
+  Markup.markup Markup.keyword1 kind ^ " " ^ print_name name
+
+fun tracing_item thy kind name =
+  if Config.get_global thy trace then tracing (print_item kind name) else ()
+
+
+
+(** primitive rules of HOL Light **)
+
+fun to_obj_eq th =
   let
-    val th1a = implies_elim_all th1
-    val th1b = Thm.implies_intr (strip_imp_concl (Thm.cprop_of th2)) th1a
-    val th2a = implies_elim_all th2
-    val th3 = Thm.implies_elim th1b th2a
+    val (t, u) = Thm.dest_equals (Thm.cprop_of th)
+    val A = Thm.ctyp_of_cterm t
+    val rl = \<^instantiate>\<open>(no_beta) 'a = A and t and u in lemma \<open>t \<equiv> u \<Longrightarrow> t = u\<close> by simp\<close>
   in
-    implies_intr_hyps th3
+    Thm.implies_elim rl th
   end
 
-fun meta_eq_to_obj_eq th =
+fun to_meta_eq th =
   let
-    val (tml, tmr) = Thm.dest_binop (strip_imp_concl (Thm.cprop_of th))
-    val cty = Thm.ctyp_of_cterm tml
-    val i = Thm.instantiate' [SOME cty] [SOME tml, SOME tmr]
-      @{thm meta_eq_to_obj_eq}
+    val (t, u) = Thm.dest_binop (HOLogic.dest_judgment (Thm.cprop_of th))
+    val A = Thm.ctyp_of_cterm t
+    val rl = \<^instantiate>\<open>(no_beta) 'a = A and t and u in lemma \<open>t = u \<Longrightarrow> t \<equiv> u\<close> by simp\<close>
   in
-    Thm.implies_elim i th
+    Thm.implies_elim rl th
   end
 
-fun beta ct = meta_eq_to_obj_eq (Thm.beta_conversion false ct)
+
+(* basic logic *)
+
+fun refl t =
+  \<^instantiate>\<open>(no_beta) 'a = \<open>Thm.ctyp_of_cterm t\<close> and t in lemma \<open>t = t\<close> by (fact refl)\<close>
+
+fun trans th1 th2 =
+  Thm.transitive (to_meta_eq th1) (to_meta_eq th2) |> to_obj_eq
+
+fun mk_comb th1 th2 =
+  Thm.combination (to_meta_eq th1) (to_meta_eq th2) |> to_obj_eq
+
+fun abs x th =
+  to_meta_eq th |> Thm.abstract_rule (Term.term_name (Thm.term_of x)) x |> to_obj_eq
+
+fun beta t = Thm.beta_conversion false t |> to_obj_eq
+
+val assume = Thm.assume_cterm o HOLogic.mk_judgment
 
 fun eq_mp th1 th2 =
   let
-    val (tm1l, tm1r) = Thm.dest_binop (Thm.dest_arg (strip_imp_concl (Thm.cprop_of th1)))
-    val i1 = Thm.instantiate' [] [SOME tm1l, SOME tm1r] @{thm iffD1}
-    val i2 = meta_mp i1 th1
+    val (Q, P) = Thm.dest_binop (HOLogic.dest_judgment (Thm.cprop_of th1))
+    val rl = \<^instantiate>\<open>(no_beta) P and Q in lemma \<open>Q = P \<Longrightarrow> Q \<Longrightarrow> P\<close> by (fact iffD1)\<close>
   in
-    meta_mp i2 th2
+    Thm.implies_elim (Thm.implies_elim rl th1) th2
   end
 
-fun comb th1 th2 =
+fun deduct_antisym_rule th1 th2 =
   let
-    val t1c = Thm.dest_arg (strip_imp_concl (Thm.cprop_of th1))
-    val t2c = Thm.dest_arg (strip_imp_concl (Thm.cprop_of th2))
-    val (cf, cg) = Thm.dest_binop t1c
-    val (cx, cy) = Thm.dest_binop t2c
-    val [fd, fr] = Thm.dest_ctyp (Thm.ctyp_of_cterm cf)
-    val i1 = Thm.instantiate' [SOME fd, SOME fr]
-      [SOME cf, SOME cg, SOME cx, SOME cy] @{thm cong}
-    val i2 = meta_mp i1 th1
+    val Q = Thm.cprop_of th1
+    val P = Thm.cprop_of th2
+    val th1' = Thm.implies_intr P th1
+    val th2' = Thm.implies_intr Q th2
+    val rl =
+      \<^instantiate>\<open>(no_beta)
+          P = \<open>HOLogic.dest_judgment P\<close> and
+          Q = \<open>HOLogic.dest_judgment Q\<close>
+        in lemma \<open>(P \<Longrightarrow> Q) \<Longrightarrow> (Q \<Longrightarrow> P) \<Longrightarrow> Q = P\<close> by (rule iffI)\<close>
   in
-    meta_mp i2 th2
-  end
-
-fun trans th1 th2 =
-  let
-    val t1c = Thm.dest_arg (strip_imp_concl (Thm.cprop_of th1))
-    val t2c = Thm.dest_arg (strip_imp_concl (Thm.cprop_of th2))
-    val (r, s) = Thm.dest_binop t1c
-    val (_, t) = Thm.dest_binop t2c
-    val ty = Thm.ctyp_of_cterm r
-    val i1 = Thm.instantiate' [SOME ty] [SOME r, SOME s, SOME t] @{thm trans}
-    val i2 = meta_mp i1 th1
-  in
-    meta_mp i2 th2
-  end
-
-fun deduct th1 th2 =
-  let
-    val th1c = strip_imp_concl (Thm.cprop_of th1)
-    val th2c = strip_imp_concl (Thm.cprop_of th2)
-    val th1a = implies_elim_all th1
-    val th2a = implies_elim_all th2
-    val th1b = Thm.implies_intr th2c th1a
-    val th2b = Thm.implies_intr th1c th2a
-    val i = Thm.instantiate' []
-      [SOME (Thm.dest_arg th1c), SOME (Thm.dest_arg th2c)] @{thm iffI}
-    val i1 = Thm.implies_elim i (Thm.assume (Thm.cprop_of th2b))
-    val i2 = Thm.implies_elim i1 th1b
-    val i3 = Thm.implies_intr (Thm.cprop_of th2b) i2
-    val i4 = Thm.implies_elim i3 th2b
-  in
-    implies_intr_hyps i4
+    Thm.implies_elim (Thm.implies_elim rl th1') th2'
   end
 
 fun conj1 th =
   let
-    val (tml, tmr) = Thm.dest_binop (Thm.dest_arg (strip_imp_concl (Thm.cprop_of th)))
-    val i = Thm.instantiate' [] [SOME tml, SOME tmr] @{thm conjunct1}
+    val (P, Q) = Thm.dest_binop (HOLogic.dest_judgment (Thm.cprop_of th))
+    val rl = \<^instantiate>\<open>(no_beta) P and Q in lemma \<open>P \<and> Q \<Longrightarrow> P\<close> by (fact conjunct1)\<close>
   in
-    meta_mp i th
+    Thm.implies_elim rl th
   end
 
 fun conj2 th =
   let
-    val (tml, tmr) = Thm.dest_binop (Thm.dest_arg (strip_imp_concl (Thm.cprop_of th)))
-    val i = Thm.instantiate' [] [SOME tml, SOME tmr] @{thm conjunct2}
+    val (P, Q) = Thm.dest_binop (HOLogic.dest_judgment (Thm.cprop_of th))
+    val rl = \<^instantiate>\<open>(no_beta) P and Q in lemma \<open>P \<and> Q \<Longrightarrow> Q\<close> by (fact conjunct2)\<close>
   in
-    meta_mp i th
+    Thm.implies_elim rl th
   end
 
-fun refl ctm =
+
+(* instantiation *)
+
+fun freezeT thy th =
   let
-    val cty = Thm.ctyp_of_cterm ctm
+    fun add (v as ((a, _), S)) tvars =
+      if TVars.defined tvars v then tvars
+      else TVars.add (v, Thm.global_ctyp_of thy (TFree (a, S))) tvars
+    val tyinst =
+      TVars.build (Thm.prop_of th |> (fold_types o fold_atyps) (fn TVar v => add v | _ => I))
   in
-    Thm.instantiate' [SOME cty] [SOME ctm] @{thm refl}
+    Thm.instantiate (tyinst, Vars.empty) th
   end
 
-fun abs cv th =
+fun freeze' th =
   let
-    val th1 = implies_elim_all th
-    val (tl, tr) = Thm.dest_binop (Thm.dest_arg (strip_imp_concl (Thm.cprop_of th1)))
-    val (ll, lr) = (Thm.lambda cv tl, Thm.lambda cv tr)
-    val (al, ar) = (Thm.apply ll cv, Thm.apply lr cv)
-    val bl = beta al
-    val br = meta_eq_to_obj_eq (Thm.symmetric (Thm.beta_conversion false ar))
-    val th2 = trans (trans bl th1) br
-    val th3 = implies_elim_all th2
-    val th4 = Thm.forall_intr cv th3
-    val i = Thm.instantiate' [SOME (Thm.ctyp_of_cterm cv), SOME (Thm.ctyp_of_cterm tl)]
-      [SOME ll, SOME lr] @{thm ext2}
-  in
-    meta_mp i th4
-  end
-
-fun freezeT thy thm =
-  let
-    val tvars = Term.add_tvars (Thm.prop_of thm) []
-    val tfrees = map (fn ((t, _), s) => TFree (t, s)) tvars
-  in
-    Thm.instantiate (TVars.make (tvars ~~ map (Thm.global_ctyp_of thy) tfrees), Vars.empty) thm
-  end
-
-fun def' constname rhs thy =
-  let
-    val rhs = Thm.term_of rhs
-    val typ = type_of rhs
-    val constbinding = Binding.name constname
-    val thy1 = Sign.add_consts [(constbinding, typ, NoSyn)] thy
-    val eq = Logic.mk_equals (Const (Sign.full_name thy1 constbinding, typ), rhs)
-    val (thm, thy2) = Global_Theory.add_def (Binding.suffix_name "_hldef" constbinding, eq) thy1
-    val def_thm = freezeT thy1 thm
-  in
-    (meta_eq_to_obj_eq def_thm, thy2)
-  end
-
-fun mdef name thy =
-  case Import_Data.get_const_def name thy of
-    SOME th => th
-  | NONE => error ("constant mapped but no definition: " ^ name)
-
-fun def constname rhs thy =
-  case Import_Data.get_const_def constname thy of
-    SOME _ =>
+    val vars = Vars.build (th |> Thm.add_vars)
+    val inst = vars |> Vars.map (fn _ => fn v =>
       let
-        val () = warning ("Const mapped but def provided: " ^ constname)
-      in
-        (mdef constname thy, thy)
-      end
-  | NONE => def' constname rhs thy
-
-fun typedef_hollight th thy =
-  let
-    val (th_s, cn) = Thm.dest_comb (Thm.dest_arg (Thm.cprop_of th))
-    val (th_s, abst) = Thm.dest_comb th_s
-    val rept = Thm.dest_arg th_s
-    val P = Thm.dest_arg cn
-    val [nty, oty] = Thm.dest_ctyp (Thm.ctyp_of_cterm rept)
+        val Var ((x, _), _) = Thm.term_of v
+        val ty = Thm.ctyp_of_cterm v
+      in Thm.free (x, ty) end)
   in
-    Thm.instantiate' [SOME nty, SOME oty] [SOME rept, SOME abst, SOME P,
-      SOME (Thm.global_cterm_of thy (Free ("a", Thm.typ_of nty))),
-      SOME (Thm.global_cterm_of thy (Free ("r", Thm.typ_of oty)))] @{thm typedef_hol2hollight}
+    Thm.instantiate (TVars.empty, inst) th
   end
 
-fun tydef' tycname abs_name rep_name cP ct td_th thy =
+fun freeze thy = freezeT thy #> freeze';
+
+fun inst_type theta =
   let
-    val ctT = Thm.ctyp_of_cterm ct
-    val nonempty = Thm.instantiate' [SOME ctT] [SOME cP, SOME ct] @{thm light_ex_imp_nonempty}
-    val th2 = meta_mp nonempty td_th
-    val c =
-      case Thm.concl_of th2 of
-        _ $ (Const(\<^const_name>\<open>Ex\<close>,_) $ Abs(_,_,Const(\<^const_name>\<open>Set.member\<close>,_) $ _ $ c)) => c
-      | _ => error "type_introduction: bad type definition theorem"
-    val tfrees = Term.add_tfrees c []
+    val tyinst =
+      TFrees.build (theta |> fold (fn (a, b) =>
+        TFrees.add (Term.dest_TFree (Thm.typ_of a), b)))
+  in
+    Thm.instantiate_frees (tyinst, Frees.empty)
+  end
+
+fun inst theta th =
+  let
+    val inst =
+      Frees.build (theta |> fold (fn (a, b) =>
+        Frees.add (Term.dest_Free (Thm.term_of a), b)))
+  in
+    Thm.instantiate_frees (TFrees.empty, inst) th
+  end
+
+
+(* constant definitions *)
+
+fun def' (name as {isabelle = c, ...}) rhs thy =
+  let
+    val _ = tracing_item thy "const" name;
+    val b = Binding.name c
+    val ty = type_of rhs
+    val thy1 = Sign.add_consts [(b, ty, NoSyn)] thy
+    val eq = Logic.mk_equals (Const (Sign.full_name thy1 b, ty), rhs)
+    val (th, thy2) = Global_Theory.add_def (Binding.suffix_name "_hldef" b, eq) thy1
+    val def_thm = freezeT thy1 th |> to_obj_eq
+  in
+    (def_thm, thy2)
+  end
+
+fun mdef thy name =
+  (case Import_Data.get_const_def thy name of
+    SOME th => th
+  | NONE => error ("Constant mapped, but no definition: " ^ quote name))
+
+fun def (name as {isabelle = c, ...}) rhs thy =
+  if is_some (Import_Data.get_const_def thy c) then
+    (warning ("Const mapped, but def provided: " ^ quote c); (freeze thy (mdef thy c), thy))
+  else def' name (Thm.term_of rhs) thy
+
+
+(* type definitions *)
+
+fun typedef_hol2hollight A B rep abs pred a r =
+  \<^instantiate>\<open>(no_beta) 'a = A and 'b = B and Rep = rep and Abs = abs and P = pred and a and r
+    in lemma "type_definition Rep Abs (Collect P) \<Longrightarrow> Abs (Rep a) = a \<and> P r = (Rep (Abs r) = r)"
+        by (metis type_definition.Rep_inverse type_definition.Abs_inverse
+              type_definition.Rep mem_Collect_eq)\<close>
+
+fun typedef_hollight th =
+  let
+    val ((rep, abs), P) =
+      Thm.dest_comb (HOLogic.dest_judgment (Thm.cprop_of th))
+      |>> (Thm.dest_comb #>> Thm.dest_arg)
+      ||> Thm.dest_arg
+    val [A, B] = Thm.dest_ctyp (Thm.ctyp_of_cterm rep)
+  in
+    typedef_hol2hollight A B rep abs P (Thm.free ("a", A)) (Thm.free ("r", B))
+  end
+
+fun tydef' (name as {isabelle = tycname, ...}) abs_name rep_name P t witness thy =
+  let
+    val _ = tracing_item thy "type" name;
+
+    val T = Thm.ctyp_of_cterm t
+    val nonempty =
+      \<^instantiate>\<open>(no_beta) 'a = T and P and t
+        in lemma "P t \<Longrightarrow> \<exists>x. x \<in> Collect P" by auto\<close>
+      |> Thm.elim_implies witness
+    val \<^Const_>\<open>Trueprop for \<^Const_>\<open>Ex _ for \<open>Abs (_, _, \<^Const_>\<open>Set.member _ for _ set\<close>)\<close>\<close>\<close> =
+      Thm.concl_of nonempty
+
+    val tfrees = Term.add_tfrees set []
     val tnames = sort_strings (map fst tfrees)
     val typedef_bindings =
      {Rep_name = Binding.name rep_name,
       Abs_name = Binding.name abs_name,
       type_definition_name = Binding.name ("type_definition_" ^ tycname)}
     val ((_, typedef_info), thy') =
-     Named_Target.theory_map_result (apsnd o Typedef.transform_info)
-     (Typedef.add_typedef {overloaded = false}
-       (Binding.name tycname, map (rpair dummyS) tnames, NoSyn) c
-       (SOME typedef_bindings) (fn ctxt => resolve_tac ctxt [th2] 1)) thy
-    val aty = #abs_type (#1 typedef_info)
+     Typedef.add_typedef_global {overloaded = false}
+       (Binding.name tycname, map (rpair dummyS) tnames, NoSyn) set
+       (SOME typedef_bindings) (fn ctxt => resolve_tac ctxt [nonempty] 1) thy
+    val aty = Thm.global_ctyp_of thy' (#abs_type (#1 typedef_info))
     val th = freezeT thy' (#type_definition (#2 typedef_info))
-    val (th_s, _) = Thm.dest_comb (Thm.dest_arg (Thm.cprop_of th))
-    val (th_s, abst) = Thm.dest_comb th_s
-    val rept = Thm.dest_arg th_s
-    val [nty, oty] = Thm.dest_ctyp (Thm.ctyp_of_cterm rept)
-    val typedef_th =
-       Thm.instantiate'
-          [SOME nty, SOME oty]
-          [SOME rept, SOME abst, SOME cP, SOME (Thm.global_cterm_of thy' (Free ("a", aty))),
-             SOME (Thm.global_cterm_of thy' (Free ("r", Thm.typ_of ctT)))]
-          @{thm typedef_hol2hollight}
-    val th4 = typedef_th OF [#type_definition (#2 typedef_info)]
+    val (rep, abs) = Thm.dest_binop (Thm.dest_fun (HOLogic.dest_judgment (Thm.cprop_of th)))
+    val [A, B] = Thm.dest_ctyp (Thm.ctyp_of_cterm rep)
+    val typedef_th = typedef_hol2hollight A B rep abs P (Thm.free ("a", aty)) (Thm.free ("r", T))
   in
-    (th4, thy')
+    (typedef_th OF [#type_definition (#2 typedef_info)], thy')
   end
 
-fun mtydef name thy =
-  case Import_Data.get_typ_def name thy of
-    SOME thn => meta_mp (typedef_hollight thn thy) thn
-  | NONE => error ("type mapped but no tydef thm registered: " ^ name)
+fun mtydef thy name =
+  (case Import_Data.get_typ_def thy name of
+    SOME th => Thm.implies_elim (typedef_hollight th) th
+  | NONE => error ("Type mapped, but no tydef thm registered: " ^ quote name))
 
-fun tydef tycname abs_name rep_name P t td_th thy =
-  case Import_Data.get_typ_def tycname thy of
-    SOME _ =>
-      let
-        val () = warning ("Type mapped but proofs provided: " ^ tycname)
-      in
-        (mtydef tycname thy, thy)
-      end
-  | NONE => tydef' tycname abs_name rep_name P t td_th thy
+fun tydef (name as {hol = tycname, ...}) abs_name rep_name P t td_th thy =
+  if is_some (Import_Data.get_typ_def thy tycname) then
+    (warning ("Type mapped but proofs provided: " ^ quote tycname); (mtydef thy tycname, thy))
+  else tydef' name abs_name rep_name P t td_th thy
 
-fun inst_type lambda th thy =
+
+
+(** importer **)
+
+(* basic entities *)
+
+fun make_name hol =
+  {hol = hol, isabelle = String.translate (fn #"." => "dot" | c => Char.toString c) hol}
+
+fun make_bound a =
+  (case try (unprefix "_") a of
+    SOME b => if forall_string Symbol.is_ascii_digit b then "u" else b
+  | NONE => a);
+
+fun make_free x ty = Thm.free (#isabelle (make_name x), ty);
+
+fun make_tfree thy a =
+  let val b = "'" ^ String.translate (fn #"?" => "t" | c => Char.toString c) a
+  in Thm.global_ctyp_of thy (TFree (b, \<^sort>\<open>type\<close>)) end
+
+fun make_type thy c args =
   let
-    fun assoc _ [] = error "assoc"
-      | assoc x ((x',y)::rest) = if x = x' then y else assoc x rest
-    val lambda = map (fn (a, b) => (Thm.typ_of a, b)) lambda
-    val tys_before = Term.add_tfrees (Thm.prop_of th) []
-    val th1 = Thm.varifyT_global th
-    val tys_after = Term.add_tvars (Thm.prop_of th1) []
+    val d =
+      (case Import_Data.get_typ_map thy c of
+        SOME d => d
+      | NONE => Sign.full_bname thy (#isabelle (make_name c)))
+    val T = Thm.global_ctyp_of thy (Type (d, replicate (length args) dummyT))
+  in Thm.make_ctyp T args end
+
+fun make_const thy c ty =
+  let
+    val d =
+      (case Import_Data.get_const_map thy c of
+        SOME d => d
+      | NONE => Sign.full_bname thy (#isabelle (make_name c)))
+  in Thm.global_cterm_of thy (Const (d, Thm.typ_of ty)) end
+
+val make_thm = Skip_Proof.make_thm_cterm o HOLogic.mk_judgment
+
+
+(* import file *)
+
+local
+
+datatype state =
+  State of theory * (ctyp Inttab.table * int) * (cterm Inttab.table * int) * (thm Inttab.table * int)
+
+fun init_state thy = State (thy, (Inttab.empty, 0), (Inttab.empty, 0), (Inttab.empty, 0))
+
+fun get (tab, reg) s =
+  (case Int.fromString s of
+    NONE => raise Fail "get: not a number"
+  | SOME i =>
+      (case Inttab.lookup tab (Int.abs i) of
+        NONE => raise Fail "get: lookup failed"
+      | SOME res => (res, (if i < 0 then Inttab.delete (Int.abs i) tab else tab, reg))))
+
+fun get_theory (State (thy, _, _, _)) = thy;
+val theory = `get_theory;
+fun theory_op f (State (thy, a, b, c)) = let val (y, thy') = f thy in (y, State (thy', a, b, c)) end;
+
+fun typ i (State (thy, a, b, c)) = let val (i, a') = get a i in (i, State (thy, a', b, c)) end
+fun term i (State (thy, a, b, c)) = let val (i, b') = get b i in (i, State (thy, a, b', c)) end
+fun thm i (State (thy, a, b, c)) = let val (i, c') = get c i in (i, State (thy, a, b, c')) end
+
+val typs = fold_map typ
+val terms = fold_map term
+
+fun set (tab, reg) res = (Inttab.update_new (reg + 1, res) tab, reg + 1)
+fun set_typ ty (State (thy, a, b, c)) = State (thy, set a ty, b, c)
+fun set_term tm (State (thy, a, b, c)) = State (thy, a, set b tm, c)
+fun set_thm th (State (thy, a, b, c)) = State (thy, a, b, set c th)
+
+fun stored_thm name (State (thy, a, b, c)) =
+  let val th = freeze thy (Global_Theory.get_thm thy name)
+  in State (thy, a, b, set c th) end
+
+fun store_thm name (State (thy, a, b, c as (tab, reg))) =
+  let
+    val _ = tracing_item thy "thm" name;
+
+    val th =
+      (case Inttab.lookup tab reg of
+        NONE => raise Fail "store_thm: lookup failed"
+      | SOME th0 => Drule.export_without_context_open th0)
+
+    val tvars = TVars.build (Thm.fold_terms {hyps = false} TVars.add_tvars th);
+    val names = Name.invent_global_types (TVars.size tvars)
     val tyinst =
-      map2 (fn bef => fn iS =>
-        (case try (assoc (TFree bef)) lambda of
-          SOME cty => (iS, cty)
-        | NONE => (iS, Thm.global_ctyp_of thy (TFree bef))))
-      tys_before tys_after
-  in
-    Thm.instantiate (TVars.make tyinst, Vars.empty) th1
-  end
+      TVars.build (fold2
+        (fn v as ((_, i), S) => fn b => TVars.add (v, Thm.global_ctyp_of thy (TVar ((b, i), S))))
+        (TVars.list_set tvars) names)
 
-fun inst sigma th =
+    val th' = Thm.instantiate (tyinst, Vars.empty) th
+    val thy' = #2 (Global_Theory.add_thm ((Binding.name (#isabelle name), th'), []) thy)
+  in State (thy', a, b, c) end
+
+fun pair_list (x :: y :: zs) = ((x, y) :: pair_list zs)
+  | pair_list [] = []
+  | pair_list _ = raise Fail "pair_list: odd list length"
+
+fun parse_line s =
+  (case String.tokens (fn x => x = #"\n" orelse x = #" ") s of
+    [] => raise Fail "parse_line: empty"
+  | cmd :: args =>
+      (case String.explode cmd of
+        [] => raise Fail "parse_line: empty command"
+      | c :: cs => (c, String.implode cs :: args)))
+
+fun command (#"R", [t]) = term t #>> refl #-> set_thm
+  | command (#"B", [t]) = term t #>> beta #-> set_thm
+  | command (#"1", [th]) = thm th #>> conj1 #-> set_thm
+  | command (#"2", [th]) = thm th #>> conj2 #-> set_thm
+  | command (#"H", [t]) = term t #>> assume #-> set_thm
+  | command (#"A", [_, t]) = term t #>> make_thm #-> set_thm
+  | command (#"C", [th1, th2]) = thm th1 ##>> thm th2 #>> uncurry mk_comb #-> set_thm
+  | command (#"T", [th1, th2]) = thm th1 ##>> thm th2 #>> uncurry trans #-> set_thm
+  | command (#"E", [th1, th2]) = thm th1 ##>> thm th2 #>> uncurry eq_mp #-> set_thm
+  | command (#"D", [th1, th2]) = thm th1 ##>> thm th2 #>> uncurry deduct_antisym_rule #-> set_thm
+  | command (#"L", [t, th]) = term t ##>> thm th #>> uncurry abs #-> set_thm
+  | command (#"M", [name]) = stored_thm name
+  | command (#"Q", args) =
+      split_last args |> (fn (tys, th) => thm th #-> (fn th => typs tys #-> (fn tys =>
+        set_thm (inst_type (pair_list tys) th))))
+  | command (#"S", args) =
+      split_last args |> (fn (ts, th) => thm th #-> (fn th => terms ts #-> (fn ts =>
+        set_thm (inst (pair_list ts) th))))
+  | command (#"F", [name, t]) =
+      term t #-> (fn t => theory_op (def (make_name name) t) #-> set_thm)
+  | command (#"F", [name]) = theory #-> (fn thy => set_thm (mdef thy name))
+  | command (#"Y", [name, abs, rep, t1, t2, th]) =
+      thm th #-> (fn th => term t1 #-> (fn t1 => term t2 #-> (fn t2 =>
+        theory_op (tydef (make_name name) abs rep t1 t2 th) #-> set_thm)))
+  | command (#"Y", [name, _, _]) = theory #-> (fn thy => set_thm (mtydef thy name))
+  | command (#"t", [a]) = theory #-> (fn thy => set_typ (make_tfree thy a))
+  | command (#"a", c :: tys) = theory #-> (fn thy => typs tys #>> make_type thy c #-> set_typ)
+  | command (#"v", [x, ty]) = typ ty #>> make_free x #-> set_term
+  | command (#"c", [c, ty]) = theory #-> (fn thy => typ ty #>> make_const thy c #-> set_term)
+  | command (#"f", [t, u]) = term t #-> (fn t => term u #-> (fn u => set_term (Thm.apply t u)))
+  | command (#"l", [x, t]) =
+      term x #-> (fn x => term t #-> (fn t =>
+        set_term (Thm.lambda_name (make_bound (#1 (dest_Free (Thm.term_of x))), x) t)))
+  | command (#"+", [name]) = store_thm (make_name name)
+  | command (c, _) = raise Fail ("process: unknown command: " ^ String.str c)
+
+in
+
+fun import_file path0 thy =
   let
-    val (dom, rng) = ListPair.unzip (rev sigma)
-  in
-    th |> forall_intr_list dom
-       |> forall_elim_list rng
-  end
+    val path = Path.absolute (Resources.master_directory thy + path0)
+    val lines =
+      if Path.is_zst path then Bytes.read path |> Zstd.uncompress |> Bytes.trim_split_lines
+      else File.read_lines path
+  in init_state thy |> fold (parse_line #> command) lines |> get_theory end
 
-fun transl_dotc #"." = "dot"
-  | transl_dotc c = Char.toString c
-val transl_dot = String.translate transl_dotc
+val _ =
+  Outer_Syntax.command \<^command_keyword>\<open>import_file\<close> "import recorded proofs from HOL Light"
+    (Parse.path >> (fn name => Toplevel.theory (fn thy => import_file (Path.explode name) thy)))
 
-fun transl_qmc #"?" = "t"
-  | transl_qmc c = Char.toString c
-val transl_qm = String.translate transl_qmc
-
-fun getconstname s thy =
-  case Import_Data.get_const_map s thy of
-      SOME s => s
-    | NONE => Sign.full_name thy (Binding.name (transl_dot s))
-fun gettyname s thy =
-  case Import_Data.get_typ_map s thy of
-    SOME s => s
-  | NONE => Sign.full_name thy (Binding.name s)
-
-fun get (map, no) s =
-  case Int.fromString s of
-    NONE => error "Import_Rule.get: not a number"
-  | SOME i => (case Inttab.lookup map (Int.abs i) of
-      NONE => error "Import_Rule.get: lookup failed"
-    | SOME res => (res, (if i < 0 then Inttab.delete (Int.abs i) map else map, no)))
-
-fun getty i (thy, (tyi, tmi, thi)) = let val (i, tyi) = (get tyi i) in (i, (thy, (tyi, tmi, thi))) end
-fun gettm i (thy, (tyi, tmi, thi)) = let val (i, tmi) = (get tmi i) in (i, (thy, (tyi, tmi, thi))) end
-fun getth i (thy, (tyi, tmi, thi)) = let val (i, thi) = (get thi i) in (i, (thy, (tyi, tmi, thi))) end
-fun set (map, no) v = (Inttab.update_new (no + 1, v) map, no + 1)
-fun setty v (thy, (tyi, tmi, thi)) = (thy, (set tyi v, tmi, thi))
-fun settm v (thy, (tyi, tmi, thi)) = (thy, (tyi, set tmi v, thi))
-fun setth v (thy, (tyi, tmi, thi)) = (thy, (tyi, tmi, set thi v))
-
-fun last_thm (_, _, (map, no)) =
-  case Inttab.lookup map no of
-    NONE => error "Import_Rule.last_thm: lookup failed"
-  | SOME thm => thm
-
-fun listLast (h1 :: (h2 :: t)) = apfst (fn t => h1 :: h2 :: t) (listLast t)
-  | listLast [p] = ([], p)
-  | listLast [] = error "listLast: empty"
-
-fun pairList (h1 :: (h2 :: t)) = ((h1, h2) :: pairList t)
-  | pairList [] = []
-  | pairList _ = error "pairList: odd list length"
-
-fun store_thm binding thm thy =
-  let
-    val ctxt = Proof_Context.init_global thy
-    val thm = Drule.export_without_context_open thm
-    val tvs = Term.add_tvars (Thm.prop_of thm) []
-    val tns = map (fn (_, _) => "'") tvs
-    val nms = fst (fold_map Name.variant tns (Variable.names_of ctxt))
-    val vs = map TVar ((nms ~~ (map (snd o fst) tvs)) ~~ (map snd tvs))
-    val thm' = Thm.instantiate (TVars.make (tvs ~~ map (Thm.ctyp_of ctxt) vs), Vars.empty) thm
-  in
-    snd (Global_Theory.add_thm ((binding, thm'), []) thy)
-  end
-
-fun log_timestamp () =
-  let
-    val time = Time.now ()
-    val millis = nth (space_explode "." (Time.fmt 3 time)) 1
-  in
-    Date.fmt "%d.%m.%Y %H:%M:%S." (Date.fromTimeLocal time) ^ millis
-  end
-
-fun process_line str tstate =
-  let
-    fun process tstate (#"R", [t]) = gettm t tstate |>> refl |-> setth
-      | process tstate (#"B", [t]) = gettm t tstate |>> beta |-> setth
-      | process tstate (#"1", [th]) = getth th tstate |>> conj1 |-> setth
-      | process tstate (#"2", [th]) = getth th tstate |>> conj2 |-> setth
-      | process tstate (#"H", [t]) =
-          gettm t tstate |>> Thm.apply \<^cterm>\<open>Trueprop\<close> |>> Thm.trivial |-> setth
-      | process tstate (#"A", [_, t]) =
-          gettm t tstate |>> Thm.apply \<^cterm>\<open>Trueprop\<close> |>> Skip_Proof.make_thm_cterm |-> setth
-      | process tstate (#"C", [th1, th2]) =
-          getth th1 tstate ||>> getth th2 |>> (fn (t1, t2) => comb t1 t2) |-> setth
-      | process tstate (#"T", [th1, th2]) =
-          getth th1 tstate ||>> getth th2 |>> (fn (t1, t2) => trans t1 t2) |-> setth
-      | process tstate (#"E", [th1, th2]) =
-          getth th1 tstate ||>> getth th2 |>> (fn (t1, t2) => eq_mp t1 t2) |-> setth
-      | process tstate (#"D", [th1, th2]) =
-          getth th1 tstate ||>> getth th2 |>> (fn (t1, t2) => deduct t1 t2) |-> setth
-      | process tstate (#"L", [t, th]) =
-          gettm t tstate ||>> (fn ti => getth th ti) |>> (fn (tm, th) => abs tm th) |-> setth
-      | process (thy, state) (#"M", [s]) =
-          let
-            val ctxt = Proof_Context.init_global thy
-            val thm = freezeT thy (Global_Theory.get_thm thy s)
-            val ((_, [th']), _) = Variable.import true [thm] ctxt
-          in
-            setth th' (thy, state)
-          end
-      | process (thy, state) (#"Q", l) =
-          let
-            val (tys, th) = listLast l
-            val (th, tstate) = getth th (thy, state)
-            val (tys, tstate) = fold_map getty tys tstate
-          in
-            setth (inst_type (pairList tys) th thy) tstate
-          end
-      | process tstate (#"S", l) =
-          let
-            val (tms, th) = listLast l
-            val (th, tstate) = getth th tstate
-            val (tms, tstate) = fold_map gettm tms tstate
-          in
-            setth (inst (pairList tms) th) tstate
-          end
-      | process tstate (#"F", [name, t]) =
-          let
-            val (tm, (thy, state)) = gettm t tstate
-            val (th, thy) = def (transl_dot name) tm thy
-          in
-            setth th (thy, state)
-          end
-      | process (thy, state) (#"F", [name]) = setth (mdef name thy) (thy, state)
-      | process tstate (#"Y", [name, absname, repname, t1, t2, th]) =
-          let
-            val (th, tstate) = getth th tstate
-            val (t1, tstate) = gettm t1 tstate
-            val (t2, (thy, state)) = gettm t2 tstate
-            val (th, thy) = tydef name absname repname t1 t2 th thy
-          in
-            setth th (thy, state)
-          end
-      | process (thy, state) (#"Y", [name, _, _]) = setth (mtydef name thy) (thy, state)
-      | process (thy, state) (#"t", [n]) =
-          setty (Thm.global_ctyp_of thy (TFree ("'" ^ (transl_qm n), \<^sort>\<open>type\<close>))) (thy, state)
-      | process (thy, state) (#"a", n :: l) =
-          fold_map getty l (thy, state) |>>
-            (fn tys => Thm.global_ctyp_of thy (Type (gettyname n thy, map Thm.typ_of tys))) |-> setty
-      | process (thy, state) (#"v", [n, ty]) =
-          getty ty (thy, state) |>> (fn ty => Thm.global_cterm_of thy (Free (transl_dot n, Thm.typ_of ty))) |-> settm
-      | process (thy, state) (#"c", [n, ty]) =
-          getty ty (thy, state) |>> (fn ty => Thm.global_cterm_of thy (Const (getconstname n thy, Thm.typ_of ty))) |-> settm
-      | process tstate (#"f", [t1, t2]) =
-          gettm t1 tstate ||>> gettm t2 |>> (fn (t1, t2) => Thm.apply t1 t2) |-> settm
-      | process tstate (#"l", [t1, t2]) =
-          gettm t1 tstate ||>> gettm t2 |>> (fn (t1, t2) => Thm.lambda t1 t2) |-> settm
-      | process (thy, state) (#"+", [s]) =
-          (store_thm (Binding.name (transl_dot s)) (last_thm state) thy, state)
-      | process _ (c, _) = error ("process: unknown command: " ^ String.implode [c])
-
-    fun parse_line s =
-        case String.tokens (fn x => (x = #"\n" orelse x = #" ")) s of
-          [] => error "parse_line: empty"
-        | h :: t => (case String.explode h of
-            [] => error "parse_line: empty command"
-          | sh :: st => (sh, (String.implode st) :: t))
-  in
-    process tstate (parse_line str)
-  end
-
-fun process_file path thy =
-  #1 (fold process_line (File.read_lines path) (thy, init_state))
-
-val _ = Outer_Syntax.command \<^command_keyword>\<open>import_file\<close>
-  "import a recorded proof file"
-  (Parse.path >> (fn name => Toplevel.theory (fn thy => process_file (Path.explode name) thy)))
-
+end
 
 end

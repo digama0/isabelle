@@ -80,7 +80,7 @@ end
 (* proof combinators *)
 
 fun under_assumption f ct =
-  let val ct' = SMT_Util.mk_cprop ct in Thm.implies_intr ct' (f (Thm.assume ct')) end
+  let val ct' = HOLogic.mk_judgment ct in Thm.implies_intr ct' (f (Thm.assume ct')) end
 
 fun discharge p pq = Thm.implies_elim pq p
 
@@ -151,10 +151,10 @@ local
     \<^simproc_setup>\<open>passive antisym_less ("\<not> (x::'a::linorder) < y") = \<open>K prove_antisym_less\<close>\<close>
 
   val basic_simpset =
-    simpset_of (put_simpset HOL_ss \<^context>
-      addsimps @{thms field_simps times_divide_eq_right times_divide_eq_left arith_special
+    HOL_ss |> Simplifier.simpset_map \<^context>
+      (Simplifier.add_simps @{thms field_simps times_divide_eq_right times_divide_eq_left arith_special
         arith_simps rel_simps array_rules z3div_def z3mod_def NO_MATCH_def}
-      |> fold Simplifier.add_proc [\<^simproc>\<open>numeral_divmod\<close>, fast_int_arith_simproc,
+      #> fold Simplifier.add_proc [\<^simproc>\<open>numeral_divmod\<close>, fast_int_arith_simproc,
         antisym_le_simproc, antisym_less_simproc])
 
   structure Simpset = Generic_Data
@@ -166,10 +166,10 @@ local
 in
 
 fun add_simproc simproc context =
-  Simpset.map (simpset_map (Context.proof_of context) (Simplifier.add_proc simproc)) context
+  Simpset.map (Simplifier.simpset_map (Context.proof_of context) (Simplifier.add_proc simproc)) context
 
 fun make_simpset ctxt rules =
-  simpset_of (put_simpset (Simpset.get (Context.Proof ctxt)) ctxt addsimps rules)
+  Simpset.get (Context.Proof ctxt) |> Simplifier.simpset_map ctxt (Simplifier.add_simps rules)
 
 end
 
@@ -178,7 +178,8 @@ local
   val remove_fun_app = mk_meta_eq @{thm fun_app_def}
 
   fun rewrite_conv _ [] = Conv.all_conv
-    | rewrite_conv ctxt eqs = Simplifier.full_rewrite (empty_simpset ctxt addsimps eqs)
+    | rewrite_conv ctxt eqs =
+        Simplifier.full_rewrite (Simplifier.empty_simpset ctxt |> Simplifier.add_simps eqs)
 
   val rewrite_true_rule = @{lemma "True \<equiv> \<not> False" by simp}
   val prep_rules = [@{thm Let_def}, remove_trigger, remove_fun_app, rewrite_true_rule]

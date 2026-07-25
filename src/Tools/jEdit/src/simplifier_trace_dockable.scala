@@ -6,18 +6,20 @@ Dockable window with interactive simplifier trace.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
 import scala.swing.{Orientation, Separator}
 
 import java.awt.BorderLayout
-import java.awt.event.{ComponentEvent, ComponentAdapter}
 
 import org.gjt.sp.jedit.View
 
 
 class Simplifier_Trace_Dockable(view: View, position: String) extends Dockable(view, position) {
+  dockable =>
+
   GUI_Thread.require {}
 
 
@@ -30,8 +32,10 @@ class Simplifier_Trace_Dockable(view: View, position: String) extends Dockable(v
   private var do_update = true
 
 
-  private val text_area = new Pretty_Text_Area(view)
-  set_content(text_area)
+  private val output: Output_Area = new Output_Area(editor_context)
+
+  output.setup(dockable)
+  set_content(output.text_pane)
 
   private def update_contents(): Unit = {
     val snapshot = current_snapshot
@@ -41,8 +45,8 @@ class Simplifier_Trace_Dockable(view: View, position: String) extends Dockable(v
     context.questions.values.toList match {
       case q :: _ =>
         val data = q.data
-        val content = Pretty.separate(XML.Text(data.text) :: data.content)
-        text_area.update(snapshot, Command.Results.empty, content)
+        output.pretty_text_area.update(snapshot, Command.Results.empty,
+          List(Pretty.block(XML.Text(data.text) :: data.content, indent = 0)))
         q.answers.foreach { answer =>
           answers.contents += new GUI.Button(answer.string) {
             override def clicked(): Unit =
@@ -50,10 +54,10 @@ class Simplifier_Trace_Dockable(view: View, position: String) extends Dockable(v
           }
         }
       case Nil =>
-        text_area.update(snapshot, Command.Results.empty, Nil)
+        output.pretty_text_area.update(snapshot, Command.Results.empty, Nil)
     }
 
-    do_paint()
+    output.handle_resize()
   }
 
   private def show_trace(): Unit = {
@@ -61,20 +65,12 @@ class Simplifier_Trace_Dockable(view: View, position: String) extends Dockable(v
     new Simplifier_Trace_Window(view, current_snapshot, trace)
   }
 
-  private def do_paint(): Unit = {
-    GUI_Thread.later {
-      text_area.resize(Font_Info.main(PIDE.options.real("jedit_font_scale")))
-    }
-  }
-
-  private def handle_resize(): Unit = do_paint()
-
   private def handle_update(follow: Boolean): Unit = {
     val (new_snapshot, new_command, new_results, new_id) =
-      PIDE.editor.current_node_snapshot(view) match {
+      JEdit_Editor.current_node_snapshot(editor_context) match {
         case Some(snapshot) =>
           if (follow && !snapshot.is_outdated) {
-            PIDE.editor.current_command(view, snapshot) match {
+            JEdit_Editor.current_command(editor_context, snapshot) match {
               case Some(cmd) =>
                 (snapshot, cmd, snapshot.command_results(cmd), cmd.id)
               case None =>
@@ -96,9 +92,10 @@ class Simplifier_Trace_Dockable(view: View, position: String) extends Dockable(v
   /* main */
 
   private val main =
-    Session.Consumer[Any](getClass.getName) {
+    Session.Consumer[Session.Global_Options | Session.Commands_Changed |
+        Session.Caret_Focus.type | Simplifier_Trace.Event.type](this.class_name) {
       case _: Session.Global_Options =>
-        GUI_Thread.later { handle_resize() }
+        GUI_Thread.later { output.handle_resize() }
 
       case changed: Session.Commands_Changed =>
         GUI_Thread.later { handle_update(do_update) }
@@ -115,6 +112,7 @@ class Simplifier_Trace_Dockable(view: View, position: String) extends Dockable(v
     PIDE.session.commands_changed += main
     PIDE.session.caret_focus += main
     PIDE.session.trace_events += main
+    output.init()
     handle_update(true)
   }
 
@@ -123,19 +121,8 @@ class Simplifier_Trace_Dockable(view: View, position: String) extends Dockable(v
     PIDE.session.commands_changed -= main
     PIDE.session.caret_focus -= main
     PIDE.session.trace_events -= main
-    delay_resize.revoke()
+    output.exit()
   }
-
-
-  /* resize */
-
-  private val delay_resize =
-    Delay.first(PIDE.session.update_delay, gui = true) { handle_resize() }
-
-  addComponentListener(new ComponentAdapter {
-    override def componentResized(e: ComponentEvent): Unit = delay_resize.invoke()
-    override def componentShown(e: ComponentEvent): Unit = delay_resize.invoke()
-  })
 
 
   /* controls */

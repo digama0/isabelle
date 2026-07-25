@@ -44,8 +44,9 @@ sig
     (string * morphism) list -> theory -> theory
   val locale_space: theory -> Name_Space.T
   val intern: theory -> xstring -> string
-  val check: theory -> xstring * Position.T -> string
-  val extern: theory -> string -> xstring
+  val check_global: theory -> xstring * Position.T -> string
+  val check: Proof.context -> xstring * Position.T -> string
+  val extern: Proof.context -> string -> xstring
   val markup_name: Proof.context -> string -> string
   val pretty_name: Proof.context -> string -> Pretty.T
   val defined: theory -> string -> bool
@@ -192,21 +193,26 @@ structure Locales = Theory_Data
 
 val locale_space = Name_Space.space_of_table o Locales.get;
 val intern = Name_Space.intern o locale_space;
-fun check thy = #1 o Name_Space.check (Context.Theory thy) (Locales.get thy);
+
+fun check_global thy =
+  #1 o Name_Space.check (Context.Theory thy) (Locales.get thy);
+
+fun check ctxt =
+  #1 o Name_Space.check (Context.Proof ctxt) (Locales.get (Proof_Context.theory_of ctxt));
 
 val _ = Theory.setup
  (ML_Antiquotation.inline_embedded \<^binding>\<open>locale\<close>
-   (Args.theory -- Scan.lift Parse.embedded_position >>
+   (Args.context -- Scan.lift Parse.embedded_position >>
       (ML_Syntax.print_string o uncurry check)));
 
-fun extern thy =
-  Name_Space.extern_generic (Context.Theory thy) (locale_space thy);
+fun extern ctxt =
+  Name_Space.extern ctxt (locale_space (Proof_Context.theory_of ctxt));
 
-fun markup_extern ctxt =
-  Name_Space.markup_extern ctxt (locale_space (Proof_Context.theory_of ctxt));
+fun markups_extern ctxt =
+  Name_Space.markups_extern ctxt (locale_space (Proof_Context.theory_of ctxt));
 
-fun markup_name ctxt name = markup_extern ctxt name |-> Markup.markup;
-fun pretty_name ctxt name = markup_extern ctxt name |> Pretty.mark_str;
+fun markup_name ctxt name = markups_extern ctxt name |-> Markup.markups;
+fun pretty_name ctxt name = markups_extern ctxt name |> Pretty.marks_str;
 
 val get_locale = Name_Space.lookup o Locales.get;
 val defined = is_some oo get_locale;
@@ -597,7 +603,7 @@ fun amend_registration {mixin = NONE, ...} context = context
             NONE =>
               error ("No interpretation of locale " ^ quote (markup_name ctxt name) ^
                 " with\nparameter instantiation " ^
-                space_implode " " (map (quote o Syntax.string_of_term_global thy) base) ^
+                implode_space (map (quote o Syntax.string_of_term_global thy) base) ^
                 " available")
           | SOME {serial = serial', ...} => serial');
       in
@@ -610,7 +616,8 @@ fun amend_registration {mixin = NONE, ...} context = context
 fun add_registration {inst = (name, base_morph), mixin, export} context =
   let
     val thy = Context.theory_of context;
-    val pos_morph = Morphism.binding_morphism "position" (Binding.set_pos (Position.thread_data ()));
+    val morph_pos = Position.label_interpreted (Position.thread_data ());
+    val pos_morph = Morphism.binding_morphism "position" (Binding.new_pos morph_pos);
     val mix_morph = (case mixin of NONE => base_morph | SOME (mix, _) => base_morph $> mix);
     val inst = instance_of thy name mix_morph;
     val idents = Idents.get context;
@@ -741,8 +748,8 @@ fun pretty_locales thy verbose =
   Pretty.block
     (Pretty.breaks
       (Pretty.str "locales:" ::
-        map (Pretty.mark_str o #1)
-          (Name_Space.markup_table verbose (Proof_Context.init_global thy) (Locales.get thy))));
+        map (Pretty.marks_str o #1)
+          (Name_Space.markups_table verbose (Proof_Context.init_global thy) (Locales.get thy))));
 
 fun pretty_locale thy show_facts name =
   let

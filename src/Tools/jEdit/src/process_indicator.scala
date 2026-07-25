@@ -6,10 +6,10 @@ Process indicator with animated icon.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
-import java.awt.Image
 import java.awt.event.{ActionListener, ActionEvent}
 import javax.swing.{ImageIcon, Timer}
 import scala.swing.{Label, Component}
@@ -19,10 +19,10 @@ class Process_Indicator {
   private val label = new Label
 
   private val passive_icon =
-    JEdit_Lib.load_image_icon(PIDE.options.string("process_passive_icon")).getImage
+    JEdit_Lib.load_icon(PIDE.options.string("process_passive_icon")).getImage
   private val active_icons =
     space_explode(':', PIDE.options.string("process_active_icons")).map(name =>
-      JEdit_Lib.load_image_icon(name).getImage)
+      JEdit_Lib.load_icon(name).getImage)
 
   private class Animation extends ImageIcon(passive_icon) {
     private var current_frame = 0

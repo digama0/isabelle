@@ -1,197 +1,237 @@
-(*  Title:      HOL/Tools/try0.ML
-    Author:     Jasmin Blanchette, TU Muenchen
+(* Title:      HOL/Tools/try0.ML
+   Author:     Jasmin Blanchette, LMU Muenchen
+   Author:     Martin Desharnais, LMU Muenchen
+   Author:     Fabian Huch, TU Muenchen
 
 Try a combination of proof methods.
 *)
 
 signature TRY0 =
 sig
-  val noneN : string
-  val silence_methods : bool -> Proof.context -> Proof.context
-  val try0 : Time.time option -> string list * string list * string list * string list ->
-    Proof.state -> bool
-end;
+  val serial_commas : string -> string list -> string list
+
+  type xref = Facts.ref * Token.src list
+
+  type facts =
+    {usings: xref list,
+     simps : xref list,
+     intros : xref list,
+     elims : xref list,
+     dests : xref list}
+  val empty_facts : facts
+
+  type result = {name: string, command: string, time: Time.time, state: Proof.state}
+  type proof_method = Time.time option -> facts -> Proof.state -> result option
+  type proof_method_options = {run_if_auto_try: bool}
+
+  val register_proof_method : string -> proof_method_options -> proof_method -> unit
+  val get_proof_method : string -> proof_method option
+  val get_proof_method_or_noop : string -> proof_method
+  val get_all_proof_method_names : unit -> string list
+
+  val default_timeout : int Config.T
+  val schedule : string Config.T
+  val get_schedule : Proof.context -> string list list
+
+  datatype mode = Auto_Try | Try | Normal
+  val generic_try0 : mode -> Time.time option -> facts -> Proof.state ->
+    (bool * (string * string list)) * result list
+  val try0 : Time.time option -> facts -> Proof.state -> result list
+end
 
 structure Try0 : TRY0 =
 struct
 
-val noneN = "none";
+fun serial_commas _ [] = ["??"]
+  | serial_commas _ [s] = [s]
+  | serial_commas conj [s1, s2] = [s1, conj, s2]
+  | serial_commas conj [s1, s2, s3] = [s1 ^ ",", s2 ^ ",", conj, s3]
+  | serial_commas conj (s :: ss) = s ^ "," :: serial_commas conj ss;
 
-datatype mode = Auto_Try | Try | Normal;
+val noneN = "none"
 
-val default_timeout = seconds 5.0;
+datatype mode = Auto_Try | Try | Normal
 
-fun can_apply timeout_opt pre post tac st =
-  let val {goal, ...} = Proof.goal st in
-    (case (case timeout_opt of
-            SOME timeout => Timeout.apply_physical timeout
-          | NONE => fn f => fn x => f x) (Seq.pull o tac) (pre st) of
-      SOME (x, _) => Thm.nprems_of (post x) < Thm.nprems_of goal
-    | NONE => false)
-  end;
+datatype modifier = Use | Simp | Intro | Elim | Dest
+type xref = Facts.ref * Token.src list
+type tagged_xref = xref * modifier list
+type facts =
+  {usings: xref list,
+   simps : xref list,
+   intros : xref list,
+   elims : xref list,
+   dests : xref list}
 
-fun apply_generic timeout_opt name command pre post apply st =
-  let val time_start = Time.now () in
-    if try (can_apply timeout_opt pre post apply) st = SOME true then
-      SOME (name, command, Time.toMilliseconds (Time.now () - time_start))
-    else
-      NONE
-  end;
+val empty_facts: facts = {usings = [], simps = [], intros = [], elims = [], dests = []}
+fun union_facts (left : facts) (right : facts) : facts =
+  {usings = #usings left @ #usings right,
+   simps = #simps left @ #simps right,
+   intros = #intros left @ #intros right,
+   elims = #elims left @ #elims right,
+   dests = #dests left @ #dests right}
 
-fun parse_method keywords s =
-  enclose "(" ")" s
-  |> Token.explode keywords Position.start
-  |> filter Token.is_proper
-  |> Scan.read Token.stopper Method.parse
-  |> (fn SOME (Method.Source src, _) => src | _ => raise Fail "expected Source");
+type result = {name: string, command: string, time: Time.time, state: Proof.state}
+type proof_method = Time.time option -> facts -> Proof.state -> result option
+type proof_method_options = {run_if_auto_try: bool}
 
-fun apply_named_method_on_first_goal ctxt =
-  parse_method (Thy_Header.get_keywords' ctxt)
-  #> Method.method_cmd ctxt
-  #> Method.Basic
-  #> (fn m => Method.Combinator (Method.no_combinator_info, Method.Select_Goals 1, [m]))
-  #> Proof.refine;
+val noop_proof_method : proof_method = fn _ => fn _ => fn _ => NONE
 
-fun add_attr_text (NONE, _) s = s
-  | add_attr_text (_, []) s = s
-  | add_attr_text (SOME x, fs) s =
-    s ^ " " ^ (if x = "" then "" else x ^ ": ") ^ space_implode " " fs;
+local
+  val proof_methods =
+    Synchronized.var "Try0.proof_methods" (Symtab.empty : proof_method Symtab.table);
+  val auto_try_proof_methods_names =
+    Synchronized.var "Try0.auto_try_proof_methods" (Symset.empty : Symset.T);
+in
 
-fun attrs_text (sx, ix, ex, dx) (ss, is, es, ds) =
-  "" |> fold add_attr_text [(sx, ss), (ix, is), (ex, es), (dx, ds)];
-
-fun apply_named_method (name, ((all_goals, run_if_auto_try), attrs)) mode timeout_opt quad st =
-  if mode <> Auto_Try orelse run_if_auto_try then
-    let val attrs = attrs_text attrs quad in
-      apply_generic timeout_opt name
-        ((name ^ attrs |> attrs <> "" ? enclose "(" ")") ^
-         (if all_goals andalso Thm.nprems_of (#goal (Proof.goal st)) > 1 then "[1]" else ""))
-        I (#goal o Proof.goal)
-        (apply_named_method_on_first_goal (Proof.context_of st) (name ^ attrs)
-          #> Seq.filter_results) st
-    end
-  else
-    NONE;
-
-val full_attrs = (SOME "simp", SOME "intro", SOME "elim", SOME "dest");
-val clas_attrs = (NONE, SOME "intro", SOME "elim", SOME "dest");
-val simp_attrs = (SOME "add", NONE, NONE, NONE);
-val metis_attrs = (SOME "", SOME "", SOME "", SOME "");
-val no_attrs = (NONE, NONE, NONE, NONE);
-
-(* name * ((all_goals, run_if_auto_try), (simp, intro, elim, dest) *)
-val named_methods =
-  [("simp", ((false, true), simp_attrs)),
-   ("auto", ((true, true), full_attrs)),
-   ("blast", ((false, true), clas_attrs)),
-   ("metis", ((false, true), metis_attrs)),
-   ("argo", ((false, true), no_attrs)),
-   ("linarith", ((false, true), no_attrs)),
-   ("presburger", ((false, true), no_attrs)),
-   ("algebra", ((false, true), no_attrs)),
-   ("fast", ((false, false), clas_attrs)),
-   ("fastforce", ((false, false), full_attrs)),
-   ("force", ((false, false), full_attrs)),
-   ("meson", ((false, false), metis_attrs)),
-   ("satx", ((false, false), no_attrs)),
-   ("order", ((false, true), no_attrs))];
-
-val apply_methods = map apply_named_method named_methods;
-
-fun time_string ms = string_of_int ms ^ " ms";
-fun tool_time_string (s, ms) = s ^ ": " ^ time_string ms;
-
-(* Makes reconstructor tools as silent as possible. The "set_visible" calls suppresses "Unification
-   bound exceeded" warnings and the like. *)
-fun silence_methods debug =
-  Config.put Metis_Tactic.verbose debug
-  #> not debug ? (fn ctxt =>
-      ctxt
-      |> Simplifier_Trace.disable
-      |> Context_Position.set_visible false
-      |> Config.put Unify.unify_trace false
-      |> Config.put Argo_Tactic.trace "none"
-      |> Proof_Context.background_theory (fn thy =>
-          thy
-          |> Context_Position.set_visible_global false
-          |> Config.put_global Unify.unify_trace false));
-
-fun generic_try0 mode timeout_opt quad st =
+fun register_proof_method name ({run_if_auto_try} : proof_method_options) proof_method =
   let
-    val st = Proof.map_contexts (silence_methods false) st;
-    fun trd (_, _, t) = t;
-    fun try_method method = method mode timeout_opt quad st;
-    fun get_message (_, command, ms) = "Found proof: " ^ Active.sendback_markup_command
-      ((if Thm.nprems_of (#goal (Proof.goal st)) = 1 then "by" else "apply") ^ " " ^ command) ^
-      " (" ^ time_string ms ^ ")";
-    val print_step = Option.map (tap (writeln o get_message));
-    val get_results =
-      if mode = Normal
-      then Par_List.map (try_method #> print_step) #> map_filter I #> sort (int_ord o apply2 trd)
-      else Par_List.get_some try_method #> the_list;
+    val () = if name = "" then error "Registering unnamed proof method" else ()
+    val () = Synchronized.change proof_methods (Symtab.update (name, proof_method))
+    val () =
+      if run_if_auto_try then
+        Synchronized.change auto_try_proof_methods_names (Symset.insert name)
+      else
+        ()
+  in () end
+
+fun get_proof_method (name : string) : proof_method option =
+  Symtab.lookup (Synchronized.value proof_methods) name;
+
+fun get_all_proof_method_names () : string list =
+  Symtab.fold (fn (name, _) => fn names => name :: names) (Synchronized.value proof_methods) []
+
+fun should_auto_try_proof_method (name : string) : bool =
+  Symset.member (Synchronized.value auto_try_proof_methods_names) name
+
+end
+
+fun get_proof_method_or_noop name =
+  (case get_proof_method name of
+    NONE => (warning ("Proof method \"" ^ name ^ "\" is undefined"); noop_proof_method)
+  | SOME proof_method => proof_method)
+
+fun maybe_apply_proof_method name mode : proof_method =
+  if mode <> Auto_Try orelse should_auto_try_proof_method name then
+    get_proof_method_or_noop name
+  else
+    noop_proof_method
+
+val default_timeout = Attrib.setup_config_int \<^binding>\<open>try0_default_timeout\<close> (K 2)
+val schedule = Attrib.setup_config_string \<^binding>\<open>try0_schedule\<close> (K "")
+
+fun get_schedule (ctxt : Proof.context) : string list list =
+  let
+    fun some_nonempty_string sub =
+      if Substring.isEmpty sub then
+        NONE
+      else
+        SOME (Substring.string sub)
+  in
+    Config.get ctxt schedule
+    |> Substring.full
+    |> Substring.tokens (fn c => c = #";")
+    |> map (map_filter some_nonempty_string o Substring.tokens Char.isSpace)
+  end
+
+local
+
+fun time_string time = string_of_int (Time.toMilliseconds time) ^ " ms"
+fun tool_time_string (s, time) = s ^ ": " ^ time_string time
+
+fun generic_try0_step mode (timeout : Time.time) (facts : facts) (st : Proof.state)
+  (proof_methods : string list) =
+  let
+    fun try_method (method : mode -> proof_method) = method mode (SOME timeout) facts st
+    fun get_message {command, time, ...} = "Found proof: " ^ Active.sendback_markup_command
+      command ^ " (" ^ time_string time ^ ")"
+    val print_step = Option.map (tap (writeln o get_message))
+    fun get_results methods : result list =
+      if mode = Normal then
+        methods
+        |> Par_List.map (try_method #> print_step)
+        |> map_filter I
+        |> sort (Time.compare o apply2 #time)
+      else
+        methods
+        |> Par_List.get_some try_method
+        |> the_list
+    val maybe_apply_methods = map maybe_apply_proof_method proof_methods
   in
     if mode = Normal then
-      "Trying " ^ space_implode " " (Try.serial_commas "and" (map (quote o fst) named_methods)) ^
-      "..."
-      |> writeln
+      let val names = map quote proof_methods in
+        writeln ("Trying " ^ implode_space (serial_commas "and" names) ^ "...")
+      end
     else
       ();
-    (case get_results apply_methods of
-      [] =>
-      (if mode = Normal then writeln "No proof found" else (); (false, (noneN, [])))
-    | xs as (name, command, _) :: _ =>
+    (case get_results maybe_apply_methods of
+      [] => (if mode = Normal then writeln "No proof found" else (); ((false, (noneN, [])), []))
+    | results as {name, command, ...} :: _ =>
       let
-        val xs = xs |> map (fn (name, _, n) => (n, name))
-                    |> AList.coalesce (op =)
-                    |> map (swap o apsnd commas);
+        val method_times =
+          results
+          |> map (fn {name, time, ...} => (time, name))
+          |> AList.coalesce (op =)
+          |> map (swap o apsnd commas)
         val message =
           (case mode of
              Auto_Try => "Auto Try0 found a proof"
            | Try => "Try0 found a proof"
            | Normal => "Try this") ^ ": " ^
-          Active.sendback_markup_command
-              ((if Thm.nprems_of (#goal (Proof.goal st)) = 1 then "by"
-                else "apply") ^ " " ^ command) ^
-          (case xs of
+          Active.sendback_markup_command command ^
+          (case method_times of
             [(_, ms)] => " (" ^ time_string ms ^ ")"
-          | xs => "\n(" ^ space_implode "; " (map tool_time_string xs) ^ ")");
+          | method_times => "\n(" ^ space_implode "; " (map tool_time_string method_times) ^ ")")
       in
-        (true, (name, if mode = Auto_Try then [message] else (writeln message; [])))
+        ((true, (name, if mode = Auto_Try then [message] else (writeln message; []))), results)
       end)
+  end
+
+in
+
+fun generic_try0 mode (timeout_opt : Time.time option) (facts : facts) (st : Proof.state) =
+  let
+    val ctxt = Proof.context_of st
+    val schedule = get_schedule ctxt
+
+    val timeout =
+      (case timeout_opt of
+        NONE => seconds (Real.fromInt (Config.get ctxt default_timeout))
+      | SOME t => t)
+
+    fun iterate [] = ((false, (noneN, [])), [])
+      | iterate (proof_methods :: proof_methodss) =
+        (case generic_try0_step mode timeout facts st proof_methods of
+          (_, []) => iterate proof_methodss
+        | result as (_, _ :: _) => result)
+  in
+    iterate (if null schedule then [get_all_proof_method_names ()] else schedule)
   end;
 
-fun try0 timeout_opt = fst oo generic_try0 Normal timeout_opt;
+end
 
-fun try0_trans quad =
-  Toplevel.keep_proof
-    (ignore o generic_try0 Normal (SOME default_timeout) quad o Toplevel.proof_of);
+fun try0 timeout_opt = snd oo generic_try0 Normal timeout_opt
 
-fun merge_attrs (s1, i1, e1, d1) (s2, i2, e2, d2) = (s1 @ s2, i1 @ i2, e1 @ e2, d1 @ d2);
+fun try0_trans (facts : facts) =
+  Toplevel.keep_proof (ignore o try0 NONE facts o Toplevel.proof_of)
 
-fun string_of_xthm (xref, args) =
-  Facts.string_of_ref xref ^
-  implode (map (enclose "[" "]" o Pretty.unformatted_string_of o Token.pretty_src \<^context>) args);
-
-val parse_fact_refs =
-  Scan.repeat1 (Scan.unless (Parse.name -- Args.colon) (Parse.thm >> string_of_xthm));
+val parse_fact_refs = Scan.repeat1 (Scan.unless (Parse.name -- Args.colon) Parse.thm)
 
 val parse_attr =
-  Args.$$$ "simp" |-- Args.colon |-- parse_fact_refs >> (fn ss => (ss, [], [], []))
-  || Args.$$$ "intro" |-- Args.colon |-- parse_fact_refs >> (fn is => ([], is, [], []))
-  || Args.$$$ "elim" |-- Args.colon |-- parse_fact_refs >> (fn es => ([], [], es, []))
-  || Args.$$$ "dest" |-- Args.colon |-- parse_fact_refs >> (fn ds => ([], [], [], ds));
+  Args.$$$ "simp" |-- Args.colon |-- parse_fact_refs >> (fn xrefs =>
+    {usings = [], simps = xrefs, intros = [], elims = [], dests = []})
+  || Args.$$$ "intro" |-- Args.colon |-- parse_fact_refs >> (fn xrefs =>
+    {usings = [], simps = [], intros = xrefs, elims = [], dests = []})
+  || Args.$$$ "elim" |-- Args.colon |-- parse_fact_refs >> (fn xrefs =>
+    {usings = [], simps = [], intros = [], elims = xrefs, dests = []})
+  || Args.$$$ "dest" |-- Args.colon |-- parse_fact_refs >> (fn xrefs =>
+    {usings = [], simps = [], intros = [], elims = [], dests = xrefs})
 
 fun parse_attrs x =
   (Args.parens parse_attrs
-   || Scan.repeat parse_attr >> (fn quad => fold merge_attrs quad ([], [], [], []))) x;
+   || Scan.repeat parse_attr >> (fn factss => fold union_facts factss empty_facts)) x
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>try0\<close> "try a combination of proof methods"
-    (Scan.optional parse_attrs ([], [], [], []) #>> try0_trans);
+    (Scan.optional parse_attrs empty_facts #>> try0_trans)
 
-val _ =
-  Try.tool_setup
-   {name = "try0", weight = 30, auto_option = \<^system_option>\<open>auto_methods\<close>,
-    body = fn auto => generic_try0 (if auto then Auto_Try else Try) NONE ([], [], [], [])};
-
-end;
+end

@@ -8,8 +8,8 @@ imports Main
 begin
 
 datatype 'a tree =
-  Leaf ("\<langle>\<rangle>") |
-  Node "'a tree" ("value": 'a) "'a tree" ("(1\<langle>_,/ _,/ _\<rangle>)")
+  Leaf (\<open>\<langle>\<rangle>\<close>) |
+  Node "'a tree" ("value": 'a) "'a tree" (\<open>(\<open>indent=1 notation=\<open>mixfix Node\<close>\<close>\<langle>_,/ _,/ _\<rangle>)\<close>)
 datatype_compat tree
 
 primrec left :: "'a tree \<Rightarrow> 'a tree" where
@@ -143,7 +143,31 @@ lemma eq_empty_set_tree[simp]: "{} = set_tree t \<longleftrightarrow> t = Leaf"
 by (cases t) auto
 
 lemma finite_set_tree[simp]: "finite(set_tree t)"
-by(induction t) auto
+by(fact tree.set_finite)
+
+lemma finite_trees_height_le:
+  assumes "finite L"
+  shows "finite {t :: 'a tree. height t \<le> n \<and> set_tree t \<subseteq> L}"
+proof (induction n)
+  case 0
+  have "{t :: 'a tree. height t \<le> 0 \<and> set_tree t \<subseteq> L} = {Leaf}"
+    using height_tree.elims by auto
+  then show ?case by simp 
+next
+  case (Suc n)
+
+  let ?T = "\<lambda>n. {t :: 'a tree. height t \<le> n \<and> set_tree t \<subseteq> L}"
+
+  have "?T (Suc n) \<subseteq> {Leaf} \<union> (\<lambda>(l,a,r). Node l a r) ` (?T n \<times> L  \<times> ?T n)"
+    apply (auto split: prod.splits simp: image_def)
+    by (smt (verit, best) Suc_eq_plus1 add_diff_cancel_right' height_tree.elims le_diff_conv le_sup_iff subsetD
+        sup_nat_def tree.sel(2) tree.set_sel(2) tree.simps(15))
+
+  then show "finite (?T (Suc n))"
+    using Suc.IH assms
+    by (metis (no_types, lifting) finite.emptyI finite_SigmaI finite_Un finite_imageI finite_insert
+        rev_finite_subset)
+qed
 
 
 subsection \<open>\<^const>\<open>subtrees\<close>\<close>
@@ -363,11 +387,21 @@ subsection "List of entries"
 lemma eq_inorder_Nil[simp]: "inorder t = [] \<longleftrightarrow> t = Leaf"
 by (cases t) auto
 
-lemma eq_Nil_inorder[simp]: "[] = inorder t \<longleftrightarrow> t = Leaf"
-by (cases t) auto
+lemmas eq_Nil_inorder[simp] = eq_inorder_Nil[THEN eq_iff_swap]
 
 lemma set_inorder[simp]: "set (inorder t) = set_tree t"
 by (induction t) auto
+
+lemma preorder_eq_Nil_iff[simp]: "(preorder t = []) = (t = \<langle>\<rangle>)"
+by (cases t) auto
+
+lemmas Nil_eq_preorder_iff [simp] = preorder_eq_Nil_iff[THEN eq_iff_swap]
+
+lemma preorder_eq_Cons_iff:
+  "preorder t = x # xs \<longleftrightarrow> (\<exists> l r. t = \<langle>l, x, r\<rangle> \<and> xs = preorder l @ preorder r)"
+by (cases t) auto
+
+lemmas Cons_eq_preorder_iff = preorder_eq_Cons_iff[THEN eq_iff_swap]
 
 lemma set_preorder[simp]: "set (preorder t) = set_tree t"
 by (induction t) auto

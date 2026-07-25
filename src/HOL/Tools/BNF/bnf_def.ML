@@ -59,6 +59,7 @@ sig
   val bd_card_order_of_bnf: bnf -> thm
   val bd_cinfinite_of_bnf: bnf -> thm
   val bd_regularCard_of_bnf: bnf -> thm
+  val bd_def_of_bnf: bnf -> thm
   val collect_set_map_of_bnf: bnf -> thm
   val in_bd_of_bnf: bnf -> thm
   val in_cong_of_bnf: bnf -> thm
@@ -79,6 +80,7 @@ sig
   val map_ident0_of_bnf: bnf -> thm
   val map_ident_of_bnf: bnf -> thm
   val map_transfer_of_bnf: bnf -> thm
+  val set_finite_of_bnf: bnf -> thm list option
   val pred_cong0_of_bnf: bnf -> thm
   val pred_cong_of_bnf: bnf -> thm
   val pred_cong_simp_of_bnf: bnf -> thm
@@ -192,6 +194,7 @@ open BNF_Def_Tactics
 
 val fundefcong_attrs = @{attributes [fundef_cong]};
 val mono_attrs = @{attributes [mono]};
+val simp_attrs = @{attributes [simp]};
 
 type axioms = {
   map_id0: thm,
@@ -251,14 +254,15 @@ val morph_axioms = map_axioms o Morphism.thm;
 type defs = {
   map_def: thm,
   set_defs: thm list,
+  bd_def: thm,
   rel_def: thm,
   pred_def: thm
 }
 
-fun mk_defs map sets rel pred = {map_def = map, set_defs = sets, rel_def = rel, pred_def = pred};
+fun mk_defs map sets bd rel pred = {map_def = map, bd_def = bd, set_defs = sets, rel_def = rel, pred_def = pred};
 
-fun map_defs f {map_def, set_defs, rel_def, pred_def} =
-  {map_def = f map_def, set_defs = map f set_defs, rel_def = f rel_def, pred_def = f pred_def};
+fun map_defs f {map_def, set_defs, bd_def, rel_def, pred_def} =
+  {map_def = f map_def, set_defs = map f set_defs, bd_def = f bd_def, rel_def = f rel_def, pred_def = f pred_def};
 
 val morph_defs = map_defs o Morphism.thm;
 
@@ -285,6 +289,7 @@ type facts = {
   rel_eq: thm lazy,
   rel_flip: thm lazy,
   set_map: thm lazy list,
+  set_finite: thm list lazy option,
   rel_cong0: thm lazy,
   rel_cong: thm lazy,
   rel_cong_simp: thm lazy,
@@ -317,7 +322,7 @@ type facts = {
 
 fun mk_facts bd_Card_order bd_Cinfinite bd_Cnotzero collect_set_map in_bd in_cong in_mono in_rel
     inj_map inj_map_strong map_comp map_cong map_cong_simp map_cong_pred map_id map_ident0 map_ident
-    map_ident_strong map_transfer rel_eq rel_flip set_map rel_cong0 rel_cong rel_cong_simp rel_map
+    map_ident_strong map_transfer rel_eq rel_flip set_map set_finite rel_cong0 rel_cong rel_cong_simp rel_map
     rel_mono rel_mono_strong0 rel_mono_strong set_transfer rel_Grp rel_conversep rel_OO rel_refl
     rel_refl_strong rel_reflp rel_symp rel_transp rel_transfer rel_eq_onp pred_transfer pred_True
     pred_map pred_rel pred_mono_strong0 pred_mono_strong pred_mono pred_cong0 pred_cong
@@ -344,6 +349,7 @@ fun mk_facts bd_Card_order bd_Cinfinite bd_Cnotzero collect_set_map in_bd in_con
   rel_eq = rel_eq,
   rel_flip = rel_flip,
   set_map = set_map,
+  set_finite = set_finite,
   rel_cong0 = rel_cong0,
   rel_cong = rel_cong,
   rel_cong_simp = rel_cong_simp,
@@ -396,6 +402,7 @@ fun map_facts f {
   rel_eq,
   rel_flip,
   set_map,
+  set_finite,
   rel_cong0,
   rel_cong,
   rel_cong_simp,
@@ -446,6 +453,7 @@ fun map_facts f {
     rel_eq = Lazy.map f rel_eq,
     rel_flip = Lazy.map f rel_flip,
     set_map = map (Lazy.map f) set_map,
+    set_finite = Option.map (Lazy.map (map f)) set_finite,
     rel_cong0 = Lazy.map f rel_cong0,
     rel_cong = Lazy.map f rel_cong,
     rel_cong_simp = Lazy.map f rel_cong_simp,
@@ -582,6 +590,7 @@ val bd_Cnotzero_of_bnf = #bd_Cnotzero o #facts o rep_bnf;
 val bd_card_order_of_bnf = #bd_card_order o #axioms o rep_bnf;
 val bd_cinfinite_of_bnf = #bd_cinfinite o #axioms o rep_bnf;
 val bd_regularCard_of_bnf = #bd_regularCard o #axioms o rep_bnf;
+val bd_def_of_bnf = #bd_def o #defs o rep_bnf;
 val collect_set_map_of_bnf = Lazy.force o #collect_set_map o #facts o rep_bnf;
 val in_bd_of_bnf = Lazy.force o #in_bd o #facts o rep_bnf;
 val in_cong_of_bnf = Lazy.force o #in_cong o #facts o rep_bnf;
@@ -603,6 +612,7 @@ val map_ident0_of_bnf = Lazy.force o #map_ident0 o #facts o rep_bnf;
 val map_ident_of_bnf = Lazy.force o #map_ident o #facts o rep_bnf;
 val map_ident_strong_of_bnf = Lazy.force o #map_ident_strong o #facts o rep_bnf;
 val map_transfer_of_bnf = Lazy.force o #map_transfer o #facts o rep_bnf;
+val set_finite_of_bnf = Option.map Lazy.force o #set_finite o #facts o rep_bnf;
 val rel_eq_onp_of_bnf = Lazy.force o #rel_eq_onp o #facts o rep_bnf;
 val pred_def_of_bnf = #pred_def o #defs o rep_bnf;
 val pred_map_of_bnf = Lazy.force o #pred_map o #facts o rep_bnf;
@@ -892,6 +902,7 @@ val set_bdN = "set_bd";
 val set_map0N = "set_map0";
 val set_mapN = "set_map";
 val set_transferN = "set_transfer";
+val set_finiteN = "set_finite";
 
 datatype inline_policy = Dont_Inline | Hardly_Inline | Smart_Inline | Do_Inline;
 
@@ -981,6 +992,7 @@ fun note_bnf_thms fact_policy qualify0 bnf_b bnf lthy =
            (set_mapN, map Lazy.force (#set_map facts), []),
            (set_transferN, Lazy.force (#set_transfer facts), []),
            (set_bdN, #set_bd axioms, []),
+           (set_finiteN, the_default [] (Option.map Lazy.force (#set_finite facts)), simp_attrs),
            (bd_card_orderN, [#bd_card_order axioms], []),
            (bd_cinfiniteN, [#bd_cinfinite axioms], []),
            (bd_regularCardN, [#bd_regularCard axioms], [])]
@@ -1005,8 +1017,10 @@ fun note_bnf_defs bnf lthy =
     val notes =
       [(mk_def_binding map_of_bnf, map_def_of_bnf bnf),
        (mk_def_binding rel_of_bnf, rel_def_of_bnf bnf),
+       (mk_def_binding bd_of_bnf, bd_def_of_bnf bnf),
        (mk_def_binding pred_of_bnf, pred_def_of_bnf bnf)] @
       @{map 2} (pair o mk_def_binding o K) (sets_of_bnf bnf) (set_defs_of_bnf bnf)
+      |> filter_out (fn (b, thm) => Thm.is_reflexive thm)
       |> map (fn (b, thm) => ((b, []), [([thm], [])]));
   in
     lthy
@@ -2018,6 +2032,12 @@ fun prepare_def const_policy mk_fact_policy internal qualify prep_typ prep_term 
 
         val set_transfer = Lazy.lazy mk_set_transfer;
 
+        val mk_set_finite = if bnf_bd_As = @{term natLeq} then SOME (fn () => map (fn thm =>
+          iffD2 OF [@{thm finite_iff_ordLess_natLeq}, thm]
+        ) (#set_bd axioms)) else NONE;
+
+        val set_finite = Option.map Lazy.lazy mk_set_finite;
+
         fun mk_inj_map_strong () =
           let
             val assms = @{map 5} (fn setA => fn z => fn f => fn z' => fn f' =>
@@ -2042,11 +2062,11 @@ fun prepare_def const_policy mk_fact_policy internal qualify prep_typ prep_term 
 
         val inj_map_strong = Lazy.lazy mk_inj_map_strong;
 
-        val defs = mk_defs bnf_map_def bnf_set_defs bnf_rel_def bnf_pred_def;
+        val defs = mk_defs bnf_map_def bnf_set_defs bnf_bd_def bnf_rel_def bnf_pred_def;
 
         val facts = mk_facts bd_Card_order bd_Cinfinite bd_Cnotzero collect_set_map in_bd in_cong
           in_mono in_rel inj_map inj_map_strong map_comp map_cong map_cong_simp map_cong_pred map_id
-          map_ident0 map_ident map_ident_strong map_transfer rel_eq rel_flip set_map rel_cong0 rel_cong
+          map_ident0 map_ident map_ident_strong map_transfer rel_eq rel_flip set_map set_finite rel_cong0 rel_cong
           rel_cong_simp rel_map rel_mono rel_mono_strong0 rel_mono_strong set_transfer rel_Grp rel_conversep
           rel_OO rel_refl rel_refl_strong rel_reflp rel_symp rel_transp rel_transfer rel_eq_onp
           pred_transfer pred_True pred_map pred_rel pred_mono_strong0 pred_mono_strong pred_mono
@@ -2140,9 +2160,9 @@ fun bnf_cmd (raw_csts, raw_plugins) =
 
 fun print_bnfs ctxt =
   let
-    fun pretty_set sets i = Pretty.block
+    fun pretty_set (i, set) = Pretty.block
       [Pretty.str (mk_setN (i + 1) ^ ":"), Pretty.brk 1,
-        Pretty.quote (Syntax.pretty_term ctxt (nth sets i))];
+        Pretty.quote (Syntax.pretty_term ctxt set)];
 
     fun pretty_bnf (key, BNF {T, map, sets, bd, live, lives, dead, deads, ...}) =
       Pretty.big_list
@@ -2154,7 +2174,7 @@ fun print_bnfs ctxt =
             Pretty.brk 3, Pretty.list "[" "]" (List.map (Syntax.pretty_typ ctxt) deads)],
           Pretty.block [Pretty.str (mapN ^ ":"), Pretty.brk 1,
             Pretty.quote (Syntax.pretty_term ctxt map)]] @
-          List.map (pretty_set sets) (0 upto length sets - 1) @
+          map_index pretty_set sets @
           [Pretty.block [Pretty.str (bdN ^ ":"), Pretty.brk 1,
             Pretty.quote (Syntax.pretty_term ctxt bd)]]);
   in

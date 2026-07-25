@@ -26,6 +26,7 @@ object Build_Cluster {
     private val DIRS = "dirs"
     private val HOME = "home"
     private val SHARED = "shared"
+    private val SETTINGS = "settings"
 
     val parameters: Options =
       Options.inline("""
@@ -37,11 +38,10 @@ object Build_Cluster {
         option dirs : string = ""     -- "additional session directories (separated by colon)"
         option home : string = ""     -- "alternative user home (via $USER_HOME)"
         option shared : bool = false  -- "shared home directory: omit sync + init"
+        option settings : string = "" -- "specific host settings"
       """)
 
     def is_parameter(spec: Options.Spec): Boolean = parameters.defined(spec.name)
-
-    lazy val test_options: Options = Options.init0()
 
     def apply(
       name: String = "",
@@ -53,9 +53,10 @@ object Build_Cluster {
       dirs: String = parameters.string(DIRS),
       home: String = parameters.string(HOME),
       shared: Boolean = parameters.bool(SHARED),
-      options: List[Options.Spec] = Nil
+      settings: List[String] = split_lines(parameters.string(SETTINGS)),
+      options: Options.Update = Nil
     ): Host = {
-      new Host(name, hostname, user, port, jobs, numa, dirs, home, shared, options)
+      new Host(name, hostname, user, port, jobs, numa, dirs, home, shared, settings, options)
     }
 
     def parse(registry: Registry, str: String): List[Host] = {
@@ -71,7 +72,7 @@ object Build_Cluster {
             if (m == n) n
             else if (str(m) == ':') m + 1
             else error("Missing \":\" after host name")
-          Options.Spec.parse(str.substring(l))
+          Options.Spec.parse(str.drop(l))
         }
         catch { case ERROR(msg) => err(msg) }
 
@@ -86,7 +87,7 @@ object Build_Cluster {
         val (params, options) =
           try {
             val (specs1, specs2) = (host_specs ::: more_specs).partition(is_parameter)
-            (parameters ++ specs1, { test_options ++ specs2; specs2 })
+            (parameters ++ specs1, { Options.defaults ++ specs2; specs2 })
           }
           catch { case ERROR(msg) => err(msg) }
 
@@ -99,6 +100,7 @@ object Build_Cluster {
           dirs = params.string(DIRS),
           home = params.string(HOME),
           shared = params.bool(SHARED),
+          settings = split_lines(params.string(SETTINGS)),
           options = options)
       }
     }
@@ -117,7 +119,8 @@ object Build_Cluster {
     val dirs: String,
     val home: String,
     val shared: Boolean,
-    val options: List[Options.Spec]
+    val settings: List[String],
+    val options: Options.Update
   ) {
     host =>
 
@@ -139,7 +142,8 @@ object Build_Cluster {
           if_proper(host.numa, Host.NUMA),
           if_proper(host.dirs, Options.Spec.print(Host.DIRS, host.dirs)),
           if_proper(host.home, Options.Spec.print(Host.HOME, host.home)),
-          if_proper(host.shared, Host.SHARED)
+          if_proper(host.shared, Host.SHARED),
+          if_proper(host.settings, Options.Spec.print(Host.SETTINGS, cat_lines(host.settings)))
         ).filter(_.nonEmpty)
       val rest = (params ::: host.options.map(_.print)).mkString(",")
 
@@ -180,15 +184,15 @@ object Build_Cluster {
         isabelle_identifier = build_cluster_identifier, ssh = ssh)
 
     def sync(): Other_Isabelle = {
-      val context = Rsync.Context(ssh = ssh)
+      val rsync_context = Rsync.Context(ssh = ssh)
       val target = build_cluster_isabelle_home
       if (Mercurial.Hg_Sync.ok(Path.ISABELLE_HOME)) {
         val source = File.standard_path(Path.ISABELLE_HOME)
-        Rsync.exec(context, clean = true,
-          args = List("--", Url.direct_path(source), context.target(target))).check
+        rsync_context.exec(clean = true,
+          args = List("--", Url.direct_path(source), rsync_context.target(target))).check
       }
       else {
-        Sync.sync(options, context, target,
+        Sync.sync(options, rsync_context, target,
           purge_heaps = true,
           preserve_jars = true,
           dirs = Sync.afp_dirs(build_context.afp_root))
@@ -198,7 +202,8 @@ object Build_Cluster {
 
     def init(): Unit =
       build_cluster_isabelle.init(other_settings =
-        build_cluster_isabelle.init_components() ::: build_cluster_isabelle.debug_settings())
+        build_cluster_isabelle.init_components() ::: build_cluster_isabelle.debug_settings() :::
+          host.settings)
 
     def benchmark(): Unit = {
       val script =
@@ -208,10 +213,10 @@ object Build_Cluster {
     }
 
     def start(): Process_Result = {
-      val build_cluster_ml_platform = build_cluster_isabelle.getenv("ML_PLATFORM")
+      val build_cluster_ml_platform = build_cluster_isabelle.ml_settings.ml_platform
       if (build_cluster_ml_platform != build_context.ml_platform) {
-        error("Bad ML_PLATFORM: found " + build_cluster_ml_platform +
-          ", but expected " + build_context.ml_platform)
+        error("Bad ML_PLATFORM: found " + quote(build_cluster_ml_platform) +
+          ", but expected " + quote(build_context.ml_platform))
       }
       val build_options =
         for { option <- options.iterator if option.for_build_sync } yield options.spec(option.name)

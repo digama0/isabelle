@@ -47,8 +47,7 @@ fun pretty_abbrev ctxt s =
   in Proof_Context.pretty_term_abbrev ctxt' eq end;
 
 fun pretty_locale ctxt (name, pos) =
-  let val thy = Proof_Context.theory_of ctxt
-  in Pretty.str (Locale.extern thy (Locale.check thy (name, pos))) end;
+  Pretty.str (Locale.extern ctxt (Locale.check ctxt (name, pos)));
 
 fun pretty_bundle ctxt (name, pos) =
   Pretty.str (Bundle.extern ctxt (Bundle.check ctxt (name, pos)));
@@ -297,7 +296,7 @@ val _ = Theory.setup
   (Document_Output.antiquotation_verbatim_embedded \<^binding>\<open>system_option\<close>
     (Scan.lift Parse.embedded_position)
     (fn ctxt => fn (name, pos) =>
-      let val _ = Completion.check_option (Options.default ()) ctxt (name, pos);
+      let val _ = Completion.check_option (Options.default []) ctxt (name, pos);
       in name end));
 
 
@@ -434,11 +433,11 @@ fun entity_antiquotation name check macro =
   Document_Output.antiquotation_raw name (Scan.lift Args.name_position)
     (fn ctxt => fn (name, pos) =>
       let val _ = check ctxt (name, pos)
-      in Latex.macro macro (Latex.string (Output.output name)) end);
+      in Latex.macro macro (Latex.string (Latex.output_ name)) end);
 
 val _ =
   Theory.setup
-   (entity_antiquotation \<^binding>\<open>command\<close> Outer_Syntax.check_command "isacommand" #>
+   (entity_antiquotation \<^binding>\<open>command\<close> Outer_Syntax.check_command "isakeywordONE" #>
     entity_antiquotation \<^binding>\<open>method\<close> Method.check_name "isa" #>
     entity_antiquotation \<^binding>\<open>attribute\<close> Attrib.check_name "isa");
 

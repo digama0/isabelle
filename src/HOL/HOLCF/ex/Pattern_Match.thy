@@ -28,7 +28,7 @@ definition
   "fatbar = (\<Lambda> a b x. a\<cdot>x +++ b\<cdot>x)"
 
 abbreviation
-  fatbar_syn :: "['a \<rightarrow> 'b match, 'a \<rightarrow> 'b match] \<Rightarrow> 'a \<rightarrow> 'b match" (infixr "\<parallel>" 60)  where
+  fatbar_syn :: "['a \<rightarrow> 'b match, 'a \<rightarrow> 'b match] \<Rightarrow> 'a \<rightarrow> 'b match" (infixr \<open>\<parallel>\<close> 60)  where
   "m1 \<parallel> m2 == fatbar\<cdot>m1\<cdot>m2"
 
 lemma fatbar1: "m\<cdot>x = \<bottom> \<Longrightarrow> (m \<parallel> ms)\<cdot>x = \<bottom>"
@@ -103,14 +103,14 @@ subsection \<open>Case syntax\<close>
 nonterminal Case_pat and Case_syn and Cases_syn
 
 syntax
-  "_Case_syntax":: "['a, Cases_syn] => 'b"               ("(Case _ of/ _)" 10)
-  "_Case1"      :: "[Case_pat, 'b] => Case_syn"          ("(2_ \<Rightarrow>/ _)" 10)
-  ""            :: "Case_syn => Cases_syn"               ("_")
-  "_Case2"      :: "[Case_syn, Cases_syn] => Cases_syn"  ("_/ | _")
-  "_strip_positions" :: "'a => Case_pat"                 ("_")
+  "_Case_syntax":: "['a, Cases_syn] => 'b"               (\<open>(\<open>notation=\<open>mixfix Case expression\<close>\<close>Case _ of/ _)\<close> 10)
+  "_Case1"      :: "[Case_pat, 'b] => Case_syn"          (\<open>(\<open>indent=2 notation=\<open>mixfix Case clause\<close>\<close>_ \<Rightarrow>/ _)\<close> 10)
+  ""            :: "Case_syn => Cases_syn"               (\<open>_\<close>)
+  "_Case2"      :: "[Case_syn, Cases_syn] => Cases_syn"  (\<open>_/ | _\<close>)
+  "_strip_positions" :: "'a => Case_pat"                 (\<open>_\<close>)
 
 syntax (ASCII)
-  "_Case1"      :: "[Case_pat, 'b] => Case_syn"          ("(2_ =>/ _)" 10)
+  "_Case1"      :: "[Case_pat, 'b] => Case_syn"          (\<open>(\<open>indent=2 notation=\<open>mixfix Case clause\<close>\<close>_ =>/ _)\<close> 10)
 
 translations
   "_Case_syntax x ms" == "CONST cases\<cdot>(ms\<cdot>x)"
@@ -142,29 +142,29 @@ syntax
 
 print_translation \<open>
   let
-    fun dest_LAM (Const (\<^const_syntax>\<open>Rep_cfun\<close>,_) $ Const (\<^const_syntax>\<open>unit_when\<close>,_) $ t) =
+    fun dest_LAM _ (Const (\<^const_syntax>\<open>Rep_cfun\<close>,_) $ Const (\<^const_syntax>\<open>unit_when\<close>,_) $ t) =
           (Syntax.const \<^syntax_const>\<open>_noargs\<close>, t)
-    |   dest_LAM (Const (\<^const_syntax>\<open>Rep_cfun\<close>,_) $ Const (\<^const_syntax>\<open>csplit\<close>,_) $ t) =
+    |   dest_LAM ctxt (Const (\<^const_syntax>\<open>Rep_cfun\<close>,_) $ Const (\<^const_syntax>\<open>csplit\<close>,_) $ t) =
           let
-            val (v1, t1) = dest_LAM t;
-            val (v2, t2) = dest_LAM t1;
+            val (v1, t1) = dest_LAM ctxt t;
+            val (v2, t2) = dest_LAM ctxt t1;
           in (Syntax.const \<^syntax_const>\<open>_args\<close> $ v1 $ v2, t2) end
-    |   dest_LAM (Const (\<^const_syntax>\<open>Abs_cfun\<close>,_) $ t) =
+    |   dest_LAM ctxt (Const (\<^const_syntax>\<open>Abs_cfun\<close>,_) $ t) =
           let
             val abs =
               case t of Abs abs => abs
                 | _ => ("x", dummyT, incr_boundvars 1 t $ Bound 0);
-            val (x, t') = Syntax_Trans.atomic_abs_tr' abs;
+            val (x, t') = Syntax_Trans.atomic_abs_tr' ctxt abs;
           in (Syntax.const \<^syntax_const>\<open>_variable\<close> $ x, t') end
-    |   dest_LAM _ = raise Match; (* too few vars: abort translation *)
+    |   dest_LAM _ _ = raise Match; (* too few vars: abort translation *)
 
-    fun Case1_tr' [Const(\<^const_syntax>\<open>branch\<close>,_) $ p, r] =
-          let val (v, t) = dest_LAM r in
+    fun Case1_tr' ctxt [Const(\<^const_syntax>\<open>branch\<close>,_) $ p, r] =
+          let val (v, t) = dest_LAM ctxt r in
             Syntax.const \<^syntax_const>\<open>_Case1\<close> $
               (Syntax.const \<^syntax_const>\<open>_match\<close> $ p $ v) $ t
           end;
 
-  in [(\<^const_syntax>\<open>Rep_cfun\<close>, K Case1_tr')] end
+  in [(\<^const_syntax>\<open>Rep_cfun\<close>, Case1_tr')] end
 \<close>
 
 translations
@@ -382,7 +382,9 @@ val beta_rules =
   @{thms cont2cont_fst cont2cont_snd cont2cont_Pair};
 
 val beta_ss =
-  simpset_of (put_simpset HOL_basic_ss \<^context> addsimps (@{thms simp_thms} @ beta_rules));
+  HOL_basic_ss
+  |> Simplifier.simpset_map \<^context>
+    (Simplifier.add_simps (@{thms simp_thms} @ beta_rules));
 
 fun define_consts
     (specs : (binding * term * mixfix) list)
@@ -522,7 +524,7 @@ fun add_pattern_combinators
       val trans_rules : Ast.ast Syntax.trrule list =
           maps one_case_trans (pat_consts ~~ spec);
     in
-      val thy = Sign.add_trrules trans_rules thy;
+      val thy = Sign.translations_global true trans_rules thy;
     end;
 
     (* prove strictness and reduction rules of pattern combinators *)
@@ -554,7 +556,7 @@ fun add_pattern_combinators
           val defs = @{thm branch_def} :: pat_defs;
           val goal = mk_trp (mk_strict fun1);
           val rules = @{thms match_bind_simps} @ case_rews;
-          fun tacs ctxt = [simp_tac (put_simpset beta_ss ctxt addsimps rules) 1];
+          fun tacs ctxt = [simp_tac (ctxt |> put_simpset beta_ss |> Simplifier.add_simps rules) 1];
         in prove thy defs goal (tacs o #context) end;
       fun pat_apps (i, (pat, (con, args))) =
         let
@@ -569,7 +571,7 @@ fun add_pattern_combinators
               val goal = Logic.list_implies (assms, concl);
               val defs = @{thm branch_def} :: pat_defs;
               val rules = @{thms match_bind_simps} @ case_rews;
-              fun tacs ctxt = [asm_simp_tac (put_simpset beta_ss ctxt addsimps rules) 1];
+              fun tacs ctxt = [asm_simp_tac (ctxt |> put_simpset beta_ss |> Simplifier.add_simps rules) 1];
             in prove thy defs goal (tacs o #context) end;
         in map_index pat_app spec end;
     in

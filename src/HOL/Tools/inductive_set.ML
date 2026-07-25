@@ -40,7 +40,7 @@ val anyt = Free ("t", TFree ("'t", []));
 fun strong_ind_simproc tab =
   Simplifier.make_simproc \<^context>
    {name = "strong_ind",
-    kind = Simproc,
+    kind = Simplifier.Simproc,
     lhss = [\<^term>\<open>x::'a::{}\<close>],
     proc = fn _ => fn ctxt => fn ct =>
       let
@@ -62,7 +62,8 @@ fun strong_ind_simproc tab =
           | decomp _ = NONE;
         val simp =
           full_simp_tac
-            (put_simpset HOL_basic_ss ctxt addsimps @{thms mem_Collect_eq case_prod_conv}) 1;
+            (put_simpset HOL_basic_ss ctxt
+              |> Simplifier.add_simps @{thms mem_Collect_eq case_prod_conv}) 1;
         fun mk_rew t = (case strip_abs_vars t of
             [] => NONE
           | xs => (case decomp (strip_abs_body t) of
@@ -235,7 +236,7 @@ fun mk_to_pred_eq ctxt p fs optfs' T thm =
           end)
   in
     Simplifier.simplify
-      (put_simpset HOL_basic_ss ctxt addsimps @{thms mem_Collect_eq case_prod_conv}
+      (put_simpset HOL_basic_ss ctxt |> Simplifier.add_simps @{thms mem_Collect_eq case_prod_conv}
         |> Simplifier.add_proc \<^simproc>\<open>Collect_mem\<close>) thm''
       |> zero_var_indexes |> eta_contract_thm ctxt (equal p)
   end;
@@ -316,7 +317,7 @@ fun to_pred_simproc rules =
   in
     Simplifier.make_simproc \<^context>
       {name = "to_pred",
-       kind = Simproc,
+       kind = Simplifier.Simproc,
        lhss = [anyt],
        proc = fn _ => fn ctxt => fn ct =>
         lookup_rule (Proof_Context.theory_of ctxt)
@@ -384,7 +385,7 @@ fun to_set thms context thm =
     thm |>
     Thm.instantiate (TVars.empty, Vars.make insts) |>
     Simplifier.full_simplify
-      (put_simpset HOL_basic_ss ctxt addsimps to_set_simps
+      (put_simpset HOL_basic_ss ctxt |> Simplifier.add_simps to_set_simps
         |> Simplifier.add_proc (strong_ind_simproc pred_arities)
         |> Simplifier.add_proc \<^simproc>\<open>Collect_mem\<close>) |>
     Rule_Cases.save thm
@@ -463,7 +464,7 @@ fun add_ind_set_def
         eta_contract (member op = cs' orf is_pred pred_arities))) intros;
     val cnames_syn' = map (fn (b, _) => (Binding.suffix_name "p" b, NoSyn)) cnames_syn;
     val monos' = map (to_pred [] (Context.Proof lthy)) monos;
-    val ({preds, intrs, elims, raw_induct, eqs, ...}, lthy1) =
+    val ({preds, intrs, elims, raw_induct, eqs, def, mono, ...}, lthy1) =
       Inductive.add_ind_def
         {quiet_mode = quiet_mode, verbose = verbose, alt_name = Binding.empty,
           coind = coind, no_elim = no_elim, no_ind = no_ind, skip_mono = skip_mono}
@@ -489,8 +490,8 @@ fun add_ind_set_def
                 (HOLogic.mk_mem (HOLogic.mk_ptuple fs U (map Bound (length fs downto 0)),
                   list_comb (c, params))))))
             (K (REPEAT (resolve_tac lthy @{thms ext} 1) THEN
-              simp_tac (put_simpset HOL_basic_ss lthy addsimps
-                [def, @{thm mem_Collect_eq}, @{thm case_prod_conv}]) 1))
+              simp_tac (put_simpset HOL_basic_ss lthy
+                |> Simplifier.add_simps [def, @{thm mem_Collect_eq}, @{thm case_prod_conv}]) 1))
         in
           lthy |> Local_Theory.note ((Binding.name (s ^ "p_" ^ s ^ "_eq"),
             [Attrib.internal \<^here> (K pred_set_conv_att)]),
@@ -513,7 +514,7 @@ fun add_ind_set_def
         (map (to_set [] (Context.Proof lthy3)) eqs) raw_induct' lthy3;
   in
     ({intrs = intrs', elims = elims', induct = induct, inducts = inducts,
-      raw_induct = raw_induct', preds = map fst defs, eqs = eqs'},
+      raw_induct = raw_induct', preds = map fst defs, eqs = eqs', def = def, mono = mono},
      lthy4)
   end;
 

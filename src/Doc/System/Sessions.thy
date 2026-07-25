@@ -203,7 +203,7 @@ text \<open>
   although it uses relatively complex quasi-hierarchic naming conventions like
   \<^verbatim>\<open>HOL-SPARK\<close>, \<^verbatim>\<open>HOL-SPARK-Examples\<close>. An alternative is to use unqualified
   names that are relatively long and descriptive, as in the Archive of Formal
-  Proofs (\<^url>\<open>https://isa-afp.org\<close>), for example.
+  Proofs (AFP, \<^url>\<open>https://isa-afp.org\<close>), for example.
 \<close>
 
 
@@ -306,8 +306,9 @@ text \<open>
 
     \<^item> @{system_option_def system_log} specifies an optional log file for
     low-level messages produced by \<^ML>\<open>Output.system_message\<close> in
-    Isabelle/ML; the standard value ``\<^verbatim>\<open>-\<close>'' refers to console progress of the
-    build job.
+    Isabelle/ML, or via the @{scala_object isabelle.Logger} module in
+    Isabelle/Scala. Its standard value ``\<^verbatim>\<open>-\<close>'' refers to \<^verbatim>\<open>progress\<close> provided
+    to the Isabelle tool in question: usually this refers to the console.
 
     \<^item> @{system_option_def "system_heaps"} determines the directories for
     session heap images: \<^path>\<open>$ISABELLE_HEAPS\<close> is the user directory and
@@ -316,7 +317,7 @@ text \<open>
     user directory and may be loaded from both directories. For
     \<^verbatim>\<open>system_heaps=true\<close>, store and load happens only in the system directory.
 
-  The @{tool_def options} tool prints Isabelle system options. Its
+  The @{tool_def "options"} tool prints Isabelle system options. Its
   command-line usage is:
   @{verbatim [display]
 \<open>Usage: isabelle options [OPTIONS] [MORE_OPTIONS ...]
@@ -326,7 +327,6 @@ text \<open>
     -g OPTION    get value of OPTION
     -l           list options
     -t TAGS      restrict list to given tags (comma-separated)
-    -x FILE      export options to FILE in YXML format
 
   Report Isabelle system options, augmented by MORE_OPTIONS given as
   arguments NAME=VAL or NAME.\<close>}
@@ -340,9 +340,6 @@ text \<open>
   Option \<^verbatim>\<open>-g\<close> prints the value of the given option. Option \<^verbatim>\<open>-l\<close> lists all
   options with their declaration and current value. Option \<^verbatim>\<open>-t\<close> restricts the
   listing to given tags (as comma-separated list), e.g. \<^verbatim>\<open>-t build,document\<close>.
-
-  Option \<^verbatim>\<open>-x\<close> specifies a file to export the result in YXML format, instead
-  of printing it in human-readable form.
 \<close>
 
 
@@ -378,7 +375,6 @@ text \<open>
     -g NAME      select session group NAME
     -j INT       maximum number of parallel jobs
                  (default: 1 for local build, 0 for build cluster)
-    -k KEYWORD   check theory sources for conflicts with proposed keywords
     -l           list session source files
     -n           no build -- take existing session build databases
     -o OPTION    override Isabelle system OPTION (via NAME=VAL or NAME)
@@ -506,12 +502,6 @@ text \<open>
 
   \<^medskip>
   Option \<^verbatim>\<open>-l\<close> lists the source files that contribute to a session.
-
-  \<^medskip>
-  Option \<^verbatim>\<open>-k\<close> specifies a newly proposed keyword for outer syntax. It is
-  possible to use option \<^verbatim>\<open>-k\<close> repeatedly to check multiple keywords. The
-  theory sources are checked for conflicts wrt.\ this hypothetical change of
-  syntax, e.g.\ to reveal occurrences of identifiers that need to be quoted.
 
   \<^medskip>
   Option \<^verbatim>\<open>-H\<close> augments the cluster hosts to be used in this build process.
@@ -1070,6 +1060,233 @@ text \<open>
   (which only inspects file sizes and date stamps); existing heaps are
   deleted:
   @{verbatim [display] \<open>  isabelle sync -A: -T -H -s testmachine test/isabelle_afp\<close>}
+\<close>
+
+
+section \<open>Remote build management\<close>
+
+text \<open>
+  Building large collections of Isabelle session (e.g., the AFP) is an
+  expensive operation that might not be feasible on a local device, so
+  powerful remote hardware is necessary to be able to test changes quickly.
+  In a multi-user environment, these hardware resources must be managed such
+  that important tasks can be completed as soon as possible, and automated
+  tasks run in the background when necessary.
+\<close>
+
+subsection \<open>Build manager server\<close>
+
+text \<open>
+  The @{tool_def build_manager} tool starts a server process that manages
+  a queue of tasks, runs build jobs, and serves a web view that displays the
+  results. It consists of several threads:
+  
+    \<^item> \<^emph>\<open>poller\<close>: listens to repository updates and queues automatic tasks.
+  
+    \<^item> \<^emph>\<open>timer\<close>: queues periodic tasks at specific points in time.
+  
+    \<^item> \<^emph>\<open>runner\<close>: starts jobs for feasible tasks with the highest priority
+    whenever possible. Jobs run exclusively on their resources, either on the
+    cluster specified via @{system_option build_manager_cluster} (the 
+    connection to the \<^verbatim>\<open>build_master\<close> host must be specified via
+    \<^verbatim>\<open>build_manager_cluster_ssh\<close> connection options), or on a single remote
+    host (under the identifier given by
+    @{system_option build_manager_identifier}).
+  
+    \<^item> \<^emph>\<open>web_server\<close>: serves the web page. If the web address is not reachable
+    under the SSH hostname of the server, it must be set via 
+    @{system_option build_manager_address}.
+
+  Automated tasks must be registered in a \<^scala_type>\<open>isabelle.Isabelle_CI_Jobs\<close>
+  service. The system option @{system_option build_manager_ci_jobs} controls
+  which jobs are executed by the \<^verbatim>\<open>Build_Manager\<close>.
+
+  \<^medskip>
+  The command-line usage to start the server is:
+  @{verbatim [display]
+\<open>Usage: isabelle build_manager [OPTIONS]
+
+  Options are:
+    -A ROOT      include AFP with given root directory (":" for $AFP_BASE)
+    -D DIR       include extra component in given directory
+    -H HOSTS     host specifications for all available hosts of the form
+                 NAMES:PARAMETERS (separated by commas)
+    -o OPTION    override Isabelle system OPTION (via NAME=VAL or NAME)
+    -p PORT      explicit web server port
+
+  Run Isabelle build manager.
+\<close>}
+
+  \<^medskip> Option \<^verbatim>\<open>-o\<close> has the same meaning as for @{tool build}.
+
+  \<^medskip> Option \<^verbatim>\<open>-p\<close> has the same meaning as for @{tool server}.
+
+  \<^medskip> Option \<^verbatim>\<open>-A\<close> refers to the AFP (must be a Mercurial clone).
+
+  \<^medskip> Option \<^verbatim>\<open>-D\<close> extra Isabelle components in a Mercurial repository clone to
+  be considered by the poller and CI jobs.
+
+  \<^medskip> Option \<^verbatim>\<open>-H\<close> must list all host specifications to be used in the build
+  cluster or as remote host.
+
+  \<^medskip>
+  In case a job does not complete on its own, it is terminated after a timeout
+  defined by the CI job, or @{system_option build_manager_timeout} for
+  user-submitted tasks.
+
+  \<^medskip>
+  To gracefully stop the build manager, it should be sent an interrupt signal
+  (\<^verbatim>\<open>kill -INT\<close>). This will stop all threads gracefully: Any running build is
+  allowed to complete before the Isabelle/Scala process terminates.
+
+  \<^medskip>
+  The build manager stores its persistent data (including user-submitted tasks
+  and build logs) in the directory given by @{system_option build_manager_dir}.
+  It must be writable by the common Unix group specified in
+  @{system_option build_manager_group}. It also needs a PostgreSQL database 
+  (via \<^verbatim>\<open>build_manager_database\<close> connection options) for shared state.
+  A clean database state (e.g., after a schema update) can be restored from
+  build logs via the @{tool_def build_manager_database} tool:
+  @{verbatim [display]
+\<open>Usage: isabelle build_manager_database [OPTIONS]
+
+  Options are:
+    -A ROOT      include AFP with given root directory (":" for $AFP_BASE)
+    -o OPTION    override Isabelle system OPTION (via NAME=VAL or NAME)
+    -u           update reports
+
+  Restore build_manager database from log files.
+\<close>}
+
+  Options \<^verbatim>\<open>-A\<close> and \<^verbatim>\<open>-o\<close> are the same as in @{tool_ref build_manager}.
+
+  Option \<^verbatim>\<open>-u\<close> updates Mercurial reports in the persistent storage based on
+  the version history (e.g., to change the diff display in the web server).
+\<close>
+
+subsection \<open>Submitting build tasks\<close>
+
+text \<open>
+  The @{tool_def build_task} tool submits user-defined build tasks by syncing
+  the local Isabelle repository to the server and queuing a task in the shared
+  state. Command-line options are almost identical to the regular @{tool_ref 
+  build}, with the exception of preferences in the remote build.
+
+  For the SSH connection, the server needs to be accessible with the system
+  options @{system_option build_manager_ssh_user}, @{system_option 
+  build_manager_ssh_host}, etc.
+
+  The database needs to be configured similarly (via \<^verbatim>\<open>build_manager_database\<close>
+  connection options) though the PostgreSQL server can also be configured
+  to trust connections of logged in users via ``peer authentication''.
+\<close>
+
+subsubsection \<open>Examples\<close>
+
+text \<open>
+Clean build of the distribution:
+
+  @{verbatim [display] \<open>  isabelle build_task -c -a\<close>}
+
+Build all sessions in the AFP excluding the \<^verbatim>\<open>very_slow\<close> group:
+
+  @{verbatim [display] \<open>  isabelle build_task -A: -X slow -g AFP\<close>}
+\<close>
+
+
+section \<open>Process theories within a session context \label{sec:tool-process-theories}\<close>
+
+text \<open>
+  The @{tool_def process_theories} tool takes source files and theories from
+  existing sessions to compose an adhoc session (in a temporary directory)
+  that is then processed via regular @{tool build}. It is also possible to
+  output prover messages roughly like @{tool build_log}, while the theories
+  are being processed.
+
+  @{verbatim [display]
+\<open>Usage: isabelle process_theories [OPTIONS] [THEORIES...]
+
+  Options are:
+    -D DIR       explicit session directory (default: private)
+    -E EXPORTS   write session export artifacts to file-system
+    -F FILE      include additional session files, listed in FILE
+    -H REGEX     filter messages by matching against head
+    -M REGEX     filter messages by matching against body
+    -O           output messages
+    -U           output Unicode symbols
+    -d DIR       include session directory
+    -f FILE      include additional session file
+    -l NAME      logic session name (default ISABELLE_LOGIC="HOL")
+    -m MARGIN    margin for pretty printing (default: 76.0)
+    -o OPTION    override Isabelle system OPTION (via NAME=VAL or NAME)
+    -v           verbose
+
+  Process theories within an adhoc session context.\<close>}
+
+  Explicit \<^emph>\<open>theories\<close> given as command-line arguments, not options, refer to
+  qualified theory names from existing sessions, e.g. \<^verbatim>\<open>HOL-Library.Multiset\<close>
+  or \<^verbatim>\<open>HOL-Examples.Seq\<close>. The session qualifiers are used to augment the adhoc
+  session specification by suitable entries for \isakeyword{sessions}
+  (\secref{sec:session-root}).
+
+  \<^medskip>
+  Options \<^verbatim>\<open>-f\<close> and \<^verbatim>\<open>-F\<close> specify source files for the adhoc session directory
+  (multiple occurrences are possible): \<^verbatim>\<open>-f\<close> is for literal file names, and
+  \<^verbatim>\<open>-F\<close> is for files that contain a list of further files (one per line).
+
+  Option \<^verbatim>\<open>-D\<close> indicates an explicit session directory, instead of a private
+  temporary one. This directory must not be used by another session already.
+
+  If option \<^verbatim>\<open>-D\<close> is \<^emph>\<open>not\<close> given, then all source files are copied to the
+  adhoc session directory, without any subdirectory structure. Files with
+  extension \<^verbatim>\<open>.thy\<close> are treated as theory files: their base names are appended
+  to the overall list of \<^emph>\<open>theories\<close>, and thus loaded into the adhoc session,
+  too.
+
+  \<^medskip>
+  Option \<^verbatim>\<open>-E\<close> writes session export artifacts to the local file-system: it is
+  a combination of option \<^verbatim>\<open>-e\<close> from @{tool build}, together
+  \isakeyword{export_files} from session ROOT declarations
+  (\secref{sec:session-root}). The declaration syntax allows to specify an
+  explicit export directory, which is here understood as relative to the
+  current working directory. The default directory is ``\<^verbatim>\<open>export\<close>''.
+
+  \<^medskip>
+  Option \<^verbatim>\<open>-l\<close> specifies the parent logic session, which is produced on the
+  spot using @{tool build}. Options \<^verbatim>\<open>-d\<close>, \<^verbatim>\<open>-o\<close>, \<^verbatim>\<open>-v\<close> work as in @{tool
+  build}.
+
+  Option \<^verbatim>\<open>-O\<close> enables output of prover messages. Options \<^verbatim>\<open>-H\<close>, \<^verbatim>\<open>-M\<close>, \<^verbatim>\<open>-U\<close>,
+  \<^verbatim>\<open>-m\<close> work as in @{tool build_log}.
+\<close>
+
+
+subsubsection \<open>Examples\<close>
+
+text \<open>
+  Process a theory from a different session in the context of the default
+  logic (\<^verbatim>\<open>HOL\<close>):
+
+  @{verbatim [display] \<open>  isabelle process_theories HOL-Library.Multiset\<close>}
+
+  \<^smallskip>
+  Process a theory with prover output enabled (using Unicode symbols):
+  @{verbatim [display] \<open>  isabelle process_theories -U -O HOL-Library.Multiset\<close>}
+
+  \<^smallskip>
+  Process a theory with prover output enabled, including proof states:
+  @{verbatim [display] \<open>  isabelle process_theories -U -O -o show_states HOL-Library.Multiset\<close>}
+
+  \<^smallskip>
+  Process a self-contained theory file from the Isabelle distribution, outside
+  of its original session context:
+  @{verbatim [display] \<open>  isabelle process_theories -f '~~/src/HOL/Examples/Seq.thy'\<close>}
+
+  \<^medskip>
+  Process a theory with session export artifacts, stemming from the
+  Isabelle/HOL code generator (result directory ``\<^verbatim>\<open>code\<close>''):
+
+  @{verbatim [display] \<open>  isabelle process_theories -E '[1] "*:code/**"' HOL-Decision_Procs.Cooper\<close>}
 \<close>
 
 end

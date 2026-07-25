@@ -34,7 +34,7 @@ fun add_term_of_inst tyco thy =
     thy
     |> Class.instantiation ([tyco], vs, \<^sort>\<open>term_of\<close>)
     |> `(fn lthy => Syntax.check_term lthy eq)
-    |-> (fn eq => Specification.definition NONE [] [] ((Binding.name (triv_name_of eq), []), eq))
+    |-> (fn eq => Specification.definition {verbose = false} NONE [] [] ((Binding.name (triv_name_of eq), []), eq))
     |> snd
     |> Class.prove_instantiation_exit (fn ctxt => Class.intro_classes_tac ctxt [])
   end;
@@ -60,8 +60,7 @@ fun for_term_of_instance tyco vs f thy =
 
 fun mk_term_of_eq thy ty (c, (_, tys)) =
   let
-    val t = list_comb (Const (c, tys ---> ty),
-      map Free (Name.invent_names Name.context "a" tys));
+    val t = list_comb (Const (c, tys ---> ty), map Free (Name.invent_names_global "a" tys));
     val (arg, rhs) =
       apply2 (Thm.global_cterm_of thy o Logic.unvarify_types_global o Logic.varify_global)
         (t,

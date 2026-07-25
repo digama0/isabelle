@@ -26,10 +26,10 @@ theory Guess
 begin
 
 text \<open>
-  The @{command guess} is similar to @{command obtain}, but it derives the
-  obtained context elements from the course of tactical reasoning in the
-  proof. Thus it can considerably obscure the proof: it is provided here as
-  \<^emph>\<open>improper\<close> and experimental feature.
+  The is similar to @{command obtain}, but it derives the obtained context
+  elements from the course of tactical reasoning in the proof. Thus it can
+  considerably obscure the proof: it is provided here as \<^emph>\<open>improper\<close> and
+  experimental feature.
 
   A proof with @{command guess} starts with a fixed goal \<open>thesis\<close>. The
   subsequent refinement steps may turn this to anything of the form
@@ -46,8 +46,8 @@ text \<open>
 ML \<open>
 signature GUESS =
 sig
-  val guess: (binding * typ option * mixfix) list -> bool -> Proof.state -> Proof.state
-  val guess_cmd: (binding * string option * mixfix) list -> bool -> Proof.state -> Proof.state
+  val guess: (binding * typ option * mixfix) list -> Proof.state -> Proof.state
+  val guess_cmd: (binding * string option * mixfix) list -> Proof.state -> Proof.state
 end;
 
 structure Guess: GUESS =
@@ -113,7 +113,7 @@ fun polymorphic ctxt vars =
   let val Ts = map Logic.dest_type (Variable.polymorphic ctxt (map (Logic.mk_type o #2) vars))
   in map2 (fn (x, _, mx) => fn T => ((x, T), mx)) vars Ts end;
 
-fun gen_guess prep_var raw_vars int state =
+fun gen_guess prep_var raw_vars state =
   let
     val _ = Proof.assert_forward_or_chain state;
     val ctxt = Proof.context_of state;
@@ -147,13 +147,15 @@ fun gen_guess prep_var raw_vars int state =
 
     val guess = (("guess", 0), propT);
     val goal = Var guess;
-    val pos = Position.thread_data ();
-    fun print_result ctxt' (k, [(s, [_, th])]) =
-      Proof_Display.print_results {interactive = int, pos = pos, proof_state = true}
-        ctxt' (k, [(s, [th])]);
+
+    val print_results =
+      Proof_Display.print_results
+        {verbose = Interactive.enabled (), pos = Position.thread_data ()};
+    fun print_result ctxt' (k, [(s, [_, th])]) = print_results ctxt' (k, [(s, [th])]);
+
     val before_qed =
       Method.primitive_text (fn ctxt =>
-        Goal.conclude #> Raw_Simplifier.norm_hhf ctxt #>
+        Goal.conclude #> Simplifier.norm_hhf ctxt #>
           (fn th => Goal.protect 0 (Conjunction.intr (Drule.mk_term (Thm.cprop_of th)) th)));
     fun after_qed (result_ctxt, results) state' =
       let
@@ -187,7 +189,7 @@ val guess_cmd = gen_guess Proof_Context.read_var;
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>guess\<close> "wild guessing (unstructured)"
-    (Scan.optional Parse.vars [] >> (Toplevel.proof' o guess_cmd));
+    (Scan.optional Parse.vars [] >> (Toplevel.proof o guess_cmd));
 
 end;
 

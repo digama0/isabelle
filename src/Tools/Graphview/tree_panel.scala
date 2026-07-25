@@ -6,14 +6,14 @@ Tree view on graph nodes.
 
 package isabelle.graphview
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
-import java.awt.{Dimension, Rectangle}
+import java.awt.Dimension
 import java.awt.event.{KeyEvent, KeyAdapter, MouseEvent, MouseAdapter}
-import javax.swing.JTree
-import javax.swing.tree.{DefaultMutableTreeNode, TreeSelectionModel, TreePath}
-import javax.swing.event.{TreeSelectionEvent, TreeSelectionListener, DocumentListener, DocumentEvent}
+import javax.swing.tree.TreePath
+import javax.swing.event.{DocumentListener, DocumentEvent}
 
 import scala.util.matching.Regex
 import scala.swing.{Component, ScrollPane, BorderPanel, Label, TextField, Button, Action}
@@ -31,11 +31,7 @@ extends BorderPanel {
       if (paths != null) {
         for (path <- paths if path != null) {
           path.getLastPathComponent match {
-            case tree_node: DefaultMutableTreeNode =>
-              tree_node.getUserObject match {
-                case node: Graph_Display.Node => graphview.Selection.add(node)
-                case _ =>
-              }
+            case Tree_View.Node(node: Graph_Display.Node) => graphview.Selection.add(node)
             case _ =>
           }
         }
@@ -48,11 +44,7 @@ extends BorderPanel {
     if (tree_pane != null && path != null) {
       val action_node =
         path.getLastPathComponent match {
-          case tree_node: DefaultMutableTreeNode =>
-            tree_node.getUserObject match {
-              case node: Graph_Display.Node => Some(node)
-              case _ => None
-            }
+          case Tree_View.Node(node: Graph_Display.Node) => Some(node)
           case _ => None
         }
       action_node.foreach(graph_panel.scroll_to_node(_))
@@ -65,22 +57,22 @@ extends BorderPanel {
   /* tree */
 
   private var nodes = List.empty[Graph_Display.Node]
-  private val root = new DefaultMutableTreeNode("Nodes")
 
-  val tree = new JTree(root)
-  tree.setRowHeight(0)
+  val tree: Tree_View = new Tree_View(root = Tree_View.Node("Nodes"))
 
   tree.addKeyListener(new KeyAdapter {
     override def keyPressed(e: KeyEvent): Unit =
-      if (e.getKeyCode == KeyEvent.VK_ENTER) {
+      if (!e.isConsumed() && GUI.plain_enter(e)) {
         e.consume()
         selection_action()
       }
   })
   tree.addMouseListener(new MouseAdapter {
     override def mousePressed(e: MouseEvent): Unit =
-      if (e.getClickCount == 2)
+      if (!e.isConsumed() && e.getClickCount == 2 && GUI.no_modifier(e)) {
+        e.consume()
         point_action(tree.getPathForLocation(e.getX, e.getY))
+      }
   })
 
   private val tree_pane = new ScrollPane(Component.wrap(tree))
@@ -100,17 +92,14 @@ extends BorderPanel {
       case Some(re) => re.findFirstIn(node.toString).isDefined
     }
 
-  private val selection_label = new Label("Selection:") {
-    tooltip = "Selection of nodes via regular expression"
-  }
-
-  private val selection_field = new TextField(10) {
-    tooltip = selection_label.tooltip
-  }
+  private val selection_tooltip = "Selection of nodes via regular expression"
+  private val selection_field = new TextField(10) { tooltip = selection_tooltip }
   private val selection_field_foreground = selection_field.foreground
+  private val selection_label =
+    new GUI.Label("Selection:", selection_field) { tooltip = selection_tooltip }
 
   private val selection_delay =
-    Delay.last(graphview.options.seconds("editor_input_delay"), gui = true) {
+    GUI.Delay.last(graphview.options.seconds("editor_input_delay")) {
       val (pattern, ok) =
         selection_field.text match {
           case null | "" => (None, true)
@@ -137,7 +126,7 @@ extends BorderPanel {
     })
 
   private val selection_apply = new Button {
-    action = Action("<html><b>Apply</b></html>") { selection_action () }
+    action = Action(GUI.Style_HTML.enclose_bold("Apply")) { selection_action () }
     tooltip = "Apply tree selection to graph"
   }
 
@@ -149,16 +138,9 @@ extends BorderPanel {
 
   def refresh(): Unit = {
     val new_nodes = graphview.visible_graph.topological_order
-    if (new_nodes != nodes) {
-      tree.clearSelection
-
+    if (nodes != new_nodes) {
       nodes = new_nodes
-
-      root.removeAllChildren
-      for (node <- nodes) root.add(new DefaultMutableTreeNode(node))
-
-      tree.expandRow(0)
-      tree.revalidate()
+      tree.init_model { for (node <- nodes) tree.root.add(Tree_View.Node(node)) }
     }
     revalidate()
     repaint()

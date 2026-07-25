@@ -2,7 +2,6 @@
 theory Library
 imports
   AList
-  Adhoc_Overloading
   BNF_Axiomatization
   BNF_Corec
   Bourbaki_Witt_Fixpoint
@@ -21,7 +20,7 @@ imports
   Countable_Set_Type
   Debug
   Diagonal_Subsequence
-  Discrete
+  Discrete_Functions
   Disjoint_Sets
   Disjoint_FSets
   Dlist
@@ -36,6 +35,7 @@ imports
   FSet
   FuncSet
   Function_Division
+  Function_Real_Vectors
   Fun_Lexorder
   Going_To_Filter
   Groups_Big_Fun
@@ -90,6 +90,7 @@ imports
   Sorting_Algorithms
   Sublist
   Sum_of_Squares
+  Time_Functions
   Transitive_Closure_Table
   Tree_Multiset
   Tree_Real

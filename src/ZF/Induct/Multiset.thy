@@ -53,7 +53,7 @@ definition
 
 definition
   (* set of elements of a multiset *)
-  msingle :: "i \<Rightarrow> i"    (\<open>{#_#}\<close>)  where
+  msingle :: "i \<Rightarrow> i"    (\<open>(\<open>open_block notation=\<open>mixfix multiset\<close>\<close>{#_#})\<close>)  where
   "{#a#} \<equiv> {\<langle>a, 1\<rangle>}"
 
 definition
@@ -70,12 +70,13 @@ definition
   "msize(M) \<equiv> setsum(\<lambda>a. $# mcount(M,a), mset_of(M))"
 
 abbreviation
-  melem :: "[i,i] \<Rightarrow> o"    (\<open>(_/ :# _)\<close> [50, 51] 50)  where
+  melem :: "[i,i] \<Rightarrow> o"    (\<open>(\<open>notation=\<open>infix :#\<close>\<close>_/ :# _)\<close> [50, 51] 50)  where
   "a :# M \<equiv> a \<in> mset_of(M)"
 
 syntax
-  "_MColl" :: "[pttrn, i, o] \<Rightarrow> i" (\<open>(1{# _ \<in> _./ _#})\<close>)
-syntax_consts "_MColl" \<rightleftharpoons> MCollect
+  "_MColl" :: "[pttrn, i, o] \<Rightarrow> i" (\<open>(\<open>indent=1 notation=\<open>mixfix multiset comprehension\<close>\<close>{# _ \<in> _./ _#})\<close>)
+syntax_consts
+  "_MColl" \<rightleftharpoons> MCollect
 translations
   "{#x \<in> M. P#}" == "CONST MCollect(M, \<lambda>x. P)"
 

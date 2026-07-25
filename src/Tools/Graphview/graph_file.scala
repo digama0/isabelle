@@ -10,7 +10,7 @@ package isabelle.graphview
 import isabelle._
 
 import java.io.{File => JFile}
-import java.awt.{Color, Graphics2D}
+import java.awt.Graphics2D
 
 
 object Graph_File {
@@ -26,7 +26,7 @@ object Graph_File {
       graphview.paint(gfx)
     }
 
-    val name = file.getName
+    val name = file.file_name
     if (File.is_png(name)) Graphics_File.write_png(file, paint, w, h)
     else if (File.is_pdf(name)) Graphics_File.write_pdf(file, paint, w, h)
     else error("Bad type of file: " + quote(name) + " (.png or .pdf expected)")

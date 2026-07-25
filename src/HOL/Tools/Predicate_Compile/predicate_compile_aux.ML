@@ -876,7 +876,7 @@ fun expand_tuples thy intro =
     val intro'''' =
       Simplifier.full_simplify
         (put_simpset HOL_basic_ss ctxt
-          addsimps [@{thm fst_conv}, @{thm snd_conv}, @{thm prod.inject}])
+          |> Simplifier.add_simps [@{thm fst_conv}, @{thm snd_conv}, @{thm prod.inject}])
       intro'''
     (* splitting conjunctions introduced by prod.inject*)
     val intro''''' = split_conjuncts_in_assms ctxt intro''''
@@ -955,7 +955,7 @@ fun case_betapply thy t =
     val Tcon = datatype_name_of_case_name thy case_name
     val th = instantiated_case_rewrite thy Tcon
   in
-    Raw_Simplifier.rewrite_term thy [th RS @{thm eq_reflection}] [] t
+    Simplifier.rewrite_term thy [th RS @{thm eq_reflection}] [] t
   end
 
 
@@ -1204,7 +1204,7 @@ fun strip_horn A = (strip_imp_prems A, strip_imp_concl A)
 fun define_quickcheck_predicate t thy =
   let
     val (vs, t') = strip_abs t
-    val vs' = Variable.variant_frees (Proof_Context.init_global thy) [] vs (* FIXME proper context!? *)
+    val vs' = Variable.variant_names (Proof_Context.init_global thy) vs (* FIXME proper context!? *)
     val t'' = subst_bounds (map Free (rev vs'), t')
     val (prems, concl) = strip_horn t''
     val constname = "quickcheck"

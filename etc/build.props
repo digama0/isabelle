@@ -11,6 +11,7 @@ sources = \
   src/HOL/Tools/Mirabelle/mirabelle.scala \
   src/HOL/Tools/Nitpick/kodkod.scala \
   src/Pure/Admin/afp.scala \
+  src/Pure/Admin/build_app.scala \
   src/Pure/Admin/build_doc.scala \
   src/Pure/Admin/build_history.scala \
   src/Pure/Admin/build_log.scala \
@@ -23,30 +24,40 @@ sources = \
   src/Pure/Admin/component_cygwin.scala \
   src/Pure/Admin/component_e.scala \
   src/Pure/Admin/component_easychair.scala \
+  src/Pure/Admin/component_elm.scala \
   src/Pure/Admin/component_eptcs.scala \
+  src/Pure/Admin/component_find_facts_web.scala \
+  src/Pure/Admin/component_flatlaf.scala \
   src/Pure/Admin/component_foiltex.scala \
   src/Pure/Admin/component_fonts.scala \
+  src/Pure/Admin/component_hol_light.scala \
   src/Pure/Admin/component_hugo.scala \
   src/Pure/Admin/component_javamail.scala \
+  src/Pure/Admin/component_jcef.scala \
   src/Pure/Admin/component_jdk.scala \
   src/Pure/Admin/component_jedit.scala \
+  src/Pure/Admin/component_jfreechart.scala \
   src/Pure/Admin/component_jsoup.scala \
+  src/Pure/Admin/component_jsvg.scala \
   src/Pure/Admin/component_lipics.scala \
   src/Pure/Admin/component_llncs.scala \
   src/Pure/Admin/component_minisat.scala \
   src/Pure/Admin/component_mlton.scala \
+  src/Pure/Admin/component_opam.scala \
   src/Pure/Admin/component_pdfjs.scala \
   src/Pure/Admin/component_polyml.scala \
   src/Pure/Admin/component_postgresql.scala \
   src/Pure/Admin/component_prismjs.scala \
   src/Pure/Admin/component_rsync.scala \
   src/Pure/Admin/component_scala.scala \
+  src/Pure/Admin/component_solr.scala \
   src/Pure/Admin/component_spass.scala \
   src/Pure/Admin/component_sqlite.scala \
   src/Pure/Admin/component_stack.scala \
   src/Pure/Admin/component_vampire.scala \
   src/Pure/Admin/component_verit.scala \
   src/Pure/Admin/component_windows_app.scala \
+  src/Pure/Admin/component_xz.scala \
   src/Pure/Admin/component_zipperposition.scala \
   src/Pure/Admin/component_zstd.scala \
   src/Pure/Admin/isabelle_cronjob.scala \
@@ -56,8 +67,9 @@ sources = \
   src/Pure/Build/build_ci.scala \
   src/Pure/Build/build_cluster.scala \
   src/Pure/Build/build_job.scala \
-  src/Pure/Build/build_process.scala \
   src/Pure/Build/build_manager.scala \
+  src/Pure/Build/build_process.scala \
+  src/Pure/Build/build_profiling.scala \
   src/Pure/Build/build_schedule.scala \
   src/Pure/Build/database_progress.scala \
   src/Pure/Build/export.scala \
@@ -78,9 +90,12 @@ sources = \
   src/Pure/Concurrent/synchronized.scala \
   src/Pure/GUI/color_value.scala \
   src/Pure/GUI/desktop_app.scala \
+  src/Pure/GUI/font_metric.scala \
   src/Pure/GUI/gui.scala \
   src/Pure/GUI/gui_thread.scala \
   src/Pure/GUI/popup.scala \
+  src/Pure/GUI/rich_text.scala \
+  src/Pure/GUI/tree_view.scala \
   src/Pure/GUI/wrap_panel.scala \
   src/Pure/General/antiquote.scala \
   src/Pure/General/base64.scala \
@@ -95,6 +110,7 @@ sources = \
   src/Pure/General/date.scala \
   src/Pure/General/exn.scala \
   src/Pure/General/file.scala \
+  src/Pure/General/file_store.scala \
   src/Pure/General/file_watcher.scala \
   src/Pure/General/graph.scala \
   src/Pure/General/graph_display.scala \
@@ -111,7 +127,9 @@ sources = \
   src/Pure/General/mail.scala \
   src/Pure/General/mailman.scala \
   src/Pure/General/mercurial.scala \
+  src/Pure/General/message_digest.scala \
   src/Pure/General/multi_map.scala \
+  src/Pure/General/name_space.scala \
   src/Pure/General/output.scala \
   src/Pure/General/path.scala \
   src/Pure/General/position.scala \
@@ -120,7 +138,7 @@ sources = \
   src/Pure/General/rdf.scala \
   src/Pure/General/rsync.scala \
   src/Pure/General/scan.scala \
-  src/Pure/General/sha1.scala \
+  src/Pure/General/shasum.scala \
   src/Pure/General/space.scala \
   src/Pure/General/sql.scala \
   src/Pure/General/ssh.scala \
@@ -146,6 +164,7 @@ sources = \
   src/Pure/ML/ml_lex.scala \
   src/Pure/ML/ml_process.scala \
   src/Pure/ML/ml_profiling.scala \
+  src/Pure/ML/ml_settings.scala \
   src/Pure/ML/ml_statistics.scala \
   src/Pure/ML/ml_syntax.scala \
   src/Pure/PIDE/byte_message.scala \
@@ -176,7 +195,6 @@ sources = \
   src/Pure/System/classpath.scala \
   src/Pure/System/command_line.scala \
   src/Pure/System/components.scala \
-  src/Pure/System/executable.scala \
   src/Pure/System/getopts.scala \
   src/Pure/System/host.scala \
   src/Pure/System/isabelle_charset.scala \
@@ -185,6 +203,7 @@ sources = \
   src/Pure/System/isabelle_process.scala \
   src/Pure/System/isabelle_system.scala \
   src/Pure/System/isabelle_tool.scala \
+  src/Pure/System/java_launcher.scala \
   src/Pure/System/java_statistics.scala \
   src/Pure/System/linux.scala \
   src/Pure/System/mingw.scala \
@@ -192,12 +211,13 @@ sources = \
   src/Pure/System/options.scala \
   src/Pure/System/other_isabelle.scala \
   src/Pure/System/platform.scala \
-  src/Pure/System/posix_interrupt.scala \
+  src/Pure/System/platform_family.scala \
   src/Pure/System/process_result.scala \
   src/Pure/System/program_progress.scala \
   src/Pure/System/progress.scala \
   src/Pure/System/registry.scala \
   src/Pure/System/scala.scala \
+  src/Pure/System/scalajs.scala \
   src/Pure/System/setup_tool.scala \
   src/Pure/System/system_channel.scala \
   src/Pure/System/tty_loop.scala \
@@ -206,6 +226,7 @@ sources = \
   src/Pure/Thy/thy_element.scala \
   src/Pure/Thy/thy_header.scala \
   src/Pure/Thy/thy_syntax.scala \
+  src/Pure/Tools/caddy_setup.scala \
   src/Pure/Tools/check_keywords.scala \
   src/Pure/Tools/debugger.scala \
   src/Pure/Tools/doc.scala \
@@ -221,6 +242,7 @@ sources = \
   src/Pure/Tools/phabricator.scala \
   src/Pure/Tools/print_operation.scala \
   src/Pure/Tools/prismjs.scala \
+  src/Pure/Tools/process_theories.scala \
   src/Pure/Tools/profiling.scala \
   src/Pure/Tools/profiling_report.scala \
   src/Pure/Tools/scala_build.scala \
@@ -233,7 +255,6 @@ sources = \
   src/Pure/Tools/task_statistics.scala \
   src/Pure/Tools/update_cartouches.scala \
   src/Pure/Tools/update_comments.scala \
-  src/Pure/Tools/update_header.scala \
   src/Pure/Tools/update_then.scala \
   src/Pure/Tools/update_theorems.scala \
   src/Pure/Tools/update_tool.scala \
@@ -244,6 +265,11 @@ sources = \
   src/Pure/term_xml.scala \
   src/Pure/thm_name.scala \
   src/Pure/update.scala \
+  src/Tools/Find_Facts/src/elm.scala \
+  src/Tools/Find_Facts/src/find_facts.scala \
+  src/Tools/Find_Facts/src/find_facts_tools.scala \
+  src/Tools/Find_Facts/src/solr.scala \
+  src/Tools/Find_Facts/src/thy_blocks.scala \
   src/Tools/Graphview/graph_file.scala \
   src/Tools/Graphview/graph_panel.scala \
   src/Tools/Graphview/graphview.scala \
@@ -263,12 +289,15 @@ sources = \
   src/Tools/VSCode/src/dynamic_output.scala \
   src/Tools/VSCode/src/language_server.scala \
   src/Tools/VSCode/src/lsp.scala \
+  src/Tools/VSCode/src/pretty_text_panel.scala \
   src/Tools/VSCode/src/preview_panel.scala \
   src/Tools/VSCode/src/state_panel.scala \
   src/Tools/VSCode/src/vscode_main.scala \
   src/Tools/VSCode/src/vscode_model.scala \
   src/Tools/VSCode/src/vscode_rendering.scala \
   src/Tools/VSCode/src/vscode_resources.scala \
+  src/Tools/VSCode/src/vscode_session.scala \
+  src/Tools/VSCode/src/vscode_sledgehammer.scala \
   src/Tools/VSCode/src/vscode_spell_checker.scala \
   src/Tools/jEdit/src/active.scala \
   src/Tools/jEdit/src/base_plugin.scala \
@@ -287,22 +316,28 @@ sources = \
   src/Tools/jEdit/src/isabelle.scala \
   src/Tools/jEdit/src/isabelle_encoding.scala \
   src/Tools/jEdit/src/isabelle_export.scala \
+  src/Tools/jEdit/src/isabelle_navigator.scala \
   src/Tools/jEdit/src/isabelle_session.scala \
   src/Tools/jEdit/src/isabelle_vfs.scala \
+  src/Tools/jEdit/src/jedit_accessible.scala \
   src/Tools/jEdit/src/jedit_bibtex.scala \
   src/Tools/jEdit/src/jedit_editor.scala \
   src/Tools/jEdit/src/jedit_jar.scala \
   src/Tools/jEdit/src/jedit_lib.scala \
   src/Tools/jEdit/src/jedit_main.scala \
+  src/Tools/jEdit/src/jedit_menu.scala \
+  src/Tools/jEdit/src/jedit_mouse_handler.scala \
   src/Tools/jEdit/src/jedit_options.scala \
   src/Tools/jEdit/src/jedit_plugins.scala \
+  src/Tools/jEdit/src/jedit_property.scala \
   src/Tools/jEdit/src/jedit_rendering.scala \
   src/Tools/jEdit/src/jedit_resources.scala \
-  src/Tools/jEdit/src/jedit_sessions.scala \
+  src/Tools/jEdit/src/jedit_session.scala \
   src/Tools/jEdit/src/jedit_spell_checker.scala \
   src/Tools/jEdit/src/keymap_merge.scala \
   src/Tools/jEdit/src/main_plugin.scala \
   src/Tools/jEdit/src/monitor_dockable.scala \
+  src/Tools/jEdit/src/output_area.scala \
   src/Tools/jEdit/src/output_dockable.scala \
   src/Tools/jEdit/src/pide_docking_framework.scala \
   src/Tools/jEdit/src/pretty_text_area.scala \
@@ -312,6 +347,7 @@ sources = \
   src/Tools/jEdit/src/query_dockable.scala \
   src/Tools/jEdit/src/raw_output_dockable.scala \
   src/Tools/jEdit/src/rich_text_area.scala \
+  src/Tools/jEdit/src/selection_popup.scala \
   src/Tools/jEdit/src/session_build.scala \
   src/Tools/jEdit/src/simplifier_trace_dockable.scala \
   src/Tools/jEdit/src/simplifier_trace_window.scala \
@@ -333,6 +369,7 @@ services = \
   isabelle.Build$Engine$Default \
   isabelle.Build_Schedule$Build_Engine \
   isabelle.CI_Jobs \
+  isabelle.Caddy_Setup \
   isabelle.Document_Build$Build_Engine \
   isabelle.Document_Build$LIPIcs_LuaLaTeX_Engine \
   isabelle.Document_Build$LIPIcs_PDFLaTeX_Engine \
@@ -350,9 +387,10 @@ services = \
   isabelle.Sessions$ROOTS_File_Format \
   isabelle.Simplifier_Trace$Handler \
   isabelle.Tools \
+  isabelle.jedit.Isabelle_Menu_Provider \
+  isabelle.jedit.JEdit_JAR$Scala_Functions \
   isabelle.jedit.JEdit_Plugin0 \
   isabelle.jedit.JEdit_Plugin1 \
-  isabelle.jedit.JEdit_JAR$Scala_Functions \
   isabelle.nitpick.Kodkod$Handler \
   isabelle.nitpick.Scala_Functions \
   isabelle.spark.SPARK$Load_Command1 \

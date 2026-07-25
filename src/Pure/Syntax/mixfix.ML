@@ -1,43 +1,9 @@
 (*  Title:      Pure/Syntax/mixfix.ML
-    Author:     Tobias Nipkow and Markus Wenzel, TU Muenchen
+    Author:     Tobias Nipkow, TU Muenchen
+    Author:     Makarius
 
 Mixfix declarations, infixes, binders.
 *)
-
-signature BASIC_MIXFIX =
-sig
-  datatype mixfix =
-    NoSyn |
-    Mixfix of Input.source * int list * int * Position.range |
-    Infix of Input.source * int * Position.range |
-    Infixl of Input.source * int * Position.range |
-    Infixr of Input.source * int * Position.range |
-    Binder of Input.source * int * int * Position.range |
-    Structure of Position.range
-end;
-
-signature MIXFIX =
-sig
-  include BASIC_MIXFIX
-  val mixfix: string -> mixfix
-  val is_empty: mixfix -> bool
-  val equal: mixfix * mixfix -> bool
-  val range_of: mixfix -> Position.range
-  val pos_of: mixfix -> Position.T
-  val reset_pos: mixfix -> mixfix
-  val pretty_mixfix: mixfix -> Pretty.T
-  val mixfix_args: mixfix -> int
-  val default_constraint: mixfix -> typ
-  val make_type: int -> typ
-  val binder_name: string -> string
-  val syn_ext_types: (string * typ * mixfix) list -> Syntax_Ext.syn_ext
-  val syn_ext_consts: string list -> (string * typ * mixfix) list -> Syntax_Ext.syn_ext
-end;
-
-structure Mixfix: MIXFIX =
-struct
-
-(** mixfix declarations **)
 
 datatype mixfix =
   NoSyn |
@@ -48,10 +14,42 @@ datatype mixfix =
   Binder of Input.source * int * int * Position.range |
   Structure of Position.range;
 
+signature MIXFIX =
+sig
+  datatype mixfix = datatype mixfix
+  val mixfix: string -> mixfix
+  val is_empty: mixfix -> bool
+  val is_infix: mixfix -> bool
+  val equal: mixfix * mixfix -> bool
+  val range_of: mixfix -> Position.range
+  val pos_of: mixfix -> Position.T
+  val reset_pos: mixfix -> mixfix
+  val pretty_mixfix: mixfix -> Pretty.T
+  val mixfix_args: Proof.context -> mixfix -> int
+  val default_constraint: Proof.context -> mixfix -> typ
+  val make_type: int -> typ
+  val binder_name: string -> string
+  val syn_ext_types: Proof.context -> (string * typ * mixfix) list -> Syntax_Ext.syn_ext
+  val syn_ext_consts: Proof.context -> string list -> (string * typ * mixfix) list ->
+    Syntax_Ext.syn_ext
+end;
+
+structure Mixfix: MIXFIX =
+struct
+
+(** mixfix declarations **)
+
+datatype mixfix = datatype mixfix;
+
 fun mixfix s = Mixfix (Input.string s, [], 1000, Position.no_range);
 
 fun is_empty NoSyn = true
   | is_empty _ = false;
+
+fun is_infix (Infix _) = true
+  | is_infix (Infixl _) = true
+  | is_infix (Infixr _) = true
+  | is_infix _ = false;
 
 fun equal (NoSyn, NoSyn) = true
   | equal (Mixfix (sy, ps, p, _), Mixfix (sy', ps', p', _)) =
@@ -117,19 +115,20 @@ end;
 
 (* syntax specifications *)
 
-fun mixfix_args NoSyn = 0
-  | mixfix_args (Mixfix (sy, _, _, _)) = Syntax_Ext.mixfix_args sy
-  | mixfix_args (Infix (sy, _, _)) = 2 + Syntax_Ext.mixfix_args sy
-  | mixfix_args (Infixl (sy, _, _)) = 2 + Syntax_Ext.mixfix_args sy
-  | mixfix_args (Infixr (sy, _, _)) = 2 + Syntax_Ext.mixfix_args sy
-  | mixfix_args (Binder _) = 1
-  | mixfix_args (Structure _) = 0;
+fun mixfix_args ctxt =
+  fn NoSyn => 0
+   | Mixfix (sy, _, _, _) => Syntax_Ext.mixfix_args ctxt sy
+   | Infix (sy, _, _) => 2 + Syntax_Ext.mixfix_args ctxt sy
+   | Infixl (sy, _, _) => 2 + Syntax_Ext.mixfix_args ctxt sy
+   | Infixr (sy, _, _) => 2 + Syntax_Ext.mixfix_args ctxt sy
+   | Binder _ => 1
+   | Structure _ => 0;
 
 
 (* default type constraint *)
 
-fun default_constraint (Binder _) = (dummyT --> dummyT) --> dummyT
-  | default_constraint mx = replicate (mixfix_args mx) dummyT ---> dummyT;
+fun default_constraint _ (Binder _) = (dummyT --> dummyT) --> dummyT
+  | default_constraint ctxt mx = replicate (mixfix_args ctxt mx) dummyT ---> dummyT;
 
 
 (* mixfix template *)
@@ -149,83 +148,115 @@ fun mixfix_template_reports mx =
   else [];
 
 
+(* infix notation *)
+
+val prefix_bg = Symbol_Pos.explode0 "'(";
+val prefix_en = Symbol_Pos.explode0 "')";
+
+val infix_bg = Symbol_Pos.explode0 "(";
+val infix_arg1 = Symbol_Pos.explode0 "_ ";
+val infix_arg2 = Symbol_Pos.explode0 "/ _)";
+
+fun infix_block ctxt =
+  Syntax_Ext.mfix_name ctxt #>
+  Syntax_Ext.block_annotation 0 Markup_Kind.markup_infix #>
+  Symbol_Pos.explode0 #>
+  append infix_bg;
+
+
+(* binder notation *)
+
+val binder_stamp = stamp ();
+
+fun binder_name c =
+  (if Lexicon.is_const c then Lexicon.unmark_const c
+   else if Lexicon.is_fixed c then Lexicon.unmark_fixed c
+   else c) |> Lexicon.mark_binder;
+
+val binder_bg = Symbol_Pos.explode0 "(";
+val binder_en = Symbol_Pos.explode0 "_./ _)";
+
+fun binder_block ctxt =
+  Syntax_Ext.mfix_name ctxt #>
+  Syntax_Ext.block_annotation 3 Markup_Kind.markup_binder #>
+  Symbol_Pos.explode0 #>
+  append binder_bg;
+
+fun binder_typ _ (Type ("fun", [Type ("fun", [_, ty2]), ty3])) =
+      [Type ("idts", []), ty2] ---> ty3
+  | binder_typ c _ = error ("Bad type of binder: " ^ quote c);
+
+
 (* syn_ext_types *)
 
 val typeT = Type ("type", []);
 fun make_type n = replicate n typeT ---> typeT;
 
-fun syn_ext_types type_decls =
+fun syn_ext_types ctxt type_decls =
   let
     fun mk_infix sy ty t p1 p2 p3 pos =
-      Syntax_Ext.Mfix
-        (Symbol_Pos.explode0 "(_ " @ Input.source_explode sy @ Symbol_Pos.explode0 "/ _)",
-          ty, t, [p1, p2], p3, pos);
+      let
+        val ss = Input.source_explode sy;
+        val syms = infix_block ctxt ss @ infix_arg1 @ ss @ infix_arg2;
+      in Syntax_Ext.Mfix (syms, ty, t, [p1, p2], p3, pos) end;
 
-    fun mfix_of (mfix as (_, _, mx)) =
-      (case mfix of
-        (_, _, NoSyn) => NONE
-      | (t, ty, Mixfix (sy, ps, p, _)) =>
+    fun mfix_of (t, ty, mx) =
+      (case mx of
+        NoSyn => NONE
+      | Mixfix (sy, ps, p, _) =>
           SOME (Syntax_Ext.Mfix (Input.source_explode sy, ty, t, ps, p, pos_of mx))
-      | (t, ty, Infix (sy, p, _)) => SOME (mk_infix sy ty t (p + 1) (p + 1) p (pos_of mx))
-      | (t, ty, Infixl (sy, p, _)) => SOME (mk_infix sy ty t p (p + 1) p (pos_of mx))
-      | (t, ty, Infixr (sy, p, _)) => SOME (mk_infix sy ty t (p + 1) p p (pos_of mx))
-      | (t, _, _) => error ("Bad mixfix declaration for " ^ quote t ^ Position.here (pos_of mx)));
+      | Infix (sy, p, _) => SOME (mk_infix sy ty t (p + 1) (p + 1) p (pos_of mx))
+      | Infixl (sy, p, _) => SOME (mk_infix sy ty t p (p + 1) p (pos_of mx))
+      | Infixr (sy, p, _) => SOME (mk_infix sy ty t (p + 1) p p (pos_of mx))
+      | _ => error ("Bad mixfix declaration for " ^ quote t ^ Position.here (pos_of mx)));
 
     fun check_args (_, ty, mx) (SOME (Syntax_Ext.Mfix (sy, _, _, _, _, _))) =
-          if length (Term.binder_types ty) = Syntax_Ext.mfix_args sy then ()
+          if length (Term.binder_types ty) = Syntax_Ext.mfix_args ctxt sy then ()
           else
             error ("Bad number of type constructor arguments in mixfix annotation" ^
               Position.here (pos_of mx))
       | check_args _ NONE = ();
 
-    val _ = Position.reports_text (maps (mixfix_template_reports o #3) type_decls);
+    val _ = Context_Position.reports_text ctxt (maps (mixfix_template_reports o #3) type_decls);
 
     val mfix = map mfix_of type_decls;
     val _ = map2 check_args type_decls mfix;
     val consts = map (fn (t, _, _) => (t, [])) type_decls;
-  in Syntax_Ext.syn_ext [] (map_filter I mfix) consts ([], [], [], []) ([], []) end;
+  in Syntax_Ext.syn_ext ctxt [] (map_filter I mfix) consts ([], [], [], []) ([], []) end;
 
 
 (* syn_ext_consts *)
 
-val binder_stamp = stamp ();
-val binder_name = suffix "_binder";
-
-fun mk_prefix sy =
-  let val sy' = Input.source_explode (Input.reset_pos sy); 
-  in Symbol_Pos.explode0 "'(" @ sy' @ Symbol_Pos.explode0 "')" end
-
-fun syn_ext_consts logical_types const_decls =
+fun syn_ext_consts ctxt logical_types const_decls =
   let
     fun mk_infix sy ty c p1 p2 p3 pos =
-      [Syntax_Ext.Mfix (mk_prefix sy, ty, c, [], 1000, Position.none),
-       Syntax_Ext.Mfix
-        (Symbol_Pos.explode0 "(_ " @ Input.source_explode sy @ Symbol_Pos.explode0 "/ _)",
-          ty, c, [p1, p2], p3, pos)];
+      let
+        val ss0 = Input.source_explode (Input.reset_pos sy);
+        val ss = Input.source_explode sy;
+        val syms = infix_block ctxt ss @ infix_arg1 @ ss @ infix_arg2;
+      in
+        [Syntax_Ext.Mfix (prefix_bg @ ss0 @ prefix_en, ty, c, [], 1000, Position.none),
+         Syntax_Ext.Mfix (syms, ty, c, [p1, p2], p3, pos)]
+      end;
 
-    fun binder_typ _ (Type ("fun", [Type ("fun", [_, ty2]), ty3])) =
-          [Type ("idts", []), ty2] ---> ty3
-      | binder_typ c _ = error ("Bad type of binder: " ^ quote c);
-
-    fun mfix_of (mfix as (_, _, mx)) =
-      (case mfix of
-        (_, _, NoSyn) => []
-      | (c, ty, Mixfix (sy, ps, p, _)) =>
-          [Syntax_Ext.Mfix (Input.source_explode sy, ty, c, ps, p, pos_of mx)]
-      | (c, ty, Infix (sy, p, _)) => mk_infix sy ty c (p + 1) (p + 1) p (pos_of mx)
-      | (c, ty, Infixl (sy, p, _)) => mk_infix sy ty c p (p + 1) p (pos_of mx)
-      | (c, ty, Infixr (sy, p, _)) => mk_infix sy ty c (p + 1) p p (pos_of mx)
-      | (c, ty, Binder (sy, p, q, _)) =>
-          [Syntax_Ext.Mfix
-            (Symbol_Pos.explode0 "(3" @ Input.source_explode sy @ Symbol_Pos.explode0 "_./ _)",
-              binder_typ c ty, (binder_name c), [0, p], q, pos_of mx)]
-      | (c, _, mx) =>
-          error ("Bad mixfix declaration for " ^ quote c ^ Position.here (pos_of mx)));
+    fun mfix_of (c, ty, mx) =
+      (case mx of
+        NoSyn => []
+      | Mixfix (sy, ps, p, _) => [Syntax_Ext.Mfix (Input.source_explode sy, ty, c, ps, p, pos_of mx)]
+      | Infix (sy, p, _) => mk_infix sy ty c (p + 1) (p + 1) p (pos_of mx)
+      | Infixl (sy, p, _) => mk_infix sy ty c p (p + 1) p (pos_of mx)
+      | Infixr (sy, p, _) => mk_infix sy ty c (p + 1) p p (pos_of mx)
+      | Binder (sy, p, q, _) =>
+          let
+            val ss = Input.source_explode sy;
+            val syms = binder_block ctxt ss @ ss @ binder_en;
+          in [Syntax_Ext.Mfix (syms, binder_typ c ty, binder_name c, [0, p], q, pos_of mx)] end
+      | _ => error ("Bad mixfix declaration for " ^ quote c ^ Position.here (pos_of mx)));
 
     fun binder (c, _, Binder _) = SOME (binder_name c, c)
       | binder _ = NONE;
 
-    val _ = Position.reports_text (maps (mixfix_template_reports o #3) const_decls);
+    val _ = Context_Position.reports_text ctxt (maps (mixfix_template_reports o #3) const_decls);
 
     val mfix = maps mfix_of const_decls;
     val binders = map_filter binder const_decls;
@@ -238,9 +269,8 @@ fun syn_ext_consts logical_types const_decls =
     val consts =
       map (fn (c, b) => (c, [b])) binders @
       map (fn (c, _, _) => (c, [])) const_decls;
-  in Syntax_Ext.syn_ext logical_types mfix consts ([], binder_trs, binder_trs', []) ([], []) end;
+  in
+    Syntax_Ext.syn_ext ctxt logical_types mfix consts ([], binder_trs, binder_trs', []) ([], [])
+  end;
 
 end;
-
-structure Basic_Mixfix: BASIC_MIXFIX = Mixfix;
-open Basic_Mixfix;

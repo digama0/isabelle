@@ -4,15 +4,12 @@ theory Pattern
 imports "HOL-Nominal.Nominal"
 begin
 
-no_syntax
-  "_Map" :: "maplets => 'a \<rightharpoonup> 'b"  ("(1[_])")
-
 atom_decl name
 
 nominal_datatype ty =
     Atom nat
-  | Arrow ty ty  (infixr "\<rightarrow>" 200)
-  | TupleT ty ty  (infixr "\<otimes>" 210)
+  | Arrow ty ty  (infixr \<open>\<rightarrow>\<close> 200)
+  | TupleT ty ty  (infixr \<open>\<otimes>\<close> 210)
 
 lemma fresh_type [simp]: "(a::name) \<sharp> (T::ty)"
   by (induct T rule: ty.induct) (simp_all add: fresh_nat)
@@ -25,22 +22,22 @@ lemma perm_type: "(pi::name prm) \<bullet> (T::ty) = T"
 
 nominal_datatype trm =
     Var name
-  | Tuple trm trm  ("(1'\<langle>_,/ _'\<rangle>)")
+  | Tuple trm trm  (\<open>(1'\<langle>_,/ _'\<rangle>)\<close>)
   | Abs ty "\<guillemotleft>name\<guillemotright>trm"
-  | App trm trm  (infixl "\<cdot>" 200)
+  | App trm trm  (infixl \<open>\<cdot>\<close> 200)
   | Let ty trm btrm
 and btrm =
     Base trm
   | Bind ty "\<guillemotleft>name\<guillemotright>btrm"
 
 abbreviation
-  Abs_syn :: "name \<Rightarrow> ty \<Rightarrow> trm \<Rightarrow> trm"  ("(3\<lambda>_:_./ _)" [0, 0, 10] 10) 
+  Abs_syn :: "name \<Rightarrow> ty \<Rightarrow> trm \<Rightarrow> trm"  (\<open>(3\<lambda>_:_./ _)\<close> [0, 0, 10] 10) 
 where
   "\<lambda>x:T. t \<equiv> Abs T x t"
 
 datatype pat =
     PVar name ty
-  | PTuple pat pat  ("(1'\<langle>\<langle>_,/ _'\<rangle>\<rangle>)")
+  | PTuple pat pat  (\<open>(1'\<langle>\<langle>_,/ _'\<rangle>\<rangle>)\<close>)
 
 (* FIXME: The following should be done automatically by the nominal package *)
 overloading pat_perm \<equiv> "perm :: name prm \<Rightarrow> pat \<Rightarrow> pat" (unchecked)
@@ -83,7 +80,7 @@ qed
 
 (* the following function cannot be defined using nominal_primrec, *)
 (* since variable parameters are currently not allowed.            *)
-primrec abs_pat :: "pat \<Rightarrow> btrm \<Rightarrow> btrm" ("(3\<lambda>[_]./ _)" [0, 10] 10)
+primrec abs_pat :: "pat \<Rightarrow> btrm \<Rightarrow> btrm" (\<open>(3\<lambda>[_]./ _)\<close> [0, 10] 10)
 where
   "(\<lambda>[PVar x T]. t) = Bind T x t"
 | "(\<lambda>[\<langle>\<langle>p, q\<rangle>\<rangle>]. t) = (\<lambda>[p]. \<lambda>[q]. t)"
@@ -143,7 +140,7 @@ lemma pat_type_perm_eq: "pat_type ((pi :: name prm) \<bullet> p) = pat_type p"
 type_synonym ctx = "(name \<times> ty) list"
 
 inductive
-  ptyping :: "pat \<Rightarrow> ty \<Rightarrow> ctx \<Rightarrow> bool"  ("\<turnstile> _ : _ \<Rightarrow> _" [60, 60, 60] 60)
+  ptyping :: "pat \<Rightarrow> ty \<Rightarrow> ctx \<Rightarrow> bool"  (\<open>\<turnstile> _ : _ \<Rightarrow> _\<close> [60, 60, 60] 60)
 where
   PVar: "\<turnstile> PVar x T : T \<Rightarrow> [(x, T)]"
 | PTuple: "\<turnstile> p : T \<Rightarrow> \<Delta>\<^sub>1 \<Longrightarrow> \<turnstile> q : U \<Rightarrow> \<Delta>\<^sub>2 \<Longrightarrow> \<turnstile> \<langle>\<langle>p, q\<rangle>\<rangle> : T \<otimes> U \<Rightarrow> \<Delta>\<^sub>2 @ \<Delta>\<^sub>1"
@@ -168,16 +165,16 @@ lemma valid_distinct: "valid \<Gamma> = distinct (map fst \<Gamma>)"
   by (induct \<Gamma>) (auto simp add: fresh_ctxt_set_eq [symmetric])
 
 abbreviation
-  "sub_ctx" :: "ctx \<Rightarrow> ctx \<Rightarrow> bool" ("_ \<sqsubseteq> _") 
+  "sub_ctx" :: "ctx \<Rightarrow> ctx \<Rightarrow> bool" (\<open>_ \<sqsubseteq> _\<close>) 
 where
   "\<Gamma>\<^sub>1 \<sqsubseteq> \<Gamma>\<^sub>2 \<equiv> \<forall>x. x \<in> set \<Gamma>\<^sub>1 \<longrightarrow> x \<in> set \<Gamma>\<^sub>2"
 
 abbreviation
-  Let_syn :: "pat \<Rightarrow> trm \<Rightarrow> trm \<Rightarrow> trm"  ("(LET (_ =/ _)/ IN (_))" 10)
+  Let_syn :: "pat \<Rightarrow> trm \<Rightarrow> trm \<Rightarrow> trm"  (\<open>(LET (_ =/ _)/ IN (_))\<close> 10)
 where
   "LET p = t IN u \<equiv> Let (pat_type p) t (\<lambda>[p]. Base u)"
 
-inductive typing :: "ctx \<Rightarrow> trm \<Rightarrow> ty \<Rightarrow> bool" ("_ \<turnstile> _ : _" [60, 60, 60] 60)
+inductive typing :: "ctx \<Rightarrow> trm \<Rightarrow> ty \<Rightarrow> bool" (\<open>_ \<turnstile> _ : _\<close> [60, 60, 60] 60)
 where
   Var [intro]: "valid \<Gamma> \<Longrightarrow> (x, T) \<in> set \<Gamma> \<Longrightarrow> \<Gamma> \<turnstile> Var x : T"
 | Tuple [intro]: "\<Gamma> \<turnstile> t : T \<Longrightarrow> \<Gamma> \<turnstile> u : U \<Longrightarrow> \<Gamma> \<turnstile> \<langle>t, u\<rangle> : T \<otimes> U"
@@ -268,7 +265,7 @@ next
 qed auto
 
 inductive
-  match :: "pat \<Rightarrow> trm \<Rightarrow> (name \<times> trm) list \<Rightarrow> bool"  ("\<turnstile> _ \<rhd> _ \<Rightarrow> _" [50, 50, 50] 50)
+  match :: "pat \<Rightarrow> trm \<Rightarrow> (name \<times> trm) list \<Rightarrow> bool"  (\<open>\<turnstile> _ \<rhd> _ \<Rightarrow> _\<close> [50, 50, 50] 50)
 where
   PVar: "\<turnstile> PVar x T \<rhd> t \<Rightarrow> [(x, t)]"
 | PProd: "\<turnstile> p \<rhd> t \<Rightarrow> \<theta> \<Longrightarrow> \<turnstile> q \<rhd> u \<Rightarrow> \<theta>' \<Longrightarrow> \<turnstile> \<langle>\<langle>p, q\<rangle>\<rangle> \<rhd> \<langle>t, u\<rangle> \<Rightarrow> \<theta> @ \<theta>'"
@@ -287,8 +284,8 @@ lemma lookup_eqvt[eqvt]:
   by (induct \<theta>) (auto simp add: eqvts)
  
 nominal_primrec
-  psubst :: "(name \<times> trm) list \<Rightarrow> trm \<Rightarrow> trm"  ("_\<lparr>_\<rparr>" [95,0] 210)
-  and psubstb :: "(name \<times> trm) list \<Rightarrow> btrm \<Rightarrow> btrm"  ("_\<lparr>_\<rparr>\<^sub>b" [95,0] 210)
+  psubst :: "(name \<times> trm) list \<Rightarrow> trm \<Rightarrow> trm"  (\<open>_\<lparr>_\<rparr>\<close> [95,0] 210)
+  and psubstb :: "(name \<times> trm) list \<Rightarrow> btrm \<Rightarrow> btrm"  (\<open>_\<lparr>_\<rparr>\<^sub>b\<close> [95,0] 210)
 where
   "\<theta>\<lparr>Var x\<rparr> = (lookup \<theta> x)"
 | "\<theta>\<lparr>t \<cdot> u\<rparr> = \<theta>\<lparr>t\<rparr> \<cdot> \<theta>\<lparr>u\<rparr>"
@@ -320,14 +317,14 @@ lemma psubst_eqvt[eqvt]:
     (simp_all add: eqvts fresh_bij)
 
 abbreviation 
-  subst :: "trm \<Rightarrow> name \<Rightarrow> trm \<Rightarrow> trm" ("_[_\<mapsto>_]" [100,0,0] 100)
+  subst :: "trm \<Rightarrow> name \<Rightarrow> trm \<Rightarrow> trm" (\<open>_[_\<leadsto>_]\<close> [100,0,0] 100)
 where 
-  "t[x\<mapsto>t'] \<equiv> [(x,t')]\<lparr>t\<rparr>"
+  "t[x\<leadsto>t'] \<equiv> [(x,t')]\<lparr>t\<rparr>"
 
 abbreviation 
-  substb :: "btrm \<Rightarrow> name \<Rightarrow> trm \<Rightarrow> btrm" ("_[_\<mapsto>_]\<^sub>b" [100,0,0] 100)
+  substb :: "btrm \<Rightarrow> name \<Rightarrow> trm \<Rightarrow> btrm" (\<open>_[_\<leadsto>_]\<^sub>b\<close> [100,0,0] 100)
 where 
-  "t[x\<mapsto>t']\<^sub>b \<equiv> [(x,t')]\<lparr>t\<rparr>\<^sub>b"
+  "t[x\<leadsto>t']\<^sub>b \<equiv> [(x,t')]\<lparr>t\<rparr>\<^sub>b"
 
 lemma lookup_forget:
   "(supp (map fst \<theta>)::name set) \<sharp>* x \<Longrightarrow> lookup \<theta> x = Var x"
@@ -360,7 +357,7 @@ lemma psubst_nil[simp]: "[]\<lparr>t\<rparr> = t" "[]\<lparr>t'\<rparr>\<^sub>b 
 
 lemma psubst_cons:
   assumes "(supp (map fst \<theta>)::name set) \<sharp>* u"
-  shows "((x, u) # \<theta>)\<lparr>t\<rparr> = \<theta>\<lparr>t[x\<mapsto>u]\<rparr>" and "((x, u) # \<theta>)\<lparr>t'\<rparr>\<^sub>b = \<theta>\<lparr>t'[x\<mapsto>u]\<^sub>b\<rparr>\<^sub>b"
+  shows "((x, u) # \<theta>)\<lparr>t\<rparr> = \<theta>\<lparr>t[x\<leadsto>u]\<rparr>" and "((x, u) # \<theta>)\<lparr>t'\<rparr>\<^sub>b = \<theta>\<lparr>t'[x\<leadsto>u]\<^sub>b\<rparr>\<^sub>b"
   using assms
   by (nominal_induct t and t' avoiding: x u \<theta> rule: trm_btrm.strong_inducts)
     (simp_all add: fresh_list_nil fresh_list_cons psubst_forget)
@@ -406,38 +403,38 @@ lemma context_unique:
 lemma subst_type_aux:
   assumes a: "\<Delta> @ [(x, U)] @ \<Gamma> \<turnstile> t : T"
   and b: "\<Gamma> \<turnstile> u : U"
-  shows "\<Delta> @ \<Gamma> \<turnstile> t[x\<mapsto>u] : T" using a b
+  shows "\<Delta> @ \<Gamma> \<turnstile> t[x\<leadsto>u] : T" using a b
 proof (nominal_induct \<Gamma>'\<equiv>"\<Delta> @ [(x, U)] @ \<Gamma>" t T avoiding: x u \<Delta> rule: typing.strong_induct)
   case (Var y T x u \<Delta>)
   from \<open>valid (\<Delta> @ [(x, U)] @ \<Gamma>)\<close>
   have valid: "valid (\<Delta> @ \<Gamma>)" by (rule valid_insert)
-  show "\<Delta> @ \<Gamma> \<turnstile> Var y[x\<mapsto>u] : T"
+  show "\<Delta> @ \<Gamma> \<turnstile> Var y[x\<leadsto>u] : T"
   proof cases
     assume eq: "x = y"
     from Var eq have "T = U" by (auto intro: context_unique)
-    with Var eq valid show "\<Delta> @ \<Gamma> \<turnstile> Var y[x\<mapsto>u] : T" by (auto intro: weakening)
+    with Var eq valid show "\<Delta> @ \<Gamma> \<turnstile> Var y[x\<leadsto>u] : T" by (auto intro: weakening)
   next
     assume ineq: "x \<noteq> y"
     from Var ineq have "(y, T) \<in> set (\<Delta> @ \<Gamma>)" by simp
-    then show "\<Delta> @ \<Gamma> \<turnstile> Var y[x\<mapsto>u] : T" using ineq valid by auto
+    then show "\<Delta> @ \<Gamma> \<turnstile> Var y[x\<leadsto>u] : T" using ineq valid by auto
   qed
 next
   case (Tuple t\<^sub>1 T\<^sub>1 t\<^sub>2 T\<^sub>2)
   from refl \<open>\<Gamma> \<turnstile> u : U\<close>
-  have "\<Delta> @ \<Gamma> \<turnstile> t\<^sub>1[x\<mapsto>u] : T\<^sub>1" by (rule Tuple)
+  have "\<Delta> @ \<Gamma> \<turnstile> t\<^sub>1[x\<leadsto>u] : T\<^sub>1" by (rule Tuple)
   moreover from refl \<open>\<Gamma> \<turnstile> u : U\<close>
-  have "\<Delta> @ \<Gamma> \<turnstile> t\<^sub>2[x\<mapsto>u] : T\<^sub>2" by (rule Tuple)
-  ultimately have "\<Delta> @ \<Gamma> \<turnstile> \<langle>t\<^sub>1[x\<mapsto>u], t\<^sub>2[x\<mapsto>u]\<rangle> : T\<^sub>1 \<otimes> T\<^sub>2" ..
+  have "\<Delta> @ \<Gamma> \<turnstile> t\<^sub>2[x\<leadsto>u] : T\<^sub>2" by (rule Tuple)
+  ultimately have "\<Delta> @ \<Gamma> \<turnstile> \<langle>t\<^sub>1[x\<leadsto>u], t\<^sub>2[x\<leadsto>u]\<rangle> : T\<^sub>1 \<otimes> T\<^sub>2" ..
   then show ?case by simp
 next
   case (Let p t T \<Delta>' s S)
   from refl \<open>\<Gamma> \<turnstile> u : U\<close>
-  have "\<Delta> @ \<Gamma> \<turnstile> t[x\<mapsto>u] : T" by (rule Let)
+  have "\<Delta> @ \<Gamma> \<turnstile> t[x\<leadsto>u] : T" by (rule Let)
   moreover note \<open>\<turnstile> p : T \<Rightarrow> \<Delta>'\<close>
   moreover have "\<Delta>' @ (\<Delta> @ [(x, U)] @ \<Gamma>) = (\<Delta>' @ \<Delta>) @ [(x, U)] @ \<Gamma>" by simp
-  then have "(\<Delta>' @ \<Delta>) @ \<Gamma> \<turnstile> s[x\<mapsto>u] : S" using \<open>\<Gamma> \<turnstile> u : U\<close> by (rule Let)
-  then have "\<Delta>' @ \<Delta> @ \<Gamma> \<turnstile> s[x\<mapsto>u] : S" by simp
-  ultimately have "\<Delta> @ \<Gamma> \<turnstile> (LET p = t[x\<mapsto>u] IN s[x\<mapsto>u]) : S"
+  then have "(\<Delta>' @ \<Delta>) @ \<Gamma> \<turnstile> s[x\<leadsto>u] : S" using \<open>\<Gamma> \<turnstile> u : U\<close> by (rule Let)
+  then have "\<Delta>' @ \<Delta> @ \<Gamma> \<turnstile> s[x\<leadsto>u] : S" by simp
+  ultimately have "\<Delta> @ \<Gamma> \<turnstile> (LET p = t[x\<leadsto>u] IN s[x\<leadsto>u]) : S"
     by (rule better_T_Let)
   moreover from Let have "(supp p::name set) \<sharp>* [(x, u)]"
     by (simp add: fresh_star_def fresh_list_nil fresh_list_cons)
@@ -446,9 +443,9 @@ next
   case (Abs y T t S)
   have "(y, T) # \<Delta> @ [(x, U)] @ \<Gamma> = ((y, T) # \<Delta>) @ [(x, U)] @ \<Gamma>"
     by simp
-  then have "((y, T) # \<Delta>) @ \<Gamma> \<turnstile> t[x\<mapsto>u] : S" using \<open>\<Gamma> \<turnstile> u : U\<close> by (rule Abs)
-  then have "(y, T) # \<Delta> @ \<Gamma> \<turnstile> t[x\<mapsto>u] : S" by simp
-  then have "\<Delta> @ \<Gamma> \<turnstile> (\<lambda>y:T. t[x\<mapsto>u]) : T \<rightarrow> S"
+  then have "((y, T) # \<Delta>) @ \<Gamma> \<turnstile> t[x\<leadsto>u] : S" using \<open>\<Gamma> \<turnstile> u : U\<close> by (rule Abs)
+  then have "(y, T) # \<Delta> @ \<Gamma> \<turnstile> t[x\<leadsto>u] : S" by simp
+  then have "\<Delta> @ \<Gamma> \<turnstile> (\<lambda>y:T. t[x\<leadsto>u]) : T \<rightarrow> S"
     by (rule typing.Abs)
   moreover from Abs have "y \<sharp> [(x, u)]"
     by (simp add: fresh_list_nil fresh_list_cons)
@@ -456,10 +453,10 @@ next
 next
   case (App t\<^sub>1 T S t\<^sub>2)
   from refl \<open>\<Gamma> \<turnstile> u : U\<close>
-  have "\<Delta> @ \<Gamma> \<turnstile> t\<^sub>1[x\<mapsto>u] : T \<rightarrow> S" by (rule App)
+  have "\<Delta> @ \<Gamma> \<turnstile> t\<^sub>1[x\<leadsto>u] : T \<rightarrow> S" by (rule App)
   moreover from refl \<open>\<Gamma> \<turnstile> u : U\<close>
-  have "\<Delta> @ \<Gamma> \<turnstile> t\<^sub>2[x\<mapsto>u] : T" by (rule App)
-  ultimately have "\<Delta> @ \<Gamma> \<turnstile> (t\<^sub>1[x\<mapsto>u]) \<cdot> (t\<^sub>2[x\<mapsto>u]) : S"
+  have "\<Delta> @ \<Gamma> \<turnstile> t\<^sub>2[x\<leadsto>u] : T" by (rule App)
+  ultimately have "\<Delta> @ \<Gamma> \<turnstile> (t\<^sub>1[x\<leadsto>u]) \<cdot> (t\<^sub>2[x\<leadsto>u]) : S"
     by (rule typing.App)
   then show ?case by simp
 qed
@@ -488,7 +485,7 @@ lemma match_type_aux:
 proof (induct arbitrary: \<Gamma>\<^sub>1 \<Gamma>\<^sub>2 t u T \<theta>)
   case (PVar x U)
   from \<open>\<Gamma>\<^sub>1 @ [(x, U)] @ \<Gamma>\<^sub>2 \<turnstile> t : T\<close> \<open>\<Gamma>\<^sub>2 \<turnstile> u : U\<close>
-  have "\<Gamma>\<^sub>1 @ \<Gamma>\<^sub>2 \<turnstile> t[x\<mapsto>u] : T" by (rule subst_type_aux)
+  have "\<Gamma>\<^sub>1 @ \<Gamma>\<^sub>2 \<turnstile> t[x\<leadsto>u] : T" by (rule subst_type_aux)
   moreover from \<open>\<turnstile> PVar x U \<rhd> u \<Rightarrow> \<theta>\<close> have "\<theta> = [(x, u)]"
     by cases simp_all
   ultimately show ?case by simp
@@ -525,14 +522,14 @@ qed
 
 lemmas match_type = match_type_aux [where \<Gamma>\<^sub>1="[]", simplified]
 
-inductive eval :: "trm \<Rightarrow> trm \<Rightarrow> bool" ("_ \<longmapsto> _" [60,60] 60)
+inductive eval :: "trm \<Rightarrow> trm \<Rightarrow> bool" (\<open>_ \<longmapsto> _\<close> [60,60] 60)
 where
   TupleL: "t \<longmapsto> t' \<Longrightarrow> \<langle>t, u\<rangle> \<longmapsto> \<langle>t', u\<rangle>"
 | TupleR: "u \<longmapsto> u' \<Longrightarrow> \<langle>t, u\<rangle> \<longmapsto> \<langle>t, u'\<rangle>"
 | Abs: "t \<longmapsto> t' \<Longrightarrow> (\<lambda>x:T. t) \<longmapsto> (\<lambda>x:T. t')"
 | AppL: "t \<longmapsto> t' \<Longrightarrow> t \<cdot> u \<longmapsto> t' \<cdot> u"
 | AppR: "u \<longmapsto> u' \<Longrightarrow> t \<cdot> u \<longmapsto> t \<cdot> u'"
-| Beta: "x \<sharp> u \<Longrightarrow> (\<lambda>x:T. t) \<cdot> u \<longmapsto> t[x\<mapsto>u]"
+| Beta: "x \<sharp> u \<Longrightarrow> (\<lambda>x:T. t) \<cdot> u \<longmapsto> t[x\<leadsto>u]"
 | Let: "((supp p)::name set) \<sharp>* t \<Longrightarrow> distinct (pat_vars p) \<Longrightarrow>
     \<turnstile> p \<rhd> t \<Rightarrow> \<theta> \<Longrightarrow> (LET p = t IN u) \<longmapsto> \<theta>\<lparr>u\<rparr>"
 
@@ -556,7 +553,7 @@ avoids
 | Beta: "{x}"
 | Let: "(supp p)::name set"
 proof (simp_all add: fresh_star_def abs_fresh fin_supp)
-  show "x \<sharp> t[x\<mapsto>u]" if "x \<sharp> u" for x t u
+  show "x \<sharp> t[x\<leadsto>u]" if "x \<sharp> u" for x t u
     by (simp add: \<open>x \<sharp> u\<close> psubst_fresh(1))
 next
   show "\<forall>x\<in>supp p. (x::name) \<sharp> \<theta>\<lparr>u\<rparr>" 

@@ -6,13 +6,14 @@ Dockable window for query operations.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
 import java.awt.event.{ComponentEvent, ComponentAdapter, KeyEvent}
-import javax.swing.{JComponent, JTextField}
+import javax.swing.JComponent
 
-import scala.swing.{Component, TextField, Label, ListView, TabbedPane, BorderPanel}
+import scala.swing.{Component, TextField, Label, TabbedPane, BorderPanel}
 import scala.swing.event.{SelectionChanged, Key, KeyPressed}
 
 import org.gjt.sp.jedit.View
@@ -21,7 +22,7 @@ import org.gjt.sp.jedit.View
 object Query_Dockable {
   private abstract class Operation(view: View) {
     val pretty_text_area = new Pretty_Text_Area(view)
-    def query_operation: Query_Operation[View]
+    def query_operation: Query_Operation
     def query: JComponent
     def select(): Unit
     def page: TabbedPane.Page
@@ -40,7 +41,7 @@ class Query_Dockable(view: View, position: String) extends Dockable(view, positi
   ): Completion_Popup.History_Text_Field = {
     new Completion_Popup.History_Text_Field(property) {
       override def processKeyEvent(evt: KeyEvent): Unit = {
-        if (evt.getID == KeyEvent.KEY_PRESSED && evt.getKeyCode == KeyEvent.VK_ENTER) apply_query()
+        if (evt.getID == KeyEvent.KEY_PRESSED && GUI.plain_enter(evt)) apply_query()
         super.processKeyEvent(evt)
       }
       { val max = getPreferredSize; max.width = Int.MaxValue; setMaximumSize(max) }
@@ -76,24 +77,23 @@ class Query_Dockable(view: View, position: String) extends Dockable(view, positi
     private val process_indicator = new Process_Indicator
 
     val query_operation =
-      new Query_Operation(PIDE.editor, view, "find_theorems",
-        consume_status(process_indicator, _),
-        (snapshot, results, body) =>
-          pretty_text_area.update(snapshot, results, Pretty.separate(body)))
+      new Query_Operation(JEdit_Editor, editor_context, "find_theorems",
+        consume_status(process_indicator, _), pretty_text_area.update_output)
 
     private def apply_query(): Unit = {
       query.addCurrentToHistory()
       query_operation.apply_query(List(limit.text, allow_dups.selected.toString, query.getText))
     }
 
-    private val query_label = new Label("Find:") {
-      tooltip =
-        GUI.tooltip_lines(
-          "Search criteria for find operation, e.g.\n\"_ = _\" \"(+)\" name: Group -name: monoid")
-    }
+    private val query_tooltip =
+      GUI.tooltip_lines(
+        "Search criteria for find operation, e.g.\n\"_ = _\" \"(+)\" name: Group -name: monoid")
 
     val query: Completion_Popup.History_Text_Field =
-      make_query("isabelle-find-theorems", query_label.tooltip, apply_query _)
+      make_query("isabelle-find-theorems", query_tooltip, apply_query _)
+
+    private val query_label =
+      new GUI.Label("Find:", query) { tooltip = query_tooltip }
 
 
     /* GUI page */
@@ -110,7 +110,7 @@ class Query_Dockable(view: View, position: String) extends Dockable(view, positi
       override def clicked(): Unit = apply_query()
     }
 
-    private val apply_button = new GUI.Button("<html><b>Apply</b></html>") {
+    private val apply_button = new GUI.Button(GUI.Style_HTML.enclose_bold("Apply")) {
       tooltip = "Find theorems meeting specified criteria"
       override def clicked(): Unit = apply_query()
     }
@@ -118,8 +118,8 @@ class Query_Dockable(view: View, position: String) extends Dockable(view, positi
     private val control_panel =
       Wrap_Panel(
         List(query_label, Component.wrap(query), limit, allow_dups,
-          process_indicator.component, apply_button,
-          pretty_text_area.search_label, pretty_text_area.search_field))
+          process_indicator.component, apply_button) :::
+        pretty_text_area.search_components)
 
     def select(): Unit = { control_panel.contents += zoom }
 
@@ -139,10 +139,8 @@ class Query_Dockable(view: View, position: String) extends Dockable(view, positi
     private val process_indicator = new Process_Indicator
 
     val query_operation =
-      new Query_Operation(PIDE.editor, view, "find_consts",
-        consume_status(process_indicator, _),
-        (snapshot, results, body) =>
-          pretty_text_area.update(snapshot, results, Pretty.separate(body)))
+      new Query_Operation(JEdit_Editor, editor_context, "find_consts",
+        consume_status(process_indicator, _), pretty_text_area.update_output)
 
     private val query_label = new Label("Find:") {
       tooltip = GUI.tooltip_lines("Name / type patterns for constants")
@@ -159,16 +157,15 @@ class Query_Dockable(view: View, position: String) extends Dockable(view, positi
 
     /* GUI page */
 
-    private val apply_button = new GUI.Button("<html><b>Apply</b></html>") {
+    private val apply_button = new GUI.Button(GUI.Style_HTML.enclose_bold("Apply")) {
       tooltip = "Find constants by name / type patterns"
       override def clicked(): Unit = apply_query()
     }
 
     private val control_panel =
       Wrap_Panel(
-        List(
-          query_label, Component.wrap(query), process_indicator.component, apply_button,
-          pretty_text_area.search_label, pretty_text_area.search_field))
+        List(query_label, Component.wrap(query), process_indicator.component, apply_button) :::
+        pretty_text_area.search_components)
 
     def select(): Unit = { control_panel.contents += zoom }
 
@@ -217,10 +214,8 @@ class Query_Dockable(view: View, position: String) extends Dockable(view, positi
     private val process_indicator = new Process_Indicator
 
     val query_operation =
-      new Query_Operation(PIDE.editor, view, "print_operation",
-        consume_status(process_indicator, _),
-        (snapshot, results, body) =>
-          pretty_text_area.update(snapshot, results, Pretty.separate(body)))
+      new Query_Operation(JEdit_Editor, editor_context, "print_operation",
+        consume_status(process_indicator, _), pretty_text_area.update_output)
 
     private def apply_query(): Unit =
       query_operation.apply_query(selected_items())
@@ -233,7 +228,7 @@ class Query_Dockable(view: View, position: String) extends Dockable(view, positi
 
     /* GUI page */
 
-    private val apply_button = new GUI.Button("<html><b>Apply</b></html>") {
+    private val apply_button = new GUI.Button(GUI.Style_HTML.enclose_bold("Apply")) {
       tooltip = "Apply to current context"
       override def clicked(): Unit = apply_query()
 
@@ -252,8 +247,8 @@ class Query_Dockable(view: View, position: String) extends Dockable(view, positi
       control_panel.contents += query_label
       update_items().foreach(item => control_panel.contents += item.gui)
       control_panel.contents ++=
-        List(process_indicator.component, apply_button,
-          pretty_text_area.search_label, pretty_text_area.search_field, zoom)
+        List(process_indicator.component, apply_button) :::
+        pretty_text_area.search_components ::: List(zoom)
     }
 
     val page =
@@ -301,11 +296,11 @@ class Query_Dockable(view: View, position: String) extends Dockable(view, positi
 
   private def handle_resize(): Unit =
     GUI_Thread.require {
-      if (operations != null) operations.foreach(_.pretty_text_area.zoom(zoom))
+      if (operations != null) operations.foreach(_.pretty_text_area.zoom(zoom = zoom))
     }
 
   private val delay_resize =
-    Delay.first(PIDE.session.update_delay, gui = true) { handle_resize() }
+    GUI.Delay.first(PIDE.session.update_delay) { handle_resize() }
 
   addComponentListener(new ComponentAdapter {
     override def componentResized(e: ComponentEvent): Unit = delay_resize.invoke()
@@ -316,7 +311,7 @@ class Query_Dockable(view: View, position: String) extends Dockable(view, positi
   /* main */
 
   private val main =
-    Session.Consumer[Session.Global_Options](getClass.getName) {
+    Session.Consumer[Session.Global_Options](this.class_name) {
       case _: Session.Global_Options => GUI_Thread.later { handle_resize() }
     }
 

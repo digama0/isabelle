@@ -11,7 +11,7 @@ begin
 subsection \<open>Basis preorder\<close>
 
 definition
-  upper_le :: "'a pd_basis \<Rightarrow> 'a pd_basis \<Rightarrow> bool" (infix "\<le>\<sharp>" 50) where
+  upper_le :: "'a::bifinite pd_basis \<Rightarrow> 'a pd_basis \<Rightarrow> bool" (infix \<open>\<le>\<sharp>\<close> 50) where
   "upper_le = (\<lambda>u v. \<forall>y\<in>Rep_pd_basis v. \<exists>x\<in>Rep_pd_basis u. x \<sqsubseteq> y)"
 
 lemma upper_le_refl [simp]: "t \<le>\<sharp> t"
@@ -58,21 +58,38 @@ lemma upper_le_induct [induct set: upper_le]:
   assumes 2: "\<And>t u a. P t (PDUnit a) \<Longrightarrow> P (PDPlus t u) (PDUnit a)"
   assumes 3: "\<And>t u v. \<lbrakk>P t u; P t v\<rbrakk> \<Longrightarrow> P t (PDPlus u v)"
   shows "P t u"
-using le apply (induct u arbitrary: t rule: pd_basis_induct)
-apply (erule rev_mp)
-apply (induct_tac t rule: pd_basis_induct)
-apply (simp add: 1)
-apply (simp add: upper_le_PDPlus_PDUnit_iff)
-apply (simp add: 2)
-apply (subst PDPlus_commute)
-apply (simp add: 2)
-apply (simp add: upper_le_PDPlus_iff 3)
-done
+  using le
+proof (induct u arbitrary: t rule: pd_basis_induct)
+  case (PDUnit a)
+  then show ?case
+  proof (induct t rule: pd_basis_induct)
+    case PDUnit
+    then show ?case by (simp add: 1)
+  next
+    case (PDPlus t u)
+    from PDPlus(3) consider (t) "t \<le>\<sharp> PDUnit a" | (u) "u \<le>\<sharp> PDUnit a"
+      by (auto simp: upper_le_PDPlus_PDUnit_iff)
+    then show ?case
+    proof cases
+      case t
+      then have "P t (PDUnit a)" by (rule PDPlus(1))
+      then show ?thesis by (rule 2)
+    next
+      case u
+      then have "P u (PDUnit a)" by (rule PDPlus(2))
+      then have "P (PDPlus u t) (PDUnit a)" by (rule 2)
+      then show ?thesis by (simp only: PDPlus_commute)
+    qed
+  qed
+next
+  case (PDPlus t t' u)
+  then show ?case by (simp add: upper_le_PDPlus_iff 3)
+qed
 
 
 subsection \<open>Type definition\<close>
 
-typedef 'a upper_pd  ("('(_')\<sharp>)") =
+typedef 'a::bifinite upper_pd  (\<open>(\<open>notation=\<open>postfix upper_pd\<close>\<close>'(_')\<sharp>)\<close>) =
   "{S::'a pd_basis set. upper_le.ideal S}"
 by (rule upper_le.ex_ideal)
 
@@ -94,7 +111,7 @@ using type_definition_upper_pd below_upper_pd_def
 by (rule upper_le.typedef_ideal_cpo)
 
 definition
-  upper_principal :: "'a pd_basis \<Rightarrow> 'a upper_pd" where
+  upper_principal :: "'a::bifinite pd_basis \<Rightarrow> 'a upper_pd" where
   "upper_principal t = Abs_upper_pd {u. u \<le>\<sharp> t}"
 
 interpretation upper_pd:
@@ -118,26 +135,21 @@ by (rule upper_pd_minimal [THEN bottomI, symmetric])
 subsection \<open>Monadic unit and plus\<close>
 
 definition
-  upper_unit :: "'a \<rightarrow> 'a upper_pd" where
+  upper_unit :: "'a::bifinite \<rightarrow> 'a upper_pd" where
   "upper_unit = compact_basis.extension (\<lambda>a. upper_principal (PDUnit a))"
 
 definition
-  upper_plus :: "'a upper_pd \<rightarrow> 'a upper_pd \<rightarrow> 'a upper_pd" where
+  upper_plus :: "'a::bifinite upper_pd \<rightarrow> 'a upper_pd \<rightarrow> 'a upper_pd" where
   "upper_plus = upper_pd.extension (\<lambda>t. upper_pd.extension (\<lambda>u.
       upper_principal (PDPlus t u)))"
 
 abbreviation
-  upper_add :: "'a upper_pd \<Rightarrow> 'a upper_pd \<Rightarrow> 'a upper_pd"
-    (infixl "\<union>\<sharp>" 65) where
+  upper_add :: "'a::bifinite upper_pd \<Rightarrow> 'a upper_pd \<Rightarrow> 'a upper_pd"
+    (infixl \<open>\<union>\<sharp>\<close> 65) where
   "xs \<union>\<sharp> ys == upper_plus\<cdot>xs\<cdot>ys"
 
-nonterminal upper_pd_args
 syntax
-  "" :: "logic \<Rightarrow> upper_pd_args"  ("_")
-  "_upper_pd_args" :: "logic \<Rightarrow> upper_pd_args \<Rightarrow> upper_pd_args"  ("_,/ _")
-  "_upper_pd" :: "upper_pd_args \<Rightarrow> logic"  ("{_}\<sharp>")
-syntax_consts
-  "_upper_pd_args" "_upper_pd" == upper_add
+  "_upper_pd" :: "args \<Rightarrow> logic"  (\<open>(\<open>indent=1 notation=\<open>mixfix upper_pd enumeration\<close>\<close>{_}\<sharp>)\<close>)
 translations
   "{x,xs}\<sharp>" == "{x}\<sharp> \<union>\<sharp> {xs}\<sharp>"
   "{x}\<sharp>" == "CONST upper_unit\<cdot>x"
@@ -271,34 +283,49 @@ lemma upper_pd_induct1:
   assumes P: "adm P"
   assumes unit: "\<And>x. P {x}\<sharp>"
   assumes insert: "\<And>x ys. \<lbrakk>P {x}\<sharp>; P ys\<rbrakk> \<Longrightarrow> P ({x}\<sharp> \<union>\<sharp> ys)"
-  shows "P (xs::'a upper_pd)"
-apply (induct xs rule: upper_pd.principal_induct, rule P)
-apply (induct_tac a rule: pd_basis_induct1)
-apply (simp only: upper_unit_Rep_compact_basis [symmetric])
-apply (rule unit)
-apply (simp only: upper_unit_Rep_compact_basis [symmetric]
-                  upper_plus_principal [symmetric])
-apply (erule insert [OF unit])
-done
+  shows "P (xs::'a::bifinite upper_pd)"
+proof (induct xs rule: upper_pd.principal_induct)
+  have *: "P {Rep_compact_basis a}\<sharp>" for a
+    by (rule unit)
+  show "P (upper_principal a)" for a
+  proof (induct a rule: pd_basis_induct1)
+    case (PDUnit a)
+    with * show ?case
+      by (simp only: upper_unit_Rep_compact_basis [symmetric])
+  next
+    case (PDPlus a t)
+    with * have "P ({Rep_compact_basis a}\<sharp> \<union>\<sharp> upper_principal t)"
+      by (rule insert)
+    then show ?case
+      by (simp only: upper_unit_Rep_compact_basis [symmetric]
+          upper_plus_principal [symmetric])
+  qed
+qed (rule P)
 
-lemma upper_pd_induct
-  [case_names adm upper_unit upper_plus, induct type: upper_pd]:
+lemma upper_pd_induct [case_names adm upper_unit upper_plus, induct type: upper_pd]:
   assumes P: "adm P"
   assumes unit: "\<And>x. P {x}\<sharp>"
   assumes plus: "\<And>xs ys. \<lbrakk>P xs; P ys\<rbrakk> \<Longrightarrow> P (xs \<union>\<sharp> ys)"
-  shows "P (xs::'a upper_pd)"
-apply (induct xs rule: upper_pd.principal_induct, rule P)
-apply (induct_tac a rule: pd_basis_induct)
-apply (simp only: upper_unit_Rep_compact_basis [symmetric] unit)
-apply (simp only: upper_plus_principal [symmetric] plus)
-done
+  shows "P (xs::'a::bifinite upper_pd)"
+proof (induct xs rule: upper_pd.principal_induct)
+  show "P (upper_principal a)" for a
+  proof (induct a rule: pd_basis_induct)
+    case PDUnit
+    then show ?case
+      by (simp only: upper_unit_Rep_compact_basis [symmetric] unit)
+  next
+    case PDPlus
+    then show ?case
+      by (simp only: upper_plus_principal [symmetric] plus)
+  qed
+qed (rule P)
 
 
 subsection \<open>Monadic bind\<close>
 
 definition
   upper_bind_basis ::
-  "'a pd_basis \<Rightarrow> ('a \<rightarrow> 'b upper_pd) \<rightarrow> 'b upper_pd" where
+  "'a::bifinite pd_basis \<Rightarrow> ('a \<rightarrow> 'b upper_pd) \<rightarrow> 'b::bifinite upper_pd" where
   "upper_bind_basis = fold_pd
     (\<lambda>a. \<Lambda> f. f\<cdot>(Rep_compact_basis a))
     (\<lambda>x y. \<Lambda> f. x\<cdot>f \<union>\<sharp> y\<cdot>f)"
@@ -332,15 +359,12 @@ apply simp
 done
 
 definition
-  upper_bind :: "'a upper_pd \<rightarrow> ('a \<rightarrow> 'b upper_pd) \<rightarrow> 'b upper_pd" where
+  upper_bind :: "'a::bifinite upper_pd \<rightarrow> ('a \<rightarrow> 'b upper_pd) \<rightarrow> 'b::bifinite upper_pd" where
   "upper_bind = upper_pd.extension upper_bind_basis"
 
 syntax
   "_upper_bind" :: "[logic, logic, logic] \<Rightarrow> logic"
-    ("(3\<Union>\<sharp>_\<in>_./ _)" [0, 0, 10] 10)
-
-syntax_consts
-  "_upper_bind" == upper_bind
+    (\<open>(\<open>indent=3 notation=\<open>binder upper_bind\<close>\<close>\<Union>\<sharp>_\<in>_./ _)\<close> [0, 0, 10] 10)
 
 translations
   "\<Union>\<sharp>x\<in>xs. e" == "CONST upper_bind\<cdot>xs\<cdot>(\<Lambda> x. e)"
@@ -372,7 +396,7 @@ by (induct xs, simp_all)
 subsection \<open>Map\<close>
 
 definition
-  upper_map :: "('a \<rightarrow> 'b) \<rightarrow> 'a upper_pd \<rightarrow> 'b upper_pd" where
+  upper_map :: "('a::bifinite \<rightarrow> 'b::bifinite) \<rightarrow> 'a upper_pd \<rightarrow> 'b upper_pd" where
   "upper_map = (\<Lambda> f xs. upper_bind\<cdot>xs\<cdot>(\<Lambda> x. {f\<cdot>x}\<sharp>))"
 
 lemma upper_map_unit [simp]:
@@ -460,6 +484,7 @@ proof (rule finite_deflation_intro)
     by (rule finite_range_imp_finite_fixes)
 qed
 
+
 subsection \<open>Upper powerdomain is bifinite\<close>
 
 lemma approx_chain_upper_map:
@@ -475,10 +500,11 @@ proof
     by (fast intro!: approx_chain_upper_map)
 qed
 
+
 subsection \<open>Join\<close>
 
 definition
-  upper_join :: "'a upper_pd upper_pd \<rightarrow> 'a upper_pd" where
+  upper_join :: "'a::bifinite upper_pd upper_pd \<rightarrow> 'a upper_pd" where
   "upper_join = (\<Lambda> xss. upper_bind\<cdot>xss\<cdot>(\<Lambda> xs. xs))"
 
 lemma upper_join_unit [simp]:

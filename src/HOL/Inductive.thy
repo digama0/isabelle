@@ -467,7 +467,7 @@ proof (rule exI, rule bij_betw_imageI)
   show "inj_on ?h A"
   proof -
     from inj1 X_sub have on_X: "inj_on f X"
-      by (rule subset_inj_on)
+      by (rule inj_on_subset)
 
     have on_X_compl: "inj_on g' (A - X)"
       unfolding g'_def X_compl
@@ -525,14 +525,14 @@ ML_file \<open>Tools/BNF/bnf_lfp_rec_sugar.ML\<close>
 
 text \<open>Lambda-abstractions with pattern matching:\<close>
 syntax (ASCII)
-  "_lam_pats_syntax" :: "cases_syn \<Rightarrow> 'a \<Rightarrow> 'b"  ("(%_)" 10)
+  "_lam_pats_syntax" :: "cases_syn \<Rightarrow> 'a \<Rightarrow> 'b"  (\<open>(\<open>notation=abstraction\<close>%_)\<close> 10)
 syntax
-  "_lam_pats_syntax" :: "cases_syn \<Rightarrow> 'a \<Rightarrow> 'b"  ("(\<lambda>_)" 10)
+  "_lam_pats_syntax" :: "cases_syn \<Rightarrow> 'a \<Rightarrow> 'b"  (\<open>(\<open>notation=abstraction\<close>\<lambda>_)\<close> 10)
 parse_translation \<open>
   let
     fun fun_tr ctxt [cs] =
       let
-        val x = Syntax.free (fst (Name.variant "x" (Term.declare_term_frees cs Name.context)));
+        val x = Syntax.free (#1 (Name.variant "x" (Name.build_context (Term.declare_free_names cs))));
         val ft = Case_Translation.case_tr true ctxt [x, cs];
       in lambda x ft end
   in [(\<^syntax_const>\<open>_lam_pats_syntax\<close>, fun_tr)] end

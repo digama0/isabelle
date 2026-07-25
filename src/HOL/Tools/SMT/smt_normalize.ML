@@ -31,7 +31,7 @@ fun drop_fact_warning ctxt =
 (** instantiate elimination rules **)
 
 local
-  val (cpfalse, cfalse) = `SMT_Util.mk_cprop \<^cterm>\<open>False\<close>
+  val (cpfalse, cfalse) = `HOLogic.mk_judgment \<^cterm>\<open>False\<close>
 
   fun inst f ct thm =
     let val cv = f (Drule.strip_imp_concl (Thm.cprop_of thm))
@@ -257,7 +257,7 @@ fun gen_normalize1 ctxt =
   Thm.forall_intr_vars #>
   Conv.fconv_rule (gen_normalize1_conv ctxt) #>
   (* Z3 4.3.1 silently normalizes "P --> Q --> R" to "P & Q --> R" *)
-  Raw_Simplifier.rewrite_rule ctxt @{thms HOL.imp_conjL[symmetric, THEN eq_reflection]}
+  Simplifier.rewrite_rule ctxt @{thms HOL.imp_conjL[symmetric, THEN eq_reflection]}
 
 fun gen_norm1_safe ctxt (i, thm) =
   (case try (gen_normalize1 ctxt) thm of
@@ -429,7 +429,8 @@ local
   fun is_strange_number ctxt t = is_irregular_number t andalso SMT_Builtin.is_builtin_num ctxt t
 
   val proper_num_ss =
-    simpset_of (put_simpset HOL_ss \<^context> addsimps @{thms Num.numeral_One minus_zero})
+    HOL_ss |> Simplifier.simpset_map \<^context>
+      (Simplifier.add_simps @{thms Num.numeral_One minus_zero})
 
   fun norm_num_conv ctxt =
     SMT_Util.if_conv (is_strange_number ctxt) (Simplifier.rewrite (put_simpset proper_num_ss ctxt))

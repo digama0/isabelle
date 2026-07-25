@@ -244,7 +244,7 @@ fun prep_output ctxt tye bs ts Ts =
     val (Ts_bTs', ts') = Type_Infer.finish ctxt tye (Ts @ map snd bs, ts);
     val (Ts', Ts'') = chop (length Ts) Ts_bTs';
     fun prep t =
-      let val xs = rev (Term.variant_frees t (rev (map fst bs ~~ Ts'')))
+      let val xs = rev (Syntax_Trans.variant_bounds ctxt t (rev (map fst bs ~~ Ts'')))
       in Term.subst_bounds (map Syntax_Trans.mark_bound_abs xs, t) end;
   in (map prep ts', Ts') end;
 
@@ -1086,7 +1086,7 @@ fun print_coercions ctxt =
    [Pretty.big_list "coercions between base types:" (map show_coercion simple),
     Pretty.big_list "other coercions:" (map show_coercion complex),
     Pretty.big_list "coercion maps:" (map show_map tmaps)]
-  end |> Pretty.writeln_chunks;
+  end |> Pretty.chunks |> Pretty.writeln;
 
 
 (* attribute setup *)

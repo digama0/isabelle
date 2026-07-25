@@ -101,11 +101,11 @@ primrec
                                  NCons(bin_mult(v,w),0))"
 
 syntax
-  "_Int0" :: i  (\<open>#' 0\<close>)
-  "_Int1" :: i  (\<open>#' 1\<close>)
-  "_Int2" :: i  (\<open>#' 2\<close>)
-  "_Neg_Int1" :: i  (\<open>#-' 1\<close>)
-  "_Neg_Int2" :: i  (\<open>#-' 2\<close>)
+  "_Int0" :: i  (\<open>#()0\<close>)
+  "_Int1" :: i  (\<open>#()1\<close>)
+  "_Int2" :: i  (\<open>#()2\<close>)
+  "_Neg_Int1" :: i  (\<open>#-()1\<close>)
+  "_Neg_Int2" :: i  (\<open>#-()2\<close>)
 translations
   "#0" \<rightleftharpoons> "CONST integ_of(CONST Pls)"
   "#1" \<rightleftharpoons> "CONST integ_of(CONST Pls BIT 1)"
@@ -114,8 +114,8 @@ translations
   "#-2" \<rightleftharpoons> "CONST integ_of(CONST Min BIT 0)"
 
 syntax
-  "_Int" :: "num_token \<Rightarrow> i"  (\<open>#_\<close> 1000)
-  "_Neg_Int" :: "num_token \<Rightarrow> i"  (\<open>#-_\<close> 1000)
+  "_Int" :: "num_token \<Rightarrow> i"  (\<open>(\<open>open_block notation=\<open>literal number\<close>\<close>#_)\<close> 1000)
+  "_Neg_Int" :: "num_token \<Rightarrow> i"  (\<open>(\<open>open_block notation=\<open>literal number\<close>\<close>#-_)\<close> 1000)
 
 syntax_consts
   "_Int0" "_Int1" "_Int2" "_Int" "_Neg_Int1" "_Neg_Int2" "_Neg_Int" \<rightleftharpoons> integ_of

@@ -6,19 +6,18 @@ Dockable window for Isabelle/ML debugger.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
-import java.awt.{BorderLayout, Dimension}
-import java.awt.event.{ComponentEvent, ComponentAdapter, KeyEvent, FocusAdapter, FocusEvent,
-  MouseEvent, MouseAdapter}
-import javax.swing.{JTree, JMenuItem}
-import javax.swing.tree.{DefaultMutableTreeNode, DefaultTreeModel, TreeSelectionModel}
-import javax.swing.event.{TreeSelectionEvent, TreeSelectionListener}
+import java.awt.BorderLayout
+import java.awt.event.KeyEvent
+import javax.swing.JMenuItem
+import javax.swing.event.TreeSelectionEvent
+import javax.swing.tree.TreePath
 
 import scala.collection.immutable.SortedMap
-import scala.swing.{Button, Label, Component, ScrollPane, SplitPane, Orientation, BorderPanel}
-import scala.swing.event.ButtonClicked
+import scala.swing.Component
 
 import org.gjt.sp.jedit.{jEdit, View}
 import org.gjt.sp.jedit.menu.EnhancedMenuItem
@@ -67,52 +66,51 @@ class Debugger_Dockable(view: View, position: String) extends Dockable(view, pos
   private var current_output: List[XML.Tree] = Nil
 
 
-  /* pretty text area */
+  /* output area */
 
-  val pretty_text_area = new Pretty_Text_Area(view)
+  private val output: Output_Area =
+    new Output_Area(editor_context, root_name = "Threads") {
+      override def handle_search(search: Pretty_Text_Area.Search_Results): Unit = {}
 
-  override def detach_operation: Option[() => Unit] = pretty_text_area.detach_operation
+      override def handle_tree_selection(path: TreePath): Unit = ()
 
-  private def handle_resize(): Unit =
-    GUI_Thread.require { pretty_text_area.zoom(zoom) }
+      override def handle_update(): Unit = {
+        val new_snapshot =
+          JEdit_Editor.current_node_snapshot(editor_context).getOrElse(current_snapshot)
+        val (new_threads, new_output) = debugger.status(tree_selection())
 
-  private def handle_update(): Unit = {
-    GUI_Thread.require {}
+        if (new_threads != current_threads) update_tree(new_threads)
 
-    val new_snapshot = PIDE.editor.current_node_snapshot(view).getOrElse(current_snapshot)
-    val (new_threads, new_output) = debugger.status(tree_selection())
+        if (new_output != current_output) {
+          pretty_text_area.update(new_snapshot, Command.Results.empty, new_output)
+        }
 
-    if (new_threads != current_threads) update_tree(new_threads)
+        current_snapshot = new_snapshot
+        current_threads = new_threads
+        current_output = new_output
+      }
 
-    if (new_output != current_output) {
-      pretty_text_area.update(new_snapshot, Command.Results.empty, Pretty.separate(new_output))
+      override def handle_focus(): Unit = update_focus()
     }
 
-    current_snapshot = new_snapshot
-    current_threads = new_threads
-    current_output = new_output
-  }
+  output.tree.addTreeSelectionListener({ (e: TreeSelectionEvent) =>
+    update_focus()
+    update_vals()
+  })
+
+  override def detach_operation: Option[() => Unit] =
+    output.pretty_text_area.detach_operation
+
+  output.setup(dockable)
+  set_content(output.split_pane)
 
 
   /* tree view */
 
-  private val root = new DefaultMutableTreeNode("Threads")
+  private def tree_selection(path: TreePath = output.tree.getSelectionPath): Option[Debugger.Context] =
+    output.tree.get_selection(path, { case c: Debugger.Context => c })
 
-  val tree = new JTree(root)
-  tree.setRowHeight(0)
-  tree.getSelectionModel.setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION)
-
-  def tree_selection(): Option[Debugger.Context] =
-    tree.getLastSelectedPathComponent match {
-      case node: DefaultMutableTreeNode =>
-        node.getUserObject match {
-          case c: Debugger.Context => Some(c)
-          case _ => None
-        }
-      case _ => None
-    }
-
-  def thread_selection(): Option[String] = tree_selection().map(_.thread_name)
+  private def thread_selection(): Option[String] = tree_selection().map(_.thread_name)
 
   private def update_tree(threads: Debugger.Threads): Unit = {
     val thread_contexts =
@@ -127,31 +125,28 @@ class Debugger_Dockable(view: View, position: String) extends Dockable(view, pos
         case _ => thread_contexts.headOption
       }
 
-    tree.clearSelection()
-    root.removeAllChildren()
-
-    for (thread <- thread_contexts) {
-      val thread_node = new DefaultMutableTreeNode(thread)
-      for ((_, i) <- thread.debug_states.zipWithIndex)
-        thread_node.add(new DefaultMutableTreeNode(thread.select(i)))
-      root.add(thread_node)
+    output.tree.init_model {
+      for (thread <- thread_contexts) {
+        val thread_node = Tree_View.Node(thread)
+        for ((_, i) <- thread.debug_states.zipWithIndex) {
+          thread_node.add(Tree_View.Node(thread.select(i)))
+        }
+        output.tree.root.add(thread_node)
+      }
     }
 
-    tree.getModel.asInstanceOf[DefaultTreeModel].reload(root)
-
-    tree.expandRow(0)
-    for (i <- Range.inclusive(tree.getRowCount - 1, 1, -1)) tree.expandRow(i)
+    for (i <- Range.inclusive(output.tree.getRowCount - 1, 1, -1)) output.tree.expandRow(i)
 
     new_tree_selection match {
       case Some(c) =>
         val i =
           (for (t <- thread_contexts.iterator.takeWhile(t => c.thread_name != t.thread_name))
             yield t.size).sum
-        tree.addSelectionRow(i + c.index + 1)
+        output.tree.addSelectionRow(i + c.index + 1)
       case None =>
     }
 
-    tree.revalidate()
+    output.tree.revalidate()
   }
 
   def update_vals(): Unit = {
@@ -164,23 +159,6 @@ class Debugger_Dockable(view: View, position: String) extends Dockable(view, pos
     }
   }
 
-  tree.addTreeSelectionListener({ (_: TreeSelectionEvent) =>
-    update_focus()
-    update_vals()
-  })
-  tree.addMouseListener(
-    new MouseAdapter {
-      override def mouseClicked(e: MouseEvent): Unit = {
-        val click = tree.getPathForLocation(e.getX, e.getY)
-        if (click != null && e.getClickCount == 1) update_focus()
-      }
-    })
-
-  private val tree_pane = new ScrollPane(Component.wrap(tree))
-  tree_pane.horizontalScrollBarPolicy = ScrollPane.BarPolicy.Always
-  tree_pane.verticalScrollBarPolicy = ScrollPane.BarPolicy.Always
-  tree_pane.minimumSize = new Dimension(200, 100)
-
 
   /* controls */
 
@@ -191,59 +169,61 @@ class Debugger_Dockable(view: View, position: String) extends Dockable(view, pos
 
   private val continue_button = new GUI.Button("Continue") {
     tooltip = "Continue program on current thread, until next breakpoint"
-    override def clicked(): Unit = thread_selection().map(debugger.continue)
+    override def clicked(): Unit = thread_selection().foreach(debugger.continue)
   }
 
   private val step_button = new GUI.Button("Step") {
     tooltip = "Single-step in depth-first order"
-    override def clicked(): Unit = thread_selection().map(debugger.step)
+    override def clicked(): Unit = thread_selection().foreach(debugger.step)
   }
 
   private val step_over_button = new GUI.Button("Step over") {
     tooltip = "Single-step within this function"
-    override def clicked(): Unit = thread_selection().map(debugger.step_over)
+    override def clicked(): Unit = thread_selection().foreach(debugger.step_over)
   }
 
   private val step_out_button = new GUI.Button("Step out") {
     tooltip = "Single-step outside this function"
-    override def clicked(): Unit = thread_selection().map(debugger.step_out)
+    override def clicked(): Unit = thread_selection().foreach(debugger.step_out)
   }
 
-  private val context_label = new Label("Context:") {
-    tooltip = "Isabelle/ML context: type theory, Proof.context, Context.generic"
-  }
+  private val context_tooltip = "Isabelle/ML context: type theory, Proof.context, Context.generic"
   private val context_field =
     new Completion_Popup.History_Text_Field("isabelle-debugger-context") {
       override def processKeyEvent(evt: KeyEvent): Unit = {
-        if (evt.getID == KeyEvent.KEY_PRESSED && evt.getKeyCode == KeyEvent.VK_ENTER) {
+        if (evt.getID == KeyEvent.KEY_PRESSED && GUI.plain_enter(evt)) {
           eval_expression()
         }
         super.processKeyEvent(evt)
       }
       setColumns(20)
-      setToolTipText(context_label.tooltip)
+      setToolTipText(context_tooltip)
       setFont(GUI.imitate_font(getFont, scale = 1.2))
     }
-
-  private val expression_label = new Label("ML:") {
-    tooltip = "Isabelle/ML or Standard ML expression"
+  private val context_label = new GUI.Label("Context:", context_field) {
+    tooltip = context_tooltip
   }
+
+  private val expression_tooltip = "Isabelle/ML or Standard ML expression"
   private val expression_field =
     new Completion_Popup.History_Text_Field("isabelle-debugger-expression") {
       override def processKeyEvent(evt: KeyEvent): Unit = {
-        if (evt.getID == KeyEvent.KEY_PRESSED && evt.getKeyCode == KeyEvent.VK_ENTER) {
+        if (evt.getID == KeyEvent.KEY_PRESSED && GUI.plain_enter(evt)) {
           eval_expression()
         }
         super.processKeyEvent(evt)
       }
       { val max = getPreferredSize; max.width = Int.MaxValue; setMaximumSize(max) }
       setColumns(40)
-      setToolTipText(expression_label.tooltip)
+      setToolTipText(expression_tooltip)
       setFont(GUI.imitate_font(getFont, scale = 1.2))
     }
+  private val expression_label = new GUI.Label("ML:", expression_field) {
+    tooltip = expression_tooltip
+  }
 
   private val eval_button =
-    new GUI.Button("<html><b>Eval</b></html>") {
+    new GUI.Button(GUI.Style_HTML.enclose_bold("Eval")) {
       tooltip = "Evaluate ML expression within optional context"
       override def clicked(): Unit = eval_expression()
     }
@@ -262,15 +242,13 @@ class Debugger_Dockable(view: View, position: String) extends Dockable(view, pos
     tooltip = "Official Standard ML instead of Isabelle/ML"
   }
 
-  private val zoom = new Font_Info.Zoom { override def changed(): Unit = handle_resize() }
-
   private val controls =
     Wrap_Panel(
       List(
         break_button, continue_button, step_button, step_over_button, step_out_button,
         context_label, Component.wrap(context_field),
-        expression_label, Component.wrap(expression_field), eval_button, sml_button,
-        pretty_text_area.search_label, pretty_text_area.search_field, zoom))
+        expression_label, Component.wrap(expression_field), eval_button, sml_button) :::
+      output.pretty_text_area.search_zoom_components)
 
   add(controls.peer, BorderLayout.NORTH)
 
@@ -279,43 +257,29 @@ class Debugger_Dockable(view: View, position: String) extends Dockable(view, pos
 
   override def focusOnDefaultComponent(): Unit = eval_button.requestFocus()
 
-  addFocusListener(new FocusAdapter {
-    override def focusGained(e: FocusEvent): Unit = update_focus()
-  })
-
   private def update_focus(): Unit = {
     for (c <- tree_selection()) {
       debugger.set_focus(c)
       for {
         pos <- c.debug_position
-        link <- PIDE.editor.hyperlink_position(false, current_snapshot, pos)
-      } link.follow(view)
+        link <- JEdit_Editor.hyperlink_position(current_snapshot, pos)
+      } link.follow(editor_context)
     }
     JEdit_Lib.jedit_text_areas(view.getBuffer).foreach(_.repaint())
   }
 
 
-  /* main panel */
-
-  val main_panel: SplitPane = new SplitPane(Orientation.Vertical) {
-    oneTouchExpandable = true
-    leftComponent = tree_pane
-    rightComponent = Component.wrap(pretty_text_area)
-  }
-  set_content(main_panel)
-
-
   /* main */
 
   private val main =
-    Session.Consumer[Any](getClass.getName) {
+    Session.Consumer[Session.Global_Options | Debugger.Update.type](this.class_name) {
       case _: Session.Global_Options =>
-        GUI_Thread.later { handle_resize() }
+        GUI_Thread.later { output.handle_resize() }
 
       case Debugger.Update =>
         GUI_Thread.later {
           break_button.selected = debugger.is_break()
-          handle_update()
+          output.handle_update()
         }
     }
 
@@ -323,26 +287,15 @@ class Debugger_Dockable(view: View, position: String) extends Dockable(view, pos
     PIDE.session.global_options += main
     PIDE.session.debugger_updates += main
     debugger.init(dockable)
-    handle_update()
+    output.init()
     jEdit.propertiesChanged()
   }
 
   override def exit(): Unit = {
     PIDE.session.global_options -= main
     PIDE.session.debugger_updates -= main
-    delay_resize.revoke()
+    output.exit()
     debugger.exit(dockable)
     jEdit.propertiesChanged()
   }
-
-
-  /* resize */
-
-  private val delay_resize =
-    Delay.first(PIDE.session.update_delay, gui = true) { handle_resize() }
-
-  addComponentListener(new ComponentAdapter {
-    override def componentResized(e: ComponentEvent): Unit = delay_resize.invoke()
-    override def componentShown(e: ComponentEvent): Unit = delay_resize.invoke()
-  })
 }

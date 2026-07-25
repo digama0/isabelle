@@ -6,28 +6,33 @@ Dockable window for Sledgehammer.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
 import scala.swing.{Component, Label}
 
 import java.awt.BorderLayout
-import java.awt.event.{ComponentEvent, ComponentAdapter, KeyEvent}
+import java.awt.event.KeyEvent
 
 import org.gjt.sp.jedit.View
 import org.gjt.sp.jedit.gui.HistoryTextField
 
 
 class Sledgehammer_Dockable(view: View, position: String) extends Dockable(view, position) {
+  dockable =>
+
   GUI_Thread.require {}
 
 
-  /* text area */
+  /* output text area */
 
-  val pretty_text_area = new Pretty_Text_Area(view)
-  set_content(pretty_text_area)
+  private val output: Output_Area = new Output_Area(editor_context)
 
-  override def detach_operation: Option[() => Unit] = pretty_text_area.detach_operation
+  override def detach_operation: Option[() => Unit] = output.pretty_text_area.detach_operation
+
+  output.setup(dockable)
+  set_content(output.text_pane)
 
 
   /* query operation */
@@ -46,23 +51,8 @@ class Sledgehammer_Dockable(view: View, position: String) extends Dockable(view,
   }
 
   private val sledgehammer =
-    new Query_Operation(PIDE.editor, view, "sledgehammer", consume_status,
-      (snapshot, results, body) =>
-        pretty_text_area.update(snapshot, results, Pretty.separate(body)))
-
-
-  /* resize */
-
-  private val delay_resize =
-    Delay.first(PIDE.session.update_delay, gui = true) { handle_resize() }
-
-  addComponentListener(new ComponentAdapter {
-    override def componentResized(e: ComponentEvent): Unit = delay_resize.invoke()
-    override def componentShown(e: ComponentEvent): Unit = delay_resize.invoke()
-  })
-
-  private def handle_resize(): Unit =
-    GUI_Thread.require { pretty_text_area.zoom(zoom) }
+    new Query_Operation(JEdit_Editor, editor_context, "sledgehammer", consume_status,
+      output.pretty_text_area.update_output)
 
 
   /* controls */
@@ -74,21 +64,20 @@ class Sledgehammer_Dockable(view: View, position: String) extends Dockable(view,
       List(provers.getText, isar_proofs.selected.toString, try0.selected.toString))
   }
 
-  private val provers_label = new Label("Provers:") {
-    tooltip =
-      GUI.tooltip_lines(
-        "Automatic provers as space-separated list, e.g.\n" +
-          PIDE.options.value.check_name("sledgehammer_provers").default_value)
-  }
-
+  private val provers_tooltip =
+    GUI.tooltip_lines(
+      "Automatic provers as space-separated list, e.g.\n" +
+        Options.defaults.string("sledgehammer_provers"))
   private val provers = new HistoryTextField("isabelle-sledgehammer-provers") {
     override def processKeyEvent(evt: KeyEvent): Unit = {
-      if (evt.getID == KeyEvent.KEY_PRESSED && evt.getKeyCode == KeyEvent.VK_ENTER) hammer()
+      if (evt.getID == KeyEvent.KEY_PRESSED && GUI.plain_enter(evt)) hammer()
       super.processKeyEvent(evt)
     }
-    setToolTipText(provers_label.tooltip)
+    setToolTipText(provers_tooltip)
     setColumns(30)
   }
+  private val provers_label =
+    new GUI.Label("Provers:", provers) { tooltip = provers_tooltip }
 
   private def update_provers(): Unit = {
     val new_provers = PIDE.options.string("sledgehammer_provers")
@@ -107,7 +96,7 @@ class Sledgehammer_Dockable(view: View, position: String) extends Dockable(view,
     tooltip = "Try standard proof methods like \"auto\" and \"blast\" as alternatives to \"metis\""
   }
 
-  private val apply_query = new GUI.Button("<html><b>Apply</b></html>") {
+  private val apply_query = new GUI.Button(GUI.Style_HTML.enclose_bold("Apply")) {
     tooltip = "Search for first-order proof using automatic theorem provers"
     override def clicked(): Unit = hammer()
   }
@@ -122,12 +111,11 @@ class Sledgehammer_Dockable(view: View, position: String) extends Dockable(view,
     override def clicked(): Unit = sledgehammer.locate_query()
   }
 
-  private val zoom = new Font_Info.Zoom { override def changed(): Unit = handle_resize() }
-
   private val controls =
     Wrap_Panel(
       List(provers_label, Component.wrap(provers), isar_proofs, try0,
-        process_indicator.component, apply_query, cancel_query, locate_query, zoom))
+        process_indicator.component, apply_query, cancel_query, locate_query,
+        output.pretty_text_area.zoom_component))
 
   add(controls.peer, BorderLayout.NORTH)
 
@@ -137,20 +125,21 @@ class Sledgehammer_Dockable(view: View, position: String) extends Dockable(view,
   /* main */
 
   private val main =
-    Session.Consumer[Session.Global_Options](getClass.getName) {
-      case _: Session.Global_Options => GUI_Thread.later { update_provers(); handle_resize() }
+    Session.Consumer[Session.Global_Options](this.class_name) {
+      case _: Session.Global_Options =>
+        GUI_Thread.later { update_provers(); output.handle_resize() }
     }
 
   override def init(): Unit = {
     PIDE.session.global_options += main
     update_provers()
-    handle_resize()
+    output.init()
     sledgehammer.activate()
   }
 
   override def exit(): Unit = {
     sledgehammer.deactivate()
     PIDE.session.global_options -= main
-    delay_resize.revoke()
+    output.exit()
   }
 }

@@ -6,11 +6,9 @@ Isabelle process wrapper.
 
 signature ISABELLE_PROCESS =
 sig
-  val is_active: unit -> bool
   val reset_tracing: Document_ID.exec -> unit
   val crashes: exn list Synchronized.var
   val init_options: unit -> unit
-  val init_options_interactive: unit -> unit
   val init: unit -> unit
   val init_build: unit -> unit
 end;
@@ -18,17 +16,10 @@ end;
 structure Isabelle_Process: ISABELLE_PROCESS =
 struct
 
-(* print mode *)
-
-val isabelle_processN = "isabelle_process";
-
-fun is_active () = Print_Mode.print_mode_active isabelle_processN;
-
-val _ = Output.add_mode isabelle_processN Output.default_output Output.default_escape;
-val _ = Markup.add_mode isabelle_processN YXML.output_markup;
+(* print modes *)
 
 val protocol_modes1 = [Syntax_Trans.no_bracketsN, Syntax_Trans.no_type_bracketsN];
-val protocol_modes2 = [isabelle_processN, Pretty.symbolicN];
+val protocol_modes2 = [Print_Mode.PIDE];
 
 
 (* restricted tracing messages *)
@@ -48,7 +39,7 @@ fun update_tracing () =
           Synchronized.change_result tracing_messages (fn tab =>
             let
               val n = the_default 0 (Inttab.lookup tab exec_id) + 1;
-              val limit = Options.default_int "editor_tracing_messages";
+              val limit = Options.default_int \<^system_option>\<open>editor_tracing_messages\<close>;
               val ok = limit <= 0 orelse n <= limit;
             in (ok, Inttab.update (exec_id, n) tab) end);
       in
@@ -87,9 +78,6 @@ in
 
 fun init_protocol modes = Thread_Attributes.uninterruptible (fn _ => fn (address, password) =>
   let
-    val _ = SHA1.test_samples ()
-      handle exn as Fail msg => (Output.physical_stderr (msg ^ "\n"); Exn.reraise exn);
-
     val _ = Output.physical_stderr Symbol.STX;
 
 
@@ -130,6 +118,8 @@ fun init_protocol modes = Thread_Attributes.uninterruptible (fn _ => fn (address
         (fn props => fn s => standard_message (props @ serial_props ()) Markup.resultN s) #>
       Unsynchronized.setmp Private_Output.writeln_fn
         (fn s => standard_message (serial_props ()) Markup.writelnN s) #>
+      Unsynchronized.setmp Private_Output.writeln_urgent_fn
+        (fn s => standard_message (serial_props () @ Markup.urgent_properties) Markup.writelnN s) #>
       Unsynchronized.setmp Private_Output.state_fn
         (fn s => standard_message (serial_props ()) Markup.stateN s) #>
       Unsynchronized.setmp Private_Output.information_fn
@@ -186,10 +176,13 @@ fun init_protocol modes = Thread_Attributes.uninterruptible (fn _ => fn (address
     val _ = BinIO.closeIn in_stream;
     val _ = BinIO.closeOut out_stream;
 
-    val _ = Options.reset_default ();
+    val _ = Options.set_process_default NONE;
   in
     (case result of
-      Exn.Exn (Protocol_Command.STOP rc) => if rc = 0 then () else exit rc
+      Exn.Exn (Protocol_Command.STOP rc) =>
+        if rc = 0 then ()
+        else if rc = 1 then OS.Process.exit OS.Process.failure
+        else OS.Process.exit (RunCall.unsafeCast (Word8.fromInt rc))
     | _ => Exn.release result)
   end);
 
@@ -199,25 +192,19 @@ end;
 (* init options *)
 
 fun init_options () =
- (ML_Print_Depth.set_print_depth (Options.default_int "ML_print_depth");
-  Multithreading.trace := Options.default_int "threads_trace";
-  Multithreading.max_threads_update (Options.default_int "threads");
-  Multithreading.parallel_proofs := Options.default_int "parallel_proofs";
-  Isabelle_Thread.threads_stack_limit := Options.default_real "threads_stack_limit";
-  if Options.default_bool "export_standard_proofs" then Proofterm.proofs := 2 else ();
-  let val proofs = Options.default_int "record_proofs"
-  in if proofs < 0 then () else Proofterm.proofs := proofs end;
-  Printer.show_markup_default := false;
-  Context.theory_tracing := Options.default_bool "context_theory_tracing";
-  Context.proof_tracing := Options.default_bool "context_proof_tracing";
-  Context.data_timing := Options.default_bool "context_data_timing";
-  Syntax.cache_persistent := false);
-
-fun init_options_interactive () =
- (init_options ();
-  Multithreading.parallel_proofs := (if Options.default_int "parallel_proofs" > 0 then 3 else 0);
-  Printer.show_markup_default := true;
-  Syntax.cache_persistent := true);
+  let
+    val record_proofs = Options.default_int \<^system_option>\<open>record_proofs\<close>;
+  in
+    ML_Print_Depth.set_print_depth (Options.default_int \<^system_option>\<open>ML_print_depth\<close>);
+    Multithreading.trace := Options.default_int \<^system_option>\<open>threads_trace\<close>;
+    Multithreading.max_threads_update (Options.default_int \<^system_option>\<open>threads\<close>);
+    Isabelle_Thread.threads_stack_limit := Options.default_real \<^system_option>\<open>threads_stack_limit\<close>;
+    if Options.default_bool \<^system_option>\<open>export_standard_proofs\<close> then Proofterm.proofs := 2 else ();
+    if record_proofs < 0 then () else Proofterm.proofs := record_proofs;
+    Context.theory_tracing := Options.default_bool \<^system_option>\<open>context_theory_tracing\<close>;
+    Context.proof_tracing := Options.default_bool \<^system_option>\<open>context_proof_tracing\<close>;
+    Context.data_timing := Options.default_bool \<^system_option>\<open>context_data_timing\<close>
+  end;
 
 
 (* generic init *)

@@ -7,6 +7,7 @@ Quasi-abstract markup elements.
 signature MARKUP =
 sig
   type T = string * Properties.T
+  val ord: T ord
   val empty: T
   val is_empty: T -> bool
   val properties: Properties.T -> T -> T
@@ -63,11 +64,15 @@ sig
   val labelN: string
   val fileN: string
   val idN: string
+  val interpretedN: string
   val positionN: string val position: T
   val position_properties: string list
   val position_property: Properties.entry -> bool
   val def_name: string -> string
+  val notationN: string val notation: string -> T
+  val notation0: T
   val expressionN: string val expression: string -> T
+  val expression0: T
   val citationN: string val citation: string -> T
   val pathN: string val path: string -> T
   val export_pathN: string val export_path: string -> T
@@ -75,13 +80,14 @@ sig
   val docN: string val doc: string -> T
   val toolN: string val tool: string -> T
   val markupN: string
+  val open_blockN: string
   val consistentN: string
   val unbreakableN: string
   val block_properties: string list
   val indentN: string
   val widthN: string
-  val blockN: string val block: bool -> int -> T
-  val breakN: string val break: int -> int -> T
+  val blockN: string val block: {consistent: bool, indent: int} -> T
+  val breakN: string val break: {width: int, indent: int} -> T
   val fbreakN: string val fbreak: T
   val itemN: string val item: T
   val wordsN: string val words: T
@@ -109,8 +115,11 @@ sig
   val attributeN: string
   val methodN: string
   val method_modifierN: string
+  val tclassN: string val tclass: T
+  val tconstN: string val tconst: T
   val tfreeN: string val tfree: T
   val tvarN: string val tvar: T
+  val constN: string val const: T
   val freeN: string val free: T
   val skolemN: string val skolem: T
   val boundN: string val bound: T
@@ -174,7 +183,8 @@ sig
   val descriptionN: string
   val inputN: string val input: bool -> Properties.T -> T
   val command_keywordN: string val command_keyword: T
-  val command_spanN: string val command_span: {name: string, kind: string} -> T
+  val command_spanN: string val command_span: {name: string, kind: string, is_begin: bool} -> T
+  val command_rangeN: string val command_range: T
   val commandN: string val command_properties: T -> T
   val keywordN: string val keyword_properties: T -> T
   val stringN: string val string: T
@@ -191,13 +201,15 @@ sig
   val comment1N: string val comment1: T
   val comment2N: string val comment2: T
   val comment3N: string val comment3: T
+  val syntaxN: string val syntax_properties: bool -> T -> T
+  val has_syntax: Properties.T -> bool
   val elapsedN: string
   val cpuN: string
   val gcN: string
   val timing_properties: {elapsed: Time.time, cpu: Time.time, gc: Time.time} -> Properties.T
+  val command_offsetN: string val command_offset: int option -> T -> T
   val parse_command_timing_properties:
     Properties.T -> ({file: string, offset: int, name: string} * Time.time) option
-  val timingN: string val timing: {elapsed: Time.time, cpu: Time.time, gc: Time.time} -> T
   val command_indentN: string val command_indent: int -> T
   val goalN: string val goal: T
   val subgoalN: string val subgoal: string -> T
@@ -212,7 +224,9 @@ sig
   val finalizedN: string val finalized: T
   val consolidatingN: string val consolidating: T
   val consolidatedN: string val consolidated: T
+  val command_running: Properties.entry
   val exec_idN: string
+  val urgent_properties: Properties.T
   val initN: string
   val statusN: string val status: T
   val resultN: string val result: T
@@ -252,9 +266,8 @@ sig
   val cancel_scala: string -> Properties.T
   val task_statistics: Properties.entry
   val command_timing: Properties.entry
-  val theory_timing: Properties.entry
   val session_timing: Properties.entry
-  val loading_theory: string -> Properties.T
+  val loading_theory: {name: string, commands: int} -> Properties.T
   val build_session_finished: Properties.T
   val print_operations: Properties.T
   val exportN: string
@@ -276,14 +289,14 @@ sig
   val simp_trace_hintN: string
   val simp_trace_ignoreN: string
   val simp_trace_cancel: serial -> Properties.T
+  val code_presentationN: string
+  val stmt_nameN: string
   type output = Output.output * Output.output
   val no_output: output
-  val add_mode: string -> (T -> output) -> unit
   val output: T -> output
-  val enclose: T -> Output.output -> Output.output
   val markup: T -> string -> string
+  val markup_strings: T -> string list -> string list
   val markups: T list -> string -> string
-  val markup_only: T -> string
   val markup_report: string -> string
 end;
 
@@ -295,6 +308,8 @@ struct
 (* basic markup *)
 
 type T = string * Properties.T;
+
+val ord = prod_ord string_ord Properties.ord;
 
 val empty = ("", []);
 
@@ -416,6 +431,8 @@ val labelN = "label";
 val fileN = "file";
 val idN = "id";
 
+val interpretedN = "interpreted";
+
 val (positionN, position) = markup_elem "position";
 
 val position_properties = [lineN, offsetN, end_offsetN, labelN, fileN, idN];
@@ -434,10 +451,20 @@ fun def_name a =
   | NONE => make_def a);
 
 
+(* notation -- inner syntax clause *)
+
+val notationN = "notation";
+fun notation kind = (notationN, kind_proper kind);
+
+val notation0 = (notationN, []);
+
+
 (* expression *)
 
 val expressionN = "expression";
 fun expression kind = (expressionN, kind_proper kind);
+
+val expression0 = (expressionN, []);
 
 
 (* citation *)
@@ -457,25 +484,26 @@ val (toolN, tool) = markup_string "tool" nameN;
 (* pretty printing *)
 
 val markupN = "markup";
+val open_blockN = "open_block";
 val consistentN = "consistent";
 val unbreakableN = "unbreakable";
 val indentN = "indent";
 
-val block_properties = [markupN, consistentN, unbreakableN, indentN];
+val block_properties = [notationN, markupN, open_blockN, consistentN, unbreakableN, indentN];
 
 val widthN = "width";
 
 val blockN = "block";
-fun block c i =
+fun block {consistent, indent} =
   (blockN,
-    (if c then [(consistentN, Value.print_bool c)] else []) @
-    (if i <> 0 then [(indentN, Value.print_int i)] else []));
+    (if consistent then [(consistentN, Value.print_bool consistent)] else []) @
+    (if indent <> 0 then [(indentN, Value.print_int indent)] else []));
 
 val breakN = "break";
-fun break w i =
+fun break {width, indent} =
   (breakN,
-    (if w <> 0 then [(widthN, Value.print_int w)] else []) @
-    (if i <> 0 then [(indentN, Value.print_int i)] else []));
+    (if width <> 0 then [(widthN, Value.print_int width)] else []) @
+    (if indent <> 0 then [(indentN, Value.print_int indent)] else []));
 
 val (fbreakN, fbreak) = markup_elem "fbreak";
 
@@ -523,8 +551,11 @@ val method_modifierN = "method_modifier";
 
 (* inner syntax *)
 
+val (tclassN, tclass) = markup_elem "tclass";
+val (tconstN, tconst) = markup_elem "tconst";
 val (tfreeN, tfree) = markup_elem "tfree";
 val (tvarN, tvar) = markup_elem "tvar";
+val (constN, const) = markup_elem "const";
 val (freeN, free) = markup_elem "free";
 val (skolemN, skolem) = markup_elem "skolem";
 val (boundN, bound) = markup_elem "bound";
@@ -632,8 +663,12 @@ fun input delimited props = (inputN, (delimitedN, Value.print_bool delimited) ::
 
 val (command_keywordN, command_keyword) = markup_elem "command_keyword";
 
+val is_beginN = "is_begin";
 val command_spanN = "command_span";
-fun command_span {name, kind} : T = (command_spanN, name_proper name @ kind_proper kind);
+fun command_span {name, kind, is_begin} : T =
+  (command_spanN, name_proper name @ kind_proper kind @ Properties.make_bool is_beginN is_begin);
+
+val (command_rangeN, command_range) = markup_elem "command_range";
 
 val commandN = "command"; val command_properties = properties [(kindN, commandN)];
 val keywordN = "keyword"; val keyword_properties = properties [(kindN, keywordN)];
@@ -658,6 +693,19 @@ val (comment2N, comment2) = markup_elem "comment2";
 val (comment3N, comment3) = markup_elem "comment3";
 
 
+(* concrete syntax (notably mixfix notation) *)
+
+val syntaxN = "syntax";
+
+val syntax_elements = [tclassN, tconstN, improperN, constN, freeN, skolemN];
+
+fun syntax_properties syntax (m as (elem, props): T) =
+  if syntax andalso member (op =) syntax_elements elem
+  then (elem, Properties.put (syntaxN, "true") props) else m;
+
+fun has_syntax props = Properties.get_bool props syntaxN;
+
+
 (* timing *)
 
 val elapsedN = "elapsed";
@@ -665,15 +713,17 @@ val cpuN = "cpu";
 val gcN = "gc";
 
 fun timing_properties {elapsed, cpu, gc} =
- [(elapsedN, Value.print_time elapsed),
-  (cpuN, Value.print_time cpu),
-  (gcN, Value.print_time gc)];
-
-val timingN = "timing";
-fun timing t = (timingN, timing_properties t);
+ [(elapsedN, Time.print elapsed),
+  (cpuN, Time.print cpu),
+  (gcN, Time.print gc)];
 
 
 (* command timing *)
+
+val command_offsetN = "command_offset";
+fun command_offset offset =
+  let val i = the_default 0 offset
+  in if i = 0 then I else properties [(command_offsetN, Value.print_int i)] end;
 
 fun parse_command_timing_properties props =
   (case (Properties.get props fileN, Properties.get props offsetN, Properties.get props nameN) of
@@ -709,10 +759,14 @@ val (finalizedN, finalized) = markup_elem "finalized";
 val (consolidatingN, consolidating) = markup_elem "consolidating";
 val (consolidatedN, consolidated) = markup_elem "consolidated";
 
+val command_running = (commandN, runningN);
+
 
 (* messages *)
 
 val exec_idN = "exec_id";
+
+val urgent_properties = [("urgent", "true")];
 
 val initN = "init";
 val (statusN, status) = markup_elem "status";
@@ -784,11 +838,10 @@ val task_statistics = function "task_statistics";
 
 val command_timing = function "command_timing";
 
-val theory_timing = function "theory_timing";
-
 val session_timing = function "session_timing";
 
-fun loading_theory name = [function "loading_theory", (nameN, name)];
+fun loading_theory {name, commands} =
+  [function "loading_theory", (nameN, name), ("commands", Value.print_int commands)];
 
 val build_session_finished = [function "build_session_finished"];
 
@@ -838,38 +891,30 @@ val simp_trace_ignoreN = "simp_trace_ignore";
 fun simp_trace_cancel i = [function "simp_trace_cancel", (serialN, Value.print_int i)];
 
 
+(* code generator *)
 
-(** print mode operations **)
+val code_presentationN = "code_presentation";
+val stmt_nameN = "stmt_name";
+
+
+
+(** output depending on print_mode **)
 
 type output = Output.output * Output.output;
 
 val no_output = ("", "");
 
-local
-  val default = {output = Output_Primitives.markup_fn};
-  val modes = Synchronized.var "Markup.modes" (Symtab.make [("", default)]);
-in
-  fun add_mode name output =
-    Synchronized.change modes (fn tab =>
-      (if not (Symtab.defined tab name) then ()
-       else Output.warning ("Redefining markup mode " ^ quote name);
-       Symtab.update (name, {output = output}) tab));
-  fun get_mode () =
-    the_default default
-      (Library.get_first (Symtab.lookup (Synchronized.value modes)) (print_mode_value ()));
-end;
+fun output m =
+  if not (is_empty m) andalso Print_Mode.PIDE_enabled ()
+  then YXML.output_markup m else no_output;
 
-fun output m = if is_empty m then no_output else #output (get_mode ()) m;
+fun markup m = output m |-> Library.enclose;
 
-val enclose = output #-> Library.enclose;
-
-fun markup m =
-  let val (bg, en) = output m |> apply2 (single #> Output.escape #> implode);
-  in Library.enclose bg en end;
+fun markup_strings m =
+  let val (bg, en) = output m
+  in fn ss => [bg] @ ss @ [en] end;
 
 val markups = fold_rev markup;
-
-fun markup_only m = markup m "";
 
 fun markup_report "" = ""
   | markup_report txt = markup report txt;

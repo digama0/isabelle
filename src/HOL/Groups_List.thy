@@ -57,6 +57,31 @@ proof -
   finally show ?thesis .
 qed
 
+lemma atLeastAtMost_conv_list [code_unfold]:
+  \<open>set.F g {a..b} = list.F (map g (List.interval a b))\<close>
+  by (simp flip: List.set_interval_eq add: distinct_set_conv_list)
+
+lemma atLeastLessThan_conv_list [code_unfold]:
+  \<open>set.F g {a..<b} = (let d = b - 1 in if d < b
+    then list.F (map g (List.interval a d))
+    else \<^bold>1)\<close>
+  using List.atLeastLessThan_eq_interval [of a b]
+  by (simp flip: List.set_interval_eq add: distinct_set_conv_list Let_def)
+
+lemma greaterThanAtMost_conv_list [code_unfold]:
+  \<open>set.F g {a<..b} = (let c = a + 1 in if a < c
+    then list.F (map g (List.interval c b))
+    else \<^bold>1)\<close>
+  using List.greaterThanAtMost_eq_interval [of a b]
+  by (simp flip: List.set_interval_eq add: distinct_set_conv_list Let_def)
+
+lemma greaterThanLessThan_conv_list [code_unfold]:
+  \<open>set.F g {a<..<b} = (let c = a + 1; d = b - 1 in if a < c \<and> d < b
+    then list.F (map g (List.interval (a + 1) (b - 1)))
+    else \<^bold>1)\<close>
+  using List.greaterThanLessThan_eq_interval [of a b]
+  by (simp flip: List.set_interval_eq add: distinct_set_conv_list Let_def)
+
 end
 
 
@@ -70,6 +95,9 @@ defines
   sum_list = sum_list.F ..
 
 end
+
+lemma sum_list_bound: "\<forall>n \<in> set ns. n \<le> k \<Longrightarrow> sum_list ns \<le> k * length ns"
+by (induction ns) auto
 
 context comm_monoid_add
 begin
@@ -97,14 +125,20 @@ qed
 end
 
 text \<open>Some syntactic sugar for summing a function over a list:\<close>
+
+open_bundle sum_list_syntax
+begin
+
 syntax (ASCII)
-  "_sum_list" :: "pttrn => 'a list => 'b => 'b"    ("(3SUM _<-_. _)" [0, 51, 10] 10)
+  "_sum_list" :: "pttrn => 'a list => 'b => 'b"    (\<open>(\<open>indent=3 notation=\<open>binder SUM\<close>\<close>SUM _<-_. _)\<close> [0, 51, 10] 10)
 syntax
-  "_sum_list" :: "pttrn => 'a list => 'b => 'b"    ("(3\<Sum>_\<leftarrow>_. _)" [0, 51, 10] 10)
+  "_sum_list" :: "pttrn => 'a list => 'b => 'b"    (\<open>(\<open>indent=3 notation=\<open>binder \<Sum>\<close>\<close>\<Sum>_\<leftarrow>_. _)\<close> [0, 51, 10] 10)
 syntax_consts
   "_sum_list" == sum_list
 translations \<comment> \<open>Beware of argument permutation!\<close>
   "\<Sum>x\<leftarrow>xs. b" == "CONST sum_list (CONST map (\<lambda>x. b) xs)"
+
+end
 
 context
   includes lifting_syntax
@@ -134,6 +168,15 @@ proof
   finally show "fold plus xs x = sum_list (rev xs) + x"
     .
 qed
+
+lemma sum_list_of_nat: "sum_list (map of_nat xs) = of_nat (sum_list xs)"
+  by (induction xs) auto
+
+lemma sum_list_of_int: "sum_list (map of_int xs) = of_int (sum_list xs)"
+  by (induction xs) auto
+
+lemma count_list_concat: "count_list (concat xss) x = sum_list (map (\<lambda>xs. count_list xs x) xss)"
+by(induction xss) auto
 
 lemma (in comm_monoid_add) sum_list_map_remove1:
   "x \<in> set xs \<Longrightarrow> sum_list (map f xs) = f x + sum_list (map f (remove1 x xs))"
@@ -165,7 +208,7 @@ by(induction xs; simp)
 
 lemma (in comm_monoid_add) distinct_sum_list_conv_Sum:
   "distinct xs \<Longrightarrow> sum_list xs = Sum (set xs)"
-  by (induct xs) simp_all
+  by (metis local.sum.set_conv_list local.sum_list_def map_ident remdups_id_iff_distinct)
 
 lemma sum_list_upt[simp]:
   "m \<le> n \<Longrightarrow> sum_list [m..<n] = \<Sum> {m..<n}"
@@ -175,14 +218,14 @@ context ordered_comm_monoid_add
 begin
 
 lemma sum_list_nonneg: "(\<And>x. x \<in> set xs \<Longrightarrow> 0 \<le> x) \<Longrightarrow> 0 \<le> sum_list xs"
-by (induction xs) auto
+  by (induction xs) auto
 
 lemma sum_list_nonpos: "(\<And>x. x \<in> set xs \<Longrightarrow> x \<le> 0) \<Longrightarrow> sum_list xs \<le> 0"
-by (induction xs) (auto simp: add_nonpos_nonpos)
+  by (induction xs) (auto simp: add_nonpos_nonpos)
 
 lemma sum_list_nonneg_eq_0_iff:
   "(\<And>x. x \<in> set xs \<Longrightarrow> 0 \<le> x) \<Longrightarrow> sum_list xs = 0 \<longleftrightarrow> (\<forall>x\<in> set xs. x = 0)"
-by (induction xs) (simp_all add: add_nonneg_eq_0_iff sum_list_nonneg)
+  by (induction xs) (simp_all add: add_nonneg_eq_0_iff sum_list_nonneg)
 
 end
 
@@ -191,24 +234,29 @@ begin
 
 lemma sum_list_eq_0_iff [simp]:
   "sum_list ns = 0 \<longleftrightarrow> (\<forall>n \<in> set ns. n = 0)"
-by (simp add: sum_list_nonneg_eq_0_iff)
+  by (simp add: sum_list_nonneg_eq_0_iff)
 
 lemma member_le_sum_list:
   "x \<in> set xs \<Longrightarrow> x \<le> sum_list xs"
-by (induction xs) (auto simp: add_increasing add_increasing2)
+  by (induction xs) (auto simp: add_increasing add_increasing2)
 
 lemma elem_le_sum_list:
   "k < size ns \<Longrightarrow> ns ! k \<le> sum_list (ns)"
-by (rule member_le_sum_list) simp
+  by (simp add: member_le_sum_list)
 
 end
 
 lemma (in ordered_cancel_comm_monoid_diff) sum_list_update:
   "k < size xs \<Longrightarrow> sum_list (xs[k := x]) = sum_list xs + x - xs ! k"
-apply(induction xs arbitrary:k)
- apply (auto simp: add_ac split: nat.split)
-apply(drule elem_le_sum_list)
-by (simp add: local.add_diff_assoc local.add_increasing)
+proof (induction xs arbitrary:k)
+  case Nil
+  then show ?case by auto
+next
+  case (Cons a xs)
+  then show ?case
+    apply (simp add: add_ac split: nat.split)
+    using add_increasing diff_add_assoc elem_le_sum_list zero_le by force
+qed
 
 lemma (in monoid_add) sum_list_triv:
   "(\<Sum>x\<leftarrow>xs. r) = of_nat (length xs) * r"
@@ -270,8 +318,7 @@ can be formulated with multisets and the multiset order\<close>
 lemma sum_list_mono2: fixes xs :: "'a ::ordered_comm_monoid_add list"
 shows "\<lbrakk> length xs = length ys; \<And>i. i < length xs \<longrightarrow> xs!i \<le> ys!i \<rbrakk>
   \<Longrightarrow> sum_list xs \<le> sum_list ys"
-apply(induction xs ys rule: list_induct2)
-by(auto simp: nth_Cons' less_Suc_eq_0_disj imp_ex add_mono)
+  by (induction xs ys rule: list_induct2) (auto simp: nth_Cons' less_Suc_eq_0_disj imp_ex add_mono)
 
 lemma (in monoid_add) sum_list_distinct_conv_sum_set:
   "distinct xs \<Longrightarrow> sum_list (map f xs) = sum f (set xs)"
@@ -363,6 +410,29 @@ next
   thus ?case by simp
 qed
 
+(*Note that we also have this for class canonically_ordered_monoid_add*)
+lemma member_le_sum_list:
+  fixes x :: "'a :: ordered_comm_monoid_add"
+  assumes "x \<in> set xs" "\<And>x. x \<in> set xs \<Longrightarrow> x \<ge> 0"
+  shows   "x \<le> sum_list xs"
+  using assms
+proof (induction xs)
+  case (Cons y xs)
+  show ?case
+  proof (cases "y = x")
+    case True
+    have "x + 0 \<le> x + sum_list xs"
+      by (intro add_mono order.refl sum_list_nonneg) (use Cons in auto)
+    thus ?thesis
+      using True by auto
+  next
+    case False
+    have "0 + x \<le> y + sum_list xs"
+      by (intro add_mono Cons.IH Cons.prems) (use Cons.prems False in auto)
+    thus ?thesis
+      by auto
+  qed
+qed auto
 
 subsection \<open>Horner sums\<close>
 
@@ -549,11 +619,11 @@ subsection \<open>Tools setup\<close>
 
 lemmas sum_code = sum.set_conv_list
 
-lemma sum_set_upto_conv_sum_list_int [code_unfold]:
+lemma sum_set_upto_conv_sum_list_int:
   "sum f (set [i..j::int]) = sum_list (map f [i..j])"
   by (simp add: interv_sum_list_conv_sum_set_int)
 
-lemma sum_set_upt_conv_sum_list_nat [code_unfold]:
+lemma sum_set_upt_conv_sum_list_nat:
   "sum f (set [m..<n]) = sum_list (map f [m..<n])"
   by (simp add: interv_sum_list_conv_sum_set_nat)
 
@@ -596,14 +666,19 @@ end
 
 text \<open>Some syntactic sugar:\<close>
 
+open_bundle prod_list_syntax
+begin
+
 syntax (ASCII)
-  "_prod_list" :: "pttrn => 'a list => 'b => 'b"    ("(3PROD _<-_. _)" [0, 51, 10] 10)
+  "_prod_list" :: "pttrn => 'a list => 'b => 'b"    (\<open>(\<open>indent=3 notation=\<open>binder PROD\<close>\<close>PROD _<-_. _)\<close> [0, 51, 10] 10)
 syntax
-  "_prod_list" :: "pttrn => 'a list => 'b => 'b"    ("(3\<Prod>_\<leftarrow>_. _)" [0, 51, 10] 10)
+  "_prod_list" :: "pttrn => 'a list => 'b => 'b"    (\<open>(\<open>indent=3 notation=\<open>binder \<Prod>\<close>\<close>\<Prod>_\<leftarrow>_. _)\<close> [0, 51, 10] 10)
 syntax_consts
   "_prod_list" \<rightleftharpoons> prod_list
 translations \<comment> \<open>Beware of argument permutation!\<close>
   "\<Prod>x\<leftarrow>xs. b" \<rightleftharpoons> "CONST prod_list (CONST map (\<lambda>x. b) xs)"
+
+end
 
 context
   includes lifting_syntax
@@ -620,5 +695,21 @@ end
 lemma prod_list_zero_iff:
   "prod_list xs = 0 \<longleftrightarrow> (0 :: 'a :: {semiring_no_zero_divisors, semiring_1}) \<in> set xs"
   by (induction xs) simp_all
+
+lemma prod_list_nonneg: "(\<And> x. (x :: 'a :: ordered_semiring_1) \<in> set xs \<Longrightarrow> x \<ge> 0) \<Longrightarrow> prod_list xs \<ge> 0"
+  by (induct xs) auto
+
+lemma prod_list_replicate[simp]: "prod_list (replicate n a) = a ^ n"
+  by (induct n) auto
+
+lemma prod_list_power: 
+  fixes xs :: "'a :: comm_monoid_mult list"
+  shows "prod_list xs ^ n = (\<Prod>x\<leftarrow>xs. x ^ n)"
+  by (induct xs, auto simp: power_mult_distrib)
+
+lemma prod_list_dvd: 
+  assumes "(x :: 'a :: comm_monoid_mult) \<in> set xs"
+  shows "x dvd prod_list xs"
+  by (metis assms dvd_mult dvd_triv_left in_set_conv_decomp prod_list.Cons prod_list.append)
 
 end

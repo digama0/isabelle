@@ -26,21 +26,21 @@ text \<open>
 context notes [[inductive_internals]]
 begin
 
-inductive_set rtrancl :: "('a \<times> 'a) set \<Rightarrow> ('a \<times> 'a) set"  ("(_\<^sup>*)" [1000] 999)
+inductive_set rtrancl :: "('a \<times> 'a) set \<Rightarrow> ('a \<times> 'a) set"  (\<open>(\<open>notation=\<open>postfix *\<close>\<close>_\<^sup>*)\<close> [1000] 999)
   for r :: "('a \<times> 'a) set"
   where
     rtrancl_refl [intro!, Pure.intro!, simp]: "(a, a) \<in> r\<^sup>*"
   | rtrancl_into_rtrancl [Pure.intro]: "(a, b) \<in> r\<^sup>* \<Longrightarrow> (b, c) \<in> r \<Longrightarrow> (a, c) \<in> r\<^sup>*"
 
-inductive_set trancl :: "('a \<times> 'a) set \<Rightarrow> ('a \<times> 'a) set"  ("(_\<^sup>+)" [1000] 999)
+inductive_set trancl :: "('a \<times> 'a) set \<Rightarrow> ('a \<times> 'a) set"  (\<open>(\<open>notation=\<open>postfix +\<close>\<close>_\<^sup>+)\<close> [1000] 999)
   for r :: "('a \<times> 'a) set"
   where
     r_into_trancl [intro, Pure.intro]: "(a, b) \<in> r \<Longrightarrow> (a, b) \<in> r\<^sup>+"
   | trancl_into_trancl [Pure.intro]: "(a, b) \<in> r\<^sup>+ \<Longrightarrow> (b, c) \<in> r \<Longrightarrow> (a, c) \<in> r\<^sup>+"
 
 notation
-  rtranclp  ("(_\<^sup>*\<^sup>*)" [1000] 1000) and
-  tranclp  ("(_\<^sup>+\<^sup>+)" [1000] 1000)
+  rtranclp  (\<open>(\<open>notation=\<open>postfix **\<close>\<close>_\<^sup>*\<^sup>*)\<close> [1000] 1000) and
+  tranclp  (\<open>(\<open>notation=\<open>postfix ++\<close>\<close>_\<^sup>+\<^sup>+)\<close> [1000] 1000)
 
 declare
   rtrancl_def [nitpick_unfold del]
@@ -50,19 +50,52 @@ declare
 
 end
 
-abbreviation reflcl :: "('a \<times> 'a) set \<Rightarrow> ('a \<times> 'a) set"  ("(_\<^sup>=)" [1000] 999)
+lemma trancl_incr: "r \<subseteq> r\<^sup>+"
+by auto
+
+abbreviation reflcl :: "('a \<times> 'a) set \<Rightarrow> ('a \<times> 'a) set"  (\<open>(\<open>notation=\<open>postfix =\<close>\<close>_\<^sup>=)\<close> [1000] 999)
   where "r\<^sup>= \<equiv> r \<union> Id"
 
-abbreviation reflclp :: "('a \<Rightarrow> 'a \<Rightarrow> bool) \<Rightarrow> 'a \<Rightarrow> 'a \<Rightarrow> bool"  ("(_\<^sup>=\<^sup>=)" [1000] 1000)
+abbreviation reflclp :: "('a \<Rightarrow> 'a \<Rightarrow> bool) \<Rightarrow> 'a \<Rightarrow> 'a \<Rightarrow> bool"  (\<open>(\<open>notation=\<open>postfix ==\<close>\<close>_\<^sup>=\<^sup>=)\<close> [1000] 1000)
   where "r\<^sup>=\<^sup>= \<equiv> sup r (=)"
 
 notation (ASCII)
-  rtrancl  ("(_^*)" [1000] 999) and
-  trancl  ("(_^+)" [1000] 999) and
-  reflcl  ("(_^=)" [1000] 999) and
-  rtranclp  ("(_^**)" [1000] 1000) and
-  tranclp  ("(_^++)" [1000] 1000) and
-  reflclp  ("(_^==)" [1000] 1000)
+  rtrancl  (\<open>(\<open>notation=\<open>postfix *\<close>\<close>_^*)\<close> [1000] 999) and
+  trancl  (\<open>(\<open>notation=\<open>postfix +\<close>\<close>_^+)\<close> [1000] 999) and
+  reflcl  (\<open>(\<open>notation=\<open>postfix =\<close>\<close>_^=)\<close> [1000] 999) and
+  rtranclp  (\<open>(\<open>notation=\<open>postfix **\<close>\<close>_^**)\<close> [1000] 1000) and
+  tranclp  (\<open>(\<open>notation=\<open>postfix ++\<close>\<close>_^++)\<close> [1000] 1000) and
+  reflclp  (\<open>(\<open>notation=\<open>postfix ==\<close>\<close>_^==)\<close> [1000] 1000)
+
+bundle rtrancl_syntax
+begin
+notation
+  rtrancl  (\<open>(\<open>notation=\<open>postfix *\<close>\<close>_\<^sup>*)\<close> [1000] 999) and
+  rtranclp  (\<open>(\<open>notation=\<open>postfix **\<close>\<close>_\<^sup>*\<^sup>*)\<close> [1000] 1000)
+notation (ASCII)
+  rtrancl  (\<open>(\<open>notation=\<open>postfix *\<close>\<close>_^*)\<close> [1000] 999) and
+  rtranclp  (\<open>(\<open>notation=\<open>postfix **\<close>\<close>_^**)\<close> [1000] 1000)
+end
+
+bundle trancl_syntax
+begin
+notation
+  trancl  (\<open>(\<open>notation=\<open>postfix +\<close>\<close>_\<^sup>+)\<close> [1000] 999) and
+  tranclp  (\<open>(\<open>notation=\<open>postfix ++\<close>\<close>_\<^sup>+\<^sup>+)\<close> [1000] 1000)
+notation (ASCII)
+  trancl  (\<open>(\<open>notation=\<open>postfix +\<close>\<close>_^+)\<close> [1000] 999) and
+  tranclp  (\<open>(\<open>notation=\<open>postfix ++\<close>\<close>_^++)\<close> [1000] 1000)
+end
+
+bundle reflcl_syntax
+begin
+notation
+  reflcl  (\<open>(\<open>notation=\<open>postfix =\<close>\<close>_\<^sup>=)\<close> [1000] 999) and
+  reflclp  (\<open>(\<open>notation=\<open>postfix ==\<close>\<close>_\<^sup>=\<^sup>=)\<close> [1000] 1000)
+notation (ASCII)
+  reflcl  (\<open>(\<open>notation=\<open>postfix =\<close>\<close>_^=)\<close> [1000] 999) and
+  reflclp  (\<open>(\<open>notation=\<open>postfix ==\<close>\<close>_^==)\<close> [1000] 1000)
+end
 
 
 subsection \<open>Reflexive closure\<close>
@@ -405,6 +438,9 @@ proof -
     by (cases p) force
 qed
 
+lemma trancl_mono_subset: "A \<subseteq> B \<Longrightarrow> A^+ \<subseteq> B^+"
+by (blast intro: trancl_mono)
+
 lemma r_into_trancl': "\<And>p. p \<in> r \<Longrightarrow> p \<in> r\<^sup>+"
   by (simp only: split_tupled_all) (erule r_into_trancl)
 
@@ -516,6 +552,19 @@ lemma tranclp_into_tranclp2: "r a b \<Longrightarrow> r\<^sup>+\<^sup>+ b c \<Lo
   by (erule tranclp_trans [OF tranclp.r_into_trancl])
 
 lemmas trancl_into_trancl2 = tranclp_into_tranclp2 [to_set]
+
+lemma trancl_trancl_Un: "(A^+ \<union> B)^+ = (A \<union> B)^+"
+proof
+  show "(A\<^sup>+ \<union> B)\<^sup>+ \<subseteq> (A \<union> B)\<^sup>+"
+    using trancl_id[OF trans_trancl] trancl_incr[of "A \<union> B"]
+      trancl_mono_subset[of A "(A \<union> B)\<^sup>+"] trancl_mono_subset[of "A\<^sup>+ \<union> B" "(A \<union> B)\<^sup>+"]
+    by blast
+  show "(A \<union> B)\<^sup>+ \<subseteq> (A\<^sup>+ \<union> B)\<^sup>+"
+    using trancl_incr[of A] trancl_mono_subset[OF sup_mono] by blast
+qed
+
+lemma trancl_absorb_subset_trancl: "B \<subseteq> A^+ \<Longrightarrow> (A \<union> B)^+ = A^+"
+using trancl_trancl_Un[of A B] sup.order_iff[of B "A\<^sup>+"] by auto
 
 lemma tranclp_converseI:
   assumes "(r\<^sup>+\<^sup>+)\<inverse>\<inverse> x y" shows "(r\<inverse>\<inverse>)\<^sup>+\<^sup>+ x y"
@@ -646,6 +695,9 @@ lemma trancl_empty [simp]: "{}\<^sup>+ = {}"
 lemma rtrancl_empty [simp]: "{}\<^sup>* = Id"
   by (rule subst [OF reflcl_trancl]) simp
 
+lemma rtrancl__Id[simp]: "Id\<^sup>* = Id"
+using rtrancl_empty rtrancl_idemp[of "{}"] by (simp)
+
 lemma rtranclpD: "R\<^sup>*\<^sup>* a b \<Longrightarrow> a = b \<or> a \<noteq> b \<and> R\<^sup>+\<^sup>+ a b"
   by (force simp: reflclp_tranclp [symmetric] simp del: reflclp_tranclp)
 
@@ -659,6 +711,9 @@ lemma trancl_unfold_right: "r\<^sup>+ = r\<^sup>* O r"
 
 lemma trancl_unfold_left: "r\<^sup>+ = r O r\<^sup>*"
   by (auto dest: tranclD intro: rtrancl_into_trancl2)
+
+lemma tranclp_unfold_left: "r^++ = r OO r^**"
+by (auto intro!: ext dest: tranclpD intro: rtranclp_into_tranclp2)
 
 lemma trancl_insert: "(insert (y, x) r)\<^sup>+ = r\<^sup>+ \<union> {(a, b). (a, y) \<in> r\<^sup>* \<and> (x, b) \<in> r\<^sup>*}"
   \<comment> \<open>primitive recursion for \<open>trancl\<close> over finite relations\<close>
@@ -900,6 +955,8 @@ primrec relpowp :: "nat \<Rightarrow> ('a \<Rightarrow> 'a \<Rightarrow> bool) \
 
 end
 
+lemmas relpowp_Suc_right = relpowp.simps(2)
+
 lemma relpowp_relpow_eq [pred_set_conv]:
   "(\<lambda>x y. (x, y) \<in> R) ^^ n = (\<lambda>x y. (x, y) \<in> R ^^ n)" for R :: "'a rel"
   by (induct n) (simp_all add: relcompp_relcomp_eq)
@@ -913,13 +970,13 @@ definition relpowp :: "nat \<Rightarrow> ('a \<Rightarrow> 'a \<Rightarrow> bool
   where relpowp_code_def [code_abbrev]: "relpowp = compow"
 
 lemma [code]:
-  "relpow (Suc n) R = (relpow n R) O R"
   "relpow 0 R = Id"
+  "relpow (Suc n) R = relpow n R O R"
   by (simp_all add: relpow_code_def)
 
 lemma [code]:
-  "relpowp (Suc n) R = (R ^^ n) OO R"
   "relpowp 0 R = HOL.eq"
+  "relpowp (Suc n) R = relpowp n R OO R"
   by (simp_all add: relpowp_code_def)
 
 hide_const (open) relpow
@@ -933,6 +990,10 @@ lemma relpowp_1 [simp]: "P ^^ 1 = P"
   for P :: "'a \<Rightarrow> 'a \<Rightarrow> bool"
   by (fact relpow_1 [to_pred])
 
+lemma relpowp_Suc_0 [simp]: "P ^^ (Suc 0) = P"
+  for P :: "'a \<Rightarrow> 'a \<Rightarrow> bool"
+  by (auto)
+
 lemma relpow_0_I: "(x, x) \<in> R ^^ 0"
   by simp
 
@@ -942,13 +1003,13 @@ lemma relpowp_0_I: "(P ^^ 0) x x"
 lemma relpow_Suc_I: "(x, y) \<in>  R ^^ n \<Longrightarrow> (y, z) \<in> R \<Longrightarrow> (x, z) \<in> R ^^ Suc n"
   by auto
 
-lemma relpowp_Suc_I: "(P ^^ n) x y \<Longrightarrow> P y z \<Longrightarrow> (P ^^ Suc n) x z"
+lemma relpowp_Suc_I[trans]: "(P ^^ n) x y \<Longrightarrow> P y z \<Longrightarrow> (P ^^ Suc n) x z"
   by (fact relpow_Suc_I [to_pred])
 
 lemma relpow_Suc_I2: "(x, y) \<in> R \<Longrightarrow> (y, z) \<in> R ^^ n \<Longrightarrow> (x, z) \<in> R ^^ Suc n"
   by (induct n arbitrary: z) (simp, fastforce)
 
-lemma relpowp_Suc_I2: "P x y \<Longrightarrow> (P ^^ n) y z \<Longrightarrow> (P ^^ Suc n) x z"
+lemma relpowp_Suc_I2[trans]: "P x y \<Longrightarrow> (P ^^ n) y z \<Longrightarrow> (P ^^ Suc n) x z"
   by (fact relpow_Suc_I2 [to_pred])
 
 lemma relpow_0_E: "(x, y) \<in> R ^^ 0 \<Longrightarrow> (x = y \<Longrightarrow> P) \<Longrightarrow> P"
@@ -1034,6 +1095,11 @@ next
   qed
 qed
 
+lemma relpowp_mono:
+  fixes x y :: 'a
+  shows "(\<And>x y. R x y \<Longrightarrow> S x y) \<Longrightarrow> (R ^^ n) x y \<Longrightarrow> (S ^^ n) x y"
+by (induction n arbitrary: y) auto
+
 lemma relpow_trans[trans]: "(x, y) \<in> R ^^ i \<Longrightarrow> (y, z) \<in> R ^^ j \<Longrightarrow> (x, z) \<in> R ^^ (i + j)"
   using relpowp_trans[to_set] .
 
@@ -1106,6 +1172,9 @@ lemma relpow_commute: "R O R ^^ n = R ^^ n O R"
 
 lemma relpowp_commute: "P OO P ^^ n = P ^^ n OO P"
   by (fact relpow_commute [to_pred])
+
+lemma relpowp_Suc_left: "R ^^ Suc n = R OO (R ^^ n)"
+by (simp add: relpowp_commute)
 
 lemma relpow_empty: "0 < n \<Longrightarrow> ({} :: ('a \<times> 'a) set) ^^ n = {}"
   by (cases n) auto
@@ -1530,11 +1599,11 @@ structure Tranclp_Tac = Trancl_Tac
 \<close>
 
 setup \<open>
-  map_theory_simpset (fn ctxt => ctxt
-    addSolver (mk_solver "Trancl" Trancl_Tac.trancl_tac)
-    addSolver (mk_solver "Rtrancl" Trancl_Tac.rtrancl_tac)
-    addSolver (mk_solver "Tranclp" Tranclp_Tac.trancl_tac)
-    addSolver (mk_solver "Rtranclp" Tranclp_Tac.rtrancl_tac))
+  Simplifier.map_theory_simpset
+    (Simplifier.add_unsafe_solver (Simplifier.mk_solver "Trancl" Trancl_Tac.trancl_tac)
+    #> Simplifier.add_unsafe_solver (Simplifier.mk_solver "Rtrancl" Trancl_Tac.rtrancl_tac)
+    #> Simplifier.add_unsafe_solver (Simplifier.mk_solver "Tranclp" Tranclp_Tac.trancl_tac)
+    #> Simplifier.add_unsafe_solver (Simplifier.mk_solver "Rtranclp" Tranclp_Tac.rtrancl_tac))
 \<close>
 
 lemma transp_rtranclp [simp]: "transp R\<^sup>*\<^sup>*"

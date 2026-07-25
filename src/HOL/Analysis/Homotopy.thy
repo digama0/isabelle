@@ -8,6 +8,85 @@ theory Homotopy
   imports Path_Connected Product_Topology Uncountable_Sets
 begin
 
+lemma finite_frontier_interval_real:
+  fixes S :: "real set"
+  assumes "is_interval S"
+  shows "finite (frontier S) \<and> card (frontier S) \<le> 2"
+proof (cases "interior S = {}")
+  case True
+  \<comment> \<open>A convex real set with empty interior is either empty or a singleton.\<close>
+  have "S = {} \<or> (\<exists>a. S = {a})"
+  proof (cases "S = {}")
+    case False
+    then obtain x where xs: "x \<in> S" by auto
+    have "S = {x}"
+    proof (rule ccontr)
+      assume "S \<noteq> {x}"
+      then obtain y where ys: "y \<in> S" and yx: "y \<noteq> x" using xs by blast
+      have convS: "convex S" using assms is_interval_convex by blast
+      then obtain a b where ab: "a < b" "{a..b} \<subseteq> S"
+        by (meson atMostAtLeast_subset_convex linorder_less_linear xs ys yx)
+      then have "{a <..< b} \<subseteq> interior S"
+        using interior_atLeastAtMost_real interior_mono by blast
+      moreover have "{a <..< b} \<noteq> {}" using ab(1) by auto
+      ultimately show False using True by auto
+    qed
+    then show ?thesis by auto
+  qed auto
+  then show "finite (frontier S) \<and> card (frontier S) \<le> 2" by (auto simp: frontier_def)
+next
+  \<comment> \<open>Interior is nonempty.  Any point of the frontier that lies strictly between
+    two points of the closure must be in the interior (by convexity), so cannot
+    be a frontier point.  This limits the frontier to at most 2 elements.\<close>
+  case False
+  then obtain c where c_int: "c \<in> interior S" by blast
+  have convS: "convex S" using assms is_interval_convex_1 by blast
+  show ?thesis
+  proof (rule ccontr)
+    assume inf: "\<not> ?thesis"
+    \<comment> \<open>An infinite set of reals contains at least 3 distinct points, and among any
+      3 reals we can pick a middle one.\<close>
+    then consider "infinite (frontier S)" | "card (frontier S) \<ge> 3"
+      by linarith
+    then obtain F where "finite F" "F \<subseteq> frontier S" "card F = 3"
+      by (meson infinite_arbitrarily_large obtain_subset_with_card_n)
+    then obtain x y z where "x \<in> F" "y \<in> F" "z \<in> F" "x<y" "y<z"
+      apply (simp add: eval_nat_numeral card_Suc_eq)
+      by (metis antisym insert_subset linorder_not_le order.refl)
+    \<comment> \<open>@{term y} lies in the open segment from some interior point to a closure point,
+      hence in the interior — contradiction.\<close>
+    have y_cls: "y \<in> closure S" and y_nint: "y \<notin> interior S"
+      using \<open>F \<subseteq> frontier S\<close> \<open>y \<in> F\<close> frontier_def by auto
+    have x_cls: "x \<in> closure S"
+      using \<open>F \<subseteq> frontier S\<close> \<open>x \<in> F\<close> frontier_def by auto
+    have z_cls: "z \<in> closure S"
+      using \<open>F \<subseteq> frontier S\<close> \<open>z \<in> F\<close> frontier_def by auto
+    \<comment> \<open>Use the interior point @{term c} and one of @{term x}, @{term z} to trap @{term y}.\<close>
+    have "y \<in> interior S"
+    proof (cases "c \<le> y")
+      case True
+      \<comment> \<open>@{term \<open>c \<le> y\<close>} and @{term \<open>y < z\<close>}, so @{term \<open>y \<in> open_segment c z\<close>} @{text "\<subseteq> interior S"}.\<close>
+      have "c < y" using True
+        using c_int less_eq_real_def y_nint by blast
+      have "open_segment c z \<subseteq> interior S"
+        by (rule in_interior_closure_convex_segment[OF convS c_int z_cls])
+      moreover have "y \<in> open_segment c z"
+        using \<open>c < y\<close> \<open>y < z\<close> open_segment_eq_real_ivl by auto
+      ultimately show ?thesis by auto
+    next
+      case False
+      \<comment> \<open>@{term \<open>x < y\<close>} and @{term \<open>y < c\<close>}, so @{term \<open>y \<in> open_segment x c\<close>}.
+        But @{term \<open>open_segment c x\<close>} = @{term \<open>open_segment x c\<close>} @{text "\<subseteq> interior S"}.\<close>
+      have "open_segment c x \<subseteq> interior S"
+        by (rule in_interior_closure_convex_segment[OF convS c_int x_cls])
+      moreover have "y \<in> open_segment c x"
+        using \<open>x < y\<close> False open_segment_eq_real_ivl by auto
+      ultimately show ?thesis by auto
+    qed
+    with y_nint show False by contradiction
+  qed
+qed
+
 definition\<^marker>\<open>tag important\<close> homotopic_with
 where
  "homotopic_with P X Y f g \<equiv>
@@ -116,21 +195,21 @@ proof (intro exI conjI allI ballI)
     by (cases "t = 1") (simp_all add: assms)
 qed auto
 
-lemma homotopic_with_imp_subset1:
-     "homotopic_with_canon P X Y f g \<Longrightarrow> f ` X \<subseteq> Y"
-  by (meson continuous_map_subtopology_eu homotopic_with_imp_continuous_maps)
-
-lemma homotopic_with_imp_subset2:
-     "homotopic_with_canon P X Y f g \<Longrightarrow> g ` X \<subseteq> Y"
-  by (meson continuous_map_subtopology_eu homotopic_with_imp_continuous_maps)
-
 lemma homotopic_with_imp_funspace1:
      "homotopic_with_canon P X Y f g \<Longrightarrow> f \<in> X \<rightarrow> Y"
-  using homotopic_with_imp_subset1 by blast
+  using homotopic_with_imp_continuous_maps by fastforce
+
+lemma homotopic_with_imp_subset1:
+     "homotopic_with_canon P X Y f g \<Longrightarrow> f ` X \<subseteq> Y"
+  using homotopic_with_imp_funspace1 by blast
 
 lemma homotopic_with_imp_funspace2:
      "homotopic_with_canon P X Y f g \<Longrightarrow> g \<in> X \<rightarrow> Y"
-  using homotopic_with_imp_subset2 by blast
+  using homotopic_with_imp_continuous_maps by force
+
+lemma homotopic_with_imp_subset2:
+     "homotopic_with_canon P X Y f g \<Longrightarrow> g ` X \<subseteq> Y"
+  using homotopic_with_imp_funspace2 by blast
 
 lemma homotopic_with_subset_left:
      "\<lbrakk>homotopic_with_canon P X Y f g; Z \<subseteq> X\<rbrakk> \<Longrightarrow> homotopic_with_canon P Z Y f g"
@@ -485,10 +564,11 @@ lemma homotopic_paths_imp_path:
 
 lemma homotopic_paths_imp_subset:
      "homotopic_paths S p q \<Longrightarrow> path_image p \<subseteq> S \<and> path_image q \<subseteq> S"
-  by (metis (mono_tags) continuous_map_subtopology_eu homotopic_paths_def homotopic_with_imp_continuous_maps path_image_def)
+  by (simp add: homotopic_paths_def homotopic_with_imp_subset1 homotopic_with_imp_subset2
+      path_image_def)
 
 proposition homotopic_paths_refl [simp]: "homotopic_paths S p p \<longleftrightarrow> path p \<and> path_image p \<subseteq> S"
-  by (simp add: homotopic_paths_def path_def path_image_def)
+  by (auto simp add: homotopic_paths_def path_def path_image_def)
 
 proposition homotopic_paths_sym: "homotopic_paths S p q \<Longrightarrow> homotopic_paths S q p"
   by (metis (mono_tags) homotopic_paths_def homotopic_paths_imp_pathfinish homotopic_paths_imp_pathstart homotopic_with_symD)
@@ -684,7 +764,7 @@ definition\<^marker>\<open>tag important\<close> homotopic_loops :: "'a::topolog
 lemma homotopic_loops:
    "homotopic_loops S p q \<longleftrightarrow>
       (\<exists>h. continuous_on ({0..1::real} \<times> {0..1}) h \<and>
-          image h ({0..1} \<times> {0..1}) \<subseteq> S \<and>
+          h \<in> ({0..1} \<times> {0..1}) \<rightarrow> S \<and>
           (\<forall>x \<in> {0..1}. h(0,x) = p x) \<and>
           (\<forall>x \<in> {0..1}. h(1,x) = q x) \<and>
           (\<forall>t \<in> {0..1}. pathfinish(h \<circ> Pair t) = pathstart(h \<circ> Pair t)))"
@@ -702,12 +782,13 @@ proposition homotopic_loops_imp_path:
 proposition homotopic_loops_imp_subset:
      "homotopic_loops S p q \<Longrightarrow> path_image p \<subseteq> S \<and> path_image q \<subseteq> S"
   unfolding homotopic_loops_def path_image_def
-  by (meson continuous_map_subtopology_eu homotopic_with_imp_continuous_maps)
+  by (simp add: homotopic_with_imp_subset1 homotopic_with_imp_subset2)
 
 proposition homotopic_loops_refl:
      "homotopic_loops S p p \<longleftrightarrow>
       path p \<and> path_image p \<subseteq> S \<and> pathfinish p = pathstart p"
-  by (simp add: homotopic_loops_def path_image_def path_def)
+  by (metis (mono_tags, lifting) homotopic_loops_def homotopic_paths_def
+      homotopic_paths_refl homotopic_with_refl)
 
 proposition homotopic_loops_sym: "homotopic_loops S p q \<Longrightarrow> homotopic_loops S q p"
   by (simp add: homotopic_loops_def homotopic_with_sym)
@@ -726,8 +807,9 @@ proposition homotopic_loops_subset:
 proposition homotopic_loops_eq:
    "\<lbrakk>path p; path_image p \<subseteq> S; pathfinish p = pathstart p; \<And>t. t \<in> {0..1} \<Longrightarrow> p(t) = q(t)\<rbrakk>
           \<Longrightarrow> homotopic_loops S p q"
-  unfolding homotopic_loops_def path_image_def path_def pathstart_def pathfinish_def
-  by (auto intro: homotopic_with_eq [OF homotopic_with_refl [where f = p, THEN iffD2]])
+  unfolding homotopic_loops_def path_image_def path_def pathstart_def pathfinish_def image_subset_iff_funcset
+  using homotopic_with_eq [OF homotopic_with_refl [where f = p, THEN iffD2]]
+  by fastforce
 
 proposition homotopic_loops_continuous_image:
    "\<lbrakk>homotopic_loops S f g; continuous_on S h; h \<in> S \<rightarrow> t\<rbrakk> \<Longrightarrow> homotopic_loops t (h \<circ> f) (h \<circ> g)"
@@ -1247,7 +1329,7 @@ proof -
       using p1 p2 unfolding homotopic_loops
       apply clarify
       subgoal for h k
-        by (rule_tac x="\<lambda>z. (h z, k z)" in exI) (force intro: continuous_intros simp: path_defs)
+        by (rule_tac x="\<lambda>z. (h z, k z)" in exI) (auto intro: continuous_intros simp: path_defs)
       done
   qed
   with assms show ?thesis
@@ -1451,6 +1533,168 @@ lemma is_interval_simply_connected_1:
   fixes S :: "real set"
   shows "is_interval S \<longleftrightarrow> simply_connected S"
   by (meson convex_imp_simply_connected is_interval_connected_1 is_interval_convex_1 simply_connected_imp_connected)
+
+
+subsection \<open>The slotted complex plane\<close>
+
+lemma closed_slot_left: "closed (complex_of_real ` {..c})"
+  by (intro closed_injective_linear_image) (auto simp: inj_def)
+
+lemma closed_slot_right: "closed (complex_of_real ` {c..})"
+  by (intro closed_injective_linear_image) (auto simp: inj_def)
+
+lemma complex_slot_left_eq: "complex_of_real ` {..c} = {z. Re z \<le> c \<and> Im z = 0}"
+  by (auto simp: image_iff complex_eq_iff)
+
+lemma complex_slot_right_eq: "complex_of_real ` {c..} = {z. Re z \<ge> c \<and> Im z = 0}"
+  by (auto simp: image_iff complex_eq_iff)
+
+lemma complex_double_slot_eq:
+  "complex_of_real ` ({..c1} \<union> {c2..}) = {z. Im z = 0 \<and> (Re z \<le> c1 \<or> Re z \<ge> c2)}"
+  by (auto simp: image_iff complex_eq_iff)
+
+lemma starlike_slotted_complex_plane_left_aux:
+  assumes z: "z \<in> -(complex_of_real ` {..c})" and c: "c < c'"
+  shows   "closed_segment (complex_of_real c') z \<subseteq> -(complex_of_real ` {..c})"
+proof -
+  show "closed_segment c' z \<subseteq> -of_real ` {..c}"
+  proof (cases "Im z = 0")
+    case True
+    thus ?thesis using z c
+      by (auto simp: closed_segment_same_Im closed_segment_eq_real_ivl complex_slot_left_eq)
+  next
+    case False
+    show ?thesis
+    proof
+      fix x assume x: "x \<in> closed_segment (of_real c') z"
+      consider "x = of_real c'" | "x = z" | "x \<in> open_segment (of_real c') z"
+        unfolding open_segment_def using x by blast
+      thus "x \<in> -complex_of_real ` {..c}"
+      proof cases
+        assume "x \<in> open_segment (of_real c') z"
+        hence "Im x \<in> open_segment (Im (complex_of_real c')) (Im z)"
+          by (intro in_open_segment_imp_Im_in_open_segment) (use False in auto)
+        hence "Im x \<noteq> 0"
+          by (auto simp: open_segment_eq_real_ivl split: if_splits)
+        thus ?thesis
+          by (auto simp: complex_slot_right_eq)
+      qed (use z c in \<open>auto simp: complex_slot_left_eq\<close>)
+    qed
+  qed
+qed
+
+lemma starlike_slotted_complex_plane_left: "starlike (-(complex_of_real ` {..c}))"
+  unfolding starlike_def
+proof (rule bexI[of _ "of_real c + 1"]; (intro ballI)?)
+  show "complex_of_real c + 1 \<in> -complex_of_real ` {..c}"
+    by (auto simp: complex_eq_iff)
+  show "closed_segment (complex_of_real c + 1) z \<subseteq> - complex_of_real ` {..c}"
+    if "z \<in> - complex_of_real ` {..c}" for z
+    using starlike_slotted_complex_plane_left_aux[OF that, of "c + 1"] by simp
+qed
+
+
+lemma starlike_slotted_complex_plane_right_aux:
+  assumes z: "z \<in> -(complex_of_real ` {c..})" and c: "c > c'"
+  shows   "closed_segment (complex_of_real c') z \<subseteq> -(complex_of_real ` {c..})"
+proof -
+  show "closed_segment c' z \<subseteq> -of_real ` {c..}"
+  proof (cases "Im z = 0")
+    case True
+    thus ?thesis using z c
+      by (auto simp: closed_segment_same_Im closed_segment_eq_real_ivl complex_slot_right_eq)
+  next
+    case False
+    show ?thesis
+    proof
+      fix x assume x: "x \<in> closed_segment (of_real c') z"
+      consider "x = of_real c'" | "x = z" | "x \<in> open_segment (of_real c') z"
+        unfolding open_segment_def using x by blast
+      thus "x \<in> -complex_of_real ` {c..}"
+      proof cases
+        assume "x \<in> open_segment (of_real c') z"
+        hence "Im x \<in> open_segment (Im (complex_of_real c')) (Im z)"
+          by (intro in_open_segment_imp_Im_in_open_segment) (use False in auto)
+        hence "Im x \<noteq> 0"
+          by (auto simp: open_segment_eq_real_ivl split: if_splits)
+        thus ?thesis
+          by (auto simp: complex_slot_right_eq)
+      qed (use z c in \<open>auto simp: complex_slot_right_eq\<close>)
+    qed
+  qed
+qed
+
+lemma starlike_slotted_complex_plane_right: "starlike (-(complex_of_real ` {c..}))"
+  unfolding starlike_def
+proof (rule bexI[of _ "of_real c - 1"]; (intro ballI)?)
+  show "complex_of_real c - 1 \<in> -complex_of_real ` {c..}"
+    by (auto simp: complex_eq_iff)
+  show "closed_segment (complex_of_real c - 1) z \<subseteq> - complex_of_real ` {c..}"
+    if "z \<in> - complex_of_real ` {c..}" for z
+    using starlike_slotted_complex_plane_right_aux[OF that, of "c - 1"] by simp
+qed
+
+
+lemma starlike_doubly_slotted_complex_plane_aux:
+  assumes z: "z \<in> -(complex_of_real ` ({..c1} \<union> {c2..}))" and c: "c1 < c" "c < c2"
+  shows   "closed_segment (complex_of_real c) z \<subseteq> -(complex_of_real ` ({..c1} \<union> {c2..}))"
+proof -
+  show "closed_segment c z \<subseteq> -of_real ` ({..c1} \<union> {c2..})"
+  proof (cases "Im z = 0")
+    case True
+    thus ?thesis using z c
+      by (auto simp: closed_segment_same_Im closed_segment_eq_real_ivl complex_double_slot_eq)
+  next
+    case False
+    show ?thesis
+    proof
+      fix x assume x: "x \<in> closed_segment (of_real c) z"
+      consider "x = of_real c" | "x = z" | "x \<in> open_segment (of_real c) z"
+        unfolding open_segment_def using x by blast
+      thus "x \<in> -complex_of_real ` ({..c1} \<union> {c2..})"
+      proof cases
+        assume "x \<in> open_segment (of_real c) z"
+        hence "Im x \<in> open_segment (Im (complex_of_real c)) (Im z)"
+          by (intro in_open_segment_imp_Im_in_open_segment) (use False in auto)
+        hence "Im x \<noteq> 0"
+          by (auto simp: open_segment_eq_real_ivl split: if_splits)
+        thus ?thesis
+          by (auto simp: complex_slot_right_eq)
+      qed (use z c in \<open>auto simp: complex_slot_right_eq\<close>)
+    qed
+  qed
+qed
+
+lemma starlike_doubly_slotted_complex_plane:
+  assumes "c1 < c2"
+  shows   "starlike (-(complex_of_real ` ({..c1} \<union> {c2..})))"
+proof -
+  from assms obtain c where c: "c1 < c" "c < c2"
+    using dense by blast
+  show ?thesis
+    unfolding starlike_def
+  proof (rule bexI[of _ "of_real c"]; (intro ballI)?)
+    show "complex_of_real c \<in> -complex_of_real ` ({..c1} \<union> {c2..})"
+      using c by (auto simp: complex_eq_iff)
+    show "closed_segment (complex_of_real c) z \<subseteq> - complex_of_real ` ({..c1} \<union> {c2..})"
+      if "z \<in> - complex_of_real ` ({..c1} \<union> {c2..})" for z
+      using starlike_doubly_slotted_complex_plane_aux[OF that, of c] c by simp
+  qed
+qed
+
+lemma simply_connected_slotted_complex_plane_left:
+  "simply_connected (-(complex_of_real ` {..c}))"
+  by (intro starlike_imp_simply_connected starlike_slotted_complex_plane_left)
+
+lemma simply_connected_slotted_complex_plane_right:
+  "simply_connected (-(complex_of_real ` {c..}))"
+  by (intro starlike_imp_simply_connected starlike_slotted_complex_plane_right)
+
+lemma simply_connected_doubly_slotted_complex_plane:
+  "c1 < c2 \<Longrightarrow> simply_connected (-(complex_of_real ` ({..c1} \<union> {c2..})))"
+  by (intro starlike_imp_simply_connected starlike_doubly_slotted_complex_plane)
+
+subsection \<open>Contractible sets\<close>
 
 lemma contractible_empty [simp]: "contractible {}"
   by (simp add: contractible_def homotopic_on_emptyI)
@@ -2101,6 +2345,157 @@ proof -
     by (auto simp: locally_compact_Int_cball)
 qed
 
+lemma locally_compact_diff_finite:
+  fixes S :: "'a :: t1_space set"
+  assumes "locally compact S" "finite T"
+  shows "locally compact (S - T)"
+  using assms(2,1)
+proof (induction T arbitrary: S)
+  case empty
+  then show ?case 
+    by auto
+next
+  case (insert x T)
+  then have "locally compact (S - {x})"
+    using locally_compact_delete by blast
+  then show ?case
+    by (metis Diff_insert2 local.insert(3))
+qed
+
+lemma interval_contains_compact_neighbourhood:
+  fixes S :: "'a::euclidean_space set"
+  assumes "is_interval S" "x \<in> S"
+  shows "\<exists>a b d. 0 < d \<and> x \<in> cbox a b \<and> cbox a b \<subseteq> S \<and> ball x d \<inter> S \<subseteq> cbox a b"
+proof -
+  have claim_lo: "\<And>i. i \<in> Basis \<Longrightarrow>
+    \<exists>a. (\<exists>y\<in>S. y \<bullet> i = a) \<and> (a < x \<bullet> i \<or> a = x \<bullet> i \<and> (\<forall>y\<in>S. a \<le> y \<bullet> i))"
+    by (metis \<open>x \<in> S\<close> leI)
+  then obtain lo where lo: "\<And>i. i \<in> Basis \<Longrightarrow>
+    (\<exists>y\<in>S. y \<bullet> i = lo i) \<and> (lo i < x \<bullet> i \<or> lo i = x \<bullet> i \<and> (\<forall>y\<in>S. lo i \<le> y \<bullet> i))"
+    by metis
+  have claim_hi: "\<And>i. i \<in> Basis \<Longrightarrow>
+    \<exists>b. (\<exists>y\<in>S. y \<bullet> i = b) \<and> (x \<bullet> i < b \<or> b = x \<bullet> i \<and> (\<forall>y\<in>S. y \<bullet> i \<le> b))"
+    by (metis \<open>x \<in> S\<close> leI)
+  then obtain hi where hi: "\<And>i. i \<in> Basis \<Longrightarrow>
+    (\<exists>y\<in>S. y \<bullet> i = hi i) \<and> (hi i > x \<bullet> i \<or> hi i = x \<bullet> i \<and> (\<forall>y\<in>S. y \<bullet> i \<le> hi i))"
+    by metis
+  define a where "a = (\<Sum>i\<in>Basis. lo i *\<^sub>R i)"
+  define b where "b = (\<Sum>i\<in>Basis. hi i *\<^sub>R i)"
+  define dl where "dl = Min ((\<lambda>i. if a \<bullet> i < x \<bullet> i then x \<bullet> i - a \<bullet> i else 1) ` Basis)"
+  define dh where "dh = Min ((\<lambda>i. if x \<bullet> i < b \<bullet> i then b \<bullet> i - x \<bullet> i else 1) ` Basis)"
+  define d where "d = min dl dh"
+  have dl_pos: "0 < dl"
+    unfolding dl_def using  obtains_MIN [OF finite_Basis nonempty_Basis]
+    by (smt (verit) diff_gt_0_iff_gt zero_less_one)
+  have dh_pos: "0 < dh"
+    unfolding dh_def using  obtains_MIN [OF finite_Basis nonempty_Basis]
+    by (smt (verit) diff_gt_0_iff_gt zero_less_one)
+  have d_pos: "0 < d"
+    unfolding d_def using dl_pos dh_pos by auto
+  have x_in_box: "x \<in> cbox a b"
+    unfolding mem_box
+    using a_def b_def hi lo by fastforce
+  have a_in_s: "a \<in> S"
+    using lo a_def image_iff
+    by (intro mem_box_componentwiseI [OF \<open>is_interval S\<close>]) (fastforce simp: a_def image_iff)
+  have b_in_s: "b \<in> S"
+    using hi a_def image_iff
+    by (intro mem_box_componentwiseI [OF \<open>is_interval S\<close>]) (fastforce simp: b_def image_iff)
+  have box_sub: "cbox a b \<subseteq> S"
+    using interval_subset_is_interval[OF assms(1)] a_in_s b_in_s x_in_box
+    by (auto simp: mem_box)
+  have ball_sub: "ball x d \<inter> S \<subseteq> cbox a b"
+  proof (intro subsetI)
+    fix y assume "y \<in> ball x d \<inter> S"
+    then have y_in: "y \<in> S" and y_ball: "dist x y < d"
+      by auto
+    have dist_coord: "\<bar>x \<bullet> i - y \<bullet> i\<bar> < d" if "i \<in> Basis" for i
+      using Euclidean_dist_upper[OF that, of x y] y_ball
+      by (auto simp: dist_real_def)
+    have lo_bound: "a \<bullet> i \<le> y \<bullet> i" if "i \<in> Basis" for i
+    proof (cases "a \<bullet> i < x \<bullet> i")
+      case True
+      then have "d \<le> x \<bullet> i - a \<bullet> i"
+        unfolding d_def dl_def using that finite_Basis
+        by (simp add: min_le_iff_disj)
+      then show ?thesis using dist_coord[OF that] by linarith
+    next
+      case False
+      then show ?thesis using lo that y_in by (force simp: a_def)
+    qed
+    have hi_bound: "y \<bullet> i \<le> b \<bullet> i" if "i \<in> Basis" for i
+    proof (cases "x \<bullet> i < b \<bullet> i")
+      case True
+      then have "d \<le> b \<bullet> i - x \<bullet> i"
+        unfolding d_def dh_def using that finite_Basis
+        by (simp add: min_le_iff_disj)
+      then show ?thesis using dist_coord[OF that] by linarith
+    next
+      case False then show ?thesis using hi that y_in by (force simp: b_def)
+    qed
+    show "y \<in> cbox a b"
+      unfolding mem_box using lo_bound hi_bound by auto
+  qed
+  show ?thesis
+    using d_pos x_in_box box_sub ball_sub
+    by (intro exI[of _ a] exI[of _ b] exI[of _ d]) auto
+qed
+
+lemma is_interval_locally_compact_interval:
+  fixes S :: "'a::euclidean_space set"
+  assumes "is_interval S"
+  shows "locally (\<lambda>k. \<exists>a b. k = cbox a b) S"
+proof (clarsimp simp: locally_def)
+  fix W x
+  assume ow: "openin (top_of_set S) W" and xw: "x \<in> W"
+  then obtain t where "open t" and wst: "W = S \<inter> t"
+    by (auto simp: openin_open)
+  then have "x \<in> S" "x \<in> t" using xw by auto
+  obtain a b e where "0 < e" "x \<in> cbox a b" "cbox a b \<subseteq> S" and ab: "ball x e \<inter> S \<subseteq> cbox a b"
+    using interval_contains_compact_neighbourhood[OF assms \<open>x \<in> S\<close>] by blast
+  obtain c d where "x \<in> box c d" "cbox c d \<subseteq> t" "\<forall>i\<in>Basis. c \<bullet> i < d \<bullet> i"
+    using open_contains_cbox[OF \<open>open t\<close> \<open>x \<in> t\<close>] by metis
+  \<comment> \<open>The three witnesses\<close>
+  define U where "U = S \<inter> ball x e \<inter> box c d"
+  define V where "V = cbox a b \<inter> cbox c d"
+  have U_open: "openin (top_of_set S) U"
+    unfolding U_def Int_assoc
+    by (intro openin_open_Int open_Int open_ball open_box)
+  have V_cbox: "\<exists>a' b'. V = cbox a' b'"
+    unfolding V_def Int_interval by blast
+  have xU: "x \<in> U"
+    unfolding U_def using \<open>x \<in> S\<close> \<open>0 < e\<close> \<open>x \<in> box c d\<close> by auto
+  have UV: "U \<subseteq> V"
+    using ab box_subset_cbox by (force simp: U_def V_def)
+  have Vw: "V \<subseteq> W"
+    using \<open>cbox a b \<subseteq> S\<close> \<open>cbox c d \<subseteq> t\<close> wst by (force simp: V_def)
+  show "\<exists>U. openin (top_of_set S) U \<and>
+               (\<exists>V. (\<exists>a b. V = cbox a b) \<and> x \<in> U \<and> U \<subseteq> V \<and> V \<subseteq> W)"
+    using U_open V_cbox xU UV Vw by blast
+qed
+
+lemma is_interval_imp_locally_compact:
+  fixes S :: "real set"
+  assumes "is_interval S"
+  shows "locally compact S"
+proof -
+  have "closed (closure S)" by simp
+  then have lc: "locally compact (closure S)"
+    by (rule closed_imp_locally_compact)
+  have "S = closure S - (frontier S - S)"
+  proof
+    show "S \<subseteq> closure S - (frontier S - S)"
+      using closure_subset by auto
+    show "closure S - (frontier S - S) \<subseteq> S"
+      unfolding frontier_def
+      using interior_subset by fastforce
+  qed
+  moreover have "finite (frontier S - S)"
+    using finite_frontier_interval_real[OF assms] by (auto intro: finite_subset)
+  ultimately show ?thesis
+    using locally_compact_diff_finite[OF lc] by metis
+qed
+
 lemma locally_compact_Times:
   fixes S :: "'a::euclidean_space set" and T :: "'b::euclidean_space set"
   shows "\<lbrakk>locally compact S; locally compact T\<rbrakk> \<Longrightarrow> locally compact (S \<times> T)"
@@ -2143,7 +2538,6 @@ next
     unfolding locally_compact_compact
     by (metis open_openin openin_topspace subtopology_superset top.extremum topspace_euclidean_subtopology)
 qed
-
 
 subsection\<open>Sura-Bura's results about compact components of sets\<close>
 
@@ -3340,7 +3734,7 @@ subsection\<open>Homotopy equivalence\<close>
 subsection\<open>Homotopy equivalence of topological spaces.\<close>
 
 definition\<^marker>\<open>tag important\<close> homotopy_equivalent_space
-             (infix "homotopy'_equivalent'_space" 50)
+             (infix \<open>homotopy'_equivalent'_space\<close> 50)
   where "X homotopy_equivalent_space Y \<equiv>
         (\<exists>f g. continuous_map X Y f \<and>
               continuous_map Y X g \<and>
@@ -3781,12 +4175,14 @@ qed
 
 
 abbreviation\<^marker>\<open>tag important\<close> homotopy_eqv :: "'a::topological_space set \<Rightarrow> 'b::topological_space set \<Rightarrow> bool"
-             (infix "homotopy'_eqv" 50)
+             (infix \<open>homotopy'_eqv\<close> 50)
   where "S homotopy_eqv T \<equiv> top_of_set S homotopy_equivalent_space top_of_set T"
 
 lemma homeomorphic_imp_homotopy_eqv: "S homeomorphic T \<Longrightarrow> S homotopy_eqv T"
   unfolding homeomorphic_def homeomorphism_def homotopy_equivalent_space_def
-  by (metis continuous_map_subtopology_eu homotopic_with_id2 openin_imp_subset openin_subtopology_self topspace_euclidean_subtopology)
+  apply (erule ex_forward)+
+  by (metis continuous_map_subtopology_eu homotopic_with_id2 openin_imp_subset openin_subtopology_self topspace_euclidean_subtopology
+      image_subset_iff_funcset)
 
 lemma homotopy_eqv_inj_linear_image:
   fixes f :: "'a::euclidean_space \<Rightarrow> 'b::euclidean_space"
@@ -3963,7 +4359,8 @@ lemma homotopy_eqv_empty1 [simp]:
   shows "S homotopy_eqv ({}::'b::real_normed_vector set) \<longleftrightarrow> S = {}" (is "?lhs = ?rhs")
 proof
   assume ?lhs then show ?rhs
-    by (metis continuous_map_subtopology_eu empty_iff equalityI homotopy_equivalent_space_def image_subset_iff subsetI)
+    by (meson continuous_map_subtopology_eu equals0D equals0I funcset_mem
+        homotopy_equivalent_space_def)
 qed (use homeomorphic_imp_homotopy_eqv in force)
 
 lemma homotopy_eqv_empty2 [simp]:
@@ -5216,13 +5613,12 @@ proof (clarsimp simp: continuous_on_eq_continuous_within Ball_def)
   next
     case False
     show ?thesis
-    proof (rule continuous_transform_within [where f=g and d = "norm(x-a)"])
-      have "\<exists>d>0. \<forall>x'\<in>cball a r.
-                      dist x' x < d \<longrightarrow> dist (g x') (g x) < e" if "e>0" for e
+    proof (rule continuous_transform_within [where f=g and \<delta> = "norm(x-a)"])
+      have "\<exists>d>0. \<forall>x'\<in>cball a r. dist x' x < d \<longrightarrow> dist (g x') (g x) < e" 
+        if "e>0" for e
       proof -
         obtain d where "d > 0"
-           and d: "\<And>x'. \<lbrakk>dist x' a \<le> r; x' \<noteq> a; dist x' x < d\<rbrakk> \<Longrightarrow>
-                                 dist (g x') (g x) < e"
+           and d: "\<And>y. \<lbrakk>dist y a \<le> r; y \<noteq> a; dist y x < d\<rbrakk> \<Longrightarrow> dist (g y) (g x) < e"
           using contg False x \<open>e>0\<close>
           unfolding continuous_on_iff by (fastforce simp: dist_commute intro: that)
         show ?thesis
@@ -5281,8 +5677,8 @@ next
     assume c: "homotopic_with_canon (\<lambda>x. True) (sphere a r) S f (\<lambda>x. c)"
     then have contf: "continuous_on (sphere a r) f" 
       by (metis homotopic_with_imp_continuous)
-    moreover have fim: "f ` sphere a r \<subseteq> S"
-      by (meson continuous_map_subtopology_eu c homotopic_with_imp_continuous_maps)
+    moreover have fim: "f \<in> sphere a r \<rightarrow> S"
+      using homotopic_with_imp_subset1 that by blast
     show ?P
       using contf fim by (auto simp: sphere_def dist_norm norm_minus_commute)
   qed
@@ -5373,7 +5769,7 @@ next
         by (intro continuous_intros)
       qed (auto simp: dist_norm norm_minus_commute mult_left_le_one_le)
     moreover
-    have "?h ` ({0..1} \<times> sphere a r) \<subseteq> S"
+    have "?h \<in> ({0..1} \<times> sphere a r) \<rightarrow> S"
       by (auto simp: dist_norm norm_minus_commute mult_left_le_one_le gim [THEN subsetD])
     moreover
     have "\<forall>x\<in>sphere a r. ?h (0, x) = g a" "\<forall>x\<in>sphere a r. ?h (1, x) = f x"

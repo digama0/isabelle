@@ -68,16 +68,13 @@ datatype
 
 
 (*Concrete syntax: messages appear as \<open>\<lbrace>A,B,NA\<rbrace>\<close>, etc...*)
-nonterminal mtuple_args
 syntax
-  "" :: "'a \<Rightarrow> mtuple_args"  ("_")
-  "_MTuple_args" :: "'a \<Rightarrow> mtuple_args \<Rightarrow> mtuple_args"  ("_,/ _")
-  "_MTuple" :: "['a, mtuple_args] \<Rightarrow> 'a * 'b"  ("(2\<lbrace>_,/ _\<rbrace>)")
+  "_MTuple" :: "['a, args] \<Rightarrow> 'a * 'b"  (\<open>(\<open>indent=2 notation=\<open>mixfix message tuple\<close>\<close>\<lbrace>_,/ _\<rbrace>)\<close>)
 syntax_consts
-  "_MTuple_args" "_MTuple" \<rightleftharpoons> MPair
+  "_MTuple" \<rightleftharpoons> MPair
 translations
-  "\<lbrace>x, y, z\<rbrace>"   == "\<lbrace>x, \<lbrace>y, z\<rbrace>\<rbrace>"
-  "\<lbrace>x, y\<rbrace>"      == "CONST MPair x y"
+  "\<lbrace>x, y, z\<rbrace>" \<rightleftharpoons> "\<lbrace>x, \<lbrace>y, z\<rbrace>\<rbrace>"
+  "\<lbrace>x, y\<rbrace>" \<rightleftharpoons> "CONST MPair x y"
 
 
 definition nat_of_agent :: "agent \<Rightarrow> nat" where
@@ -851,7 +848,7 @@ fun spy_analz_tac ctxt i =
       [  (*push in occurrences of X...*)
        (REPEAT o CHANGED)
          (Rule_Insts.res_inst_tac ctxt [((("x", 1), Position.none), "X")] []
-          (insert_commute RS ssubst) 1),
+          (@{thm insert_commute} RS ssubst) 1),
        (*...allowing further simplifications*)
        simp_tac ctxt 1,
        REPEAT (FIRSTGOAL (resolve_tac ctxt [allI,impI,notI,conjI,iffI])),

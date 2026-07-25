@@ -12,7 +12,7 @@ a tactic to analyse instances of the fresh_fun.
 (* FIXME proper SUBGOAL/CSUBGOAL instead of cprems_of etc. *)
 fun gen_res_inst_tac_term ctxt instf tyinst tinst elim th i st =
   let
-    val cgoal = nth (cprems_of st) (i - 1);
+    val cgoal = nth (Thm.cprems_of st) (i - 1);
     val maxidx = Thm.maxidx_of_cterm cgoal;
     val j = maxidx + 1;
     val tyinst' = map (apfst (Logic.incr_tvar j)) tyinst;
@@ -132,11 +132,8 @@ fun fresh_fun_tac ctxt no_asm = SUBGOAL (fn (goal, i) =>
     val abs_fresh = Global_Theory.get_thms thy "abs_fresh";
     val fresh_perm_app = Global_Theory.get_thms thy "fresh_perm_app";
     val simp_ctxt =
-      ctxt addsimps (fresh_prod :: abs_fresh)
-      addsimps fresh_perm_app;
-    val x = hd (tl (Misc_Legacy.term_vars (Thm.prop_of exI)));
+      ctxt |> Simplifier.add_simps (fresh_prod :: abs_fresh @ fresh_perm_app);
     val atom_name_opt = get_inner_fresh_fun goal;
-    val n = length (Logic.strip_params goal);
     (* Here we rely on the fact that the variable introduced by generate_fresh_tac *)
     (* is the last one in the list, the inner one *)
   in

@@ -205,7 +205,7 @@ lemma interfree_Map:
   \<Longrightarrow> interfree (map (\<lambda>k. (c k, Q k)) [a..<b])"
 by(force simp add: interfree_def less_diff_conv)
 
-definition map_ann_hoare :: "(('a ann_com_op * 'a assn) list) \<Rightarrow> bool " ("[\<turnstile>] _" [0] 45) where
+definition map_ann_hoare :: "(('a ann_com_op * 'a assn) list) \<Rightarrow> bool " (\<open>[\<turnstile>] _\<close> [0] 45) where
   "[\<turnstile>] Ts == (\<forall>i<length Ts. \<exists>c q. Ts!i=(Some c, q) \<and> \<turnstile> c q)"
 
 lemma MapAnnEmpty: "[\<turnstile>] []"
@@ -273,15 +273,15 @@ lemmas ParallelConseq_list = INTER_eq Collect_conj_eq length_map length_upt leng
 
 ML \<open>
 fun before_interfree_simp_tac ctxt =
-  simp_tac (put_simpset HOL_basic_ss ctxt addsimps [@{thm com.simps}, @{thm post.simps}])
+  simp_tac (ctxt |> put_simpset HOL_basic_ss |> Simplifier.add_simps @{thms com.simps post.simps})
 
 fun interfree_simp_tac ctxt =
-  asm_simp_tac (put_simpset HOL_ss ctxt
-    addsimps [@{thm split}, @{thm ball_Un}, @{thm ball_empty}] @ @{thms my_simp_list})
+  asm_simp_tac (ctxt |> put_simpset HOL_basic_ss
+    |> Simplifier.add_simps @{thms split ball_Un ball_empty my_simp_list})
 
 fun ParallelConseq ctxt =
-  simp_tac (put_simpset HOL_basic_ss ctxt
-    addsimps @{thms ParallelConseq_list} @ @{thms my_simp_list})
+  simp_tac (ctxt |> put_simpset HOL_basic_ss
+    |> Simplifier.add_simps @{thms ParallelConseq_list my_simp_list})
 \<close>
 
 text \<open>The following tactic applies \<open>tac\<close> to each conjunct in a

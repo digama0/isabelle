@@ -106,7 +106,7 @@ lemma emeasure_lim_emb:
   assumes X: "J \<subseteq> I" "finite J" "X \<in> sets (\<Pi>\<^sub>M i\<in>J. borel)"
   shows "lim (emb I J X) = P J X"
 proof (rule emeasure_lim)
-  write mu_G ("\<mu>G")
+  write mu_G (\<open>\<mu>G\<close>)
   interpret generator: algebra "space (PiM I (\<lambda>i. borel))" generator
     by (rule algebra_generator)
 
@@ -139,7 +139,7 @@ proof (rule emeasure_lim)
     by unfold_locales (auto simp: Utn_def intro: from_nat_into_to_nat_on[OF countable_UN_J])
   have inj_on_Utn: "inj_on Utn (\<Union>n. J n)"
     unfolding Utn_def using countable_UN_J by (rule inj_on_to_nat_on)
-  hence inj_on_Utn_J: "\<And>n. inj_on Utn (J n)" by (rule subset_inj_on) auto
+  hence inj_on_Utn_J: "\<And>n. inj_on Utn (J n)" by (rule inj_on_subset) auto
   define P' where "P' n = mapmeasure n (P (J n)) (\<lambda>_. borel)" for n
   interpret P': prob_space "P' n" for n
     unfolding P'_def mapmeasure_def using J

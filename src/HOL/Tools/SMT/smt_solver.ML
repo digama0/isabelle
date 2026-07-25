@@ -29,13 +29,13 @@ sig
      replay: (Proof.context -> SMT_Translate.replay_data -> string list -> thm) option}
 
   (*registry*)
-  val add_solver: solver_config -> theory -> theory
+  val add_solver: {dummy: bool, sledgehammer_default: bool} -> solver_config -> theory -> theory
   val good_slices: Proof.context -> string ->
     ((int * bool * bool * int * string) * string list) list
 
   (*filter*)
   val smt_filter: Proof.context -> thm -> ((string * ATP_Problem_Generate.stature) * thm) list ->
-    int -> Time.time -> string list -> parsed_proof
+    int -> Time.time -> ((string -> string) -> string -> string) -> string list -> parsed_proof
 
   (*tactic*)
   val smt_tac: Proof.context -> thm list -> int -> tactic
@@ -60,35 +60,44 @@ struct
 
 local
 
-fun make_command command options problem_path proof_path =
-  Bash.strings (command () @ options) ^ " " ^
-    File.bash_platform_path problem_path ^
-    " > " ^ File.bash_path proof_path ^ " 2>&1"
-
 fun with_trace ctxt msg f x =
   let val _ = SMT_Config.trace_msg ctxt (fn () => msg) ()
   in f x end
 
-fun run ctxt name mk_cmd input =
+fun run ctxt name cmd input =
   (case SMT_Config.certificates_of ctxt of
     NONE =>
       if not (SMT_Config.is_available ctxt name) then
         error ("The SMT solver " ^ quote name ^ " is not installed")
-      else if Config.get ctxt SMT_Config.debug_files = "" then
-        with_trace ctxt ("Invoking SMT solver " ^ quote name ^ " ...") (Cache_IO.run mk_cmd) input
       else
         let
-          val base_path = Path.explode (Config.get ctxt SMT_Config.debug_files)
-          val in_path = Path.ext "smt_in" base_path
-          val out_path = Path.ext "smt_out" base_path
-        in Cache_IO.raw_run mk_cmd input in_path out_path end
+          val () =
+            (case Config.get ctxt SMT_Config.problem_dest_file of
+              "" => ()
+            | base_path =>
+              let val in_path = Path.ext "smt_in" (Path.explode base_path) in
+                File.write in_path input
+              end)
+          val result =
+            with_trace ctxt ("Invoking SMT solver " ^ quote name ^ " ...") (Cache_IO.run cmd) input
+          val () =
+            (case Config.get ctxt SMT_Config.proof_dest_file of
+              "" => ()
+            | base_path =>
+              let
+                val out_path = Path.ext "smt_out" (Path.explode base_path)
+                val output = Bytes.terminate_lines (Process_Result.out_lines result)
+              in
+                Bytes.write out_path output
+              end)
+        in result end
   | SOME certs =>
       (case Cache_IO.lookup certs input of
         (NONE, key) =>
           if Config.get ctxt SMT_Config.read_only_certificates then
             error ("Bad certificate cache: missing certificate")
           else
-            Cache_IO.run_and_cache certs key mk_cmd input
+            Cache_IO.run_and_cache certs key cmd input
       | (SOME output, _) =>
           with_trace ctxt ("Using cached certificate from " ^
             Path.print (Cache_IO.cache_path_of certs) ^ " ...") I output))
@@ -99,20 +108,23 @@ fun normal_return_codes "z3" = [0, 1]
   | normal_return_codes "verit" = [0, 14, 255]
   | normal_return_codes _ = [0, 1]
 
-fun run_solver ctxt name mk_cmd input =
+fun run_solver ctxt name cmd input =
   let
     fun pretty tag lines = Pretty.string_of (Pretty.big_list tag (map Pretty.str lines))
 
     val _ = SMT_Config.trace_msg ctxt (pretty "Problem:" o split_lines) input
 
-    val ({elapsed, ...}, {redirected_output = res, output = err, return_code}) =
-      Timing.timing (SMT_Config.with_timeout ctxt (run ctxt name mk_cmd)) input
+    val ({elapsed, ...}, result) =
+      Timing.timing (SMT_Config.with_timeout ctxt (run ctxt name cmd)) input
+    val res = Process_Result.out_lines result
+    val err = Process_Result.err_lines result
+    val return_code = Process_Result.rc result
     val _ = SMT_Config.trace_msg ctxt (pretty "Solver:") err
 
     val output = drop_suffix (equal "") res
     val _ = SMT_Config.trace_msg ctxt (pretty "Result:") output
-    val _ = SMT_Config.trace_msg ctxt (pretty "Time:") [Value.print_time elapsed ^ "s"]
-    val _ = SMT_Config.statistics_msg ctxt (pretty "Time:") [Value.print_time elapsed ^ "s"]
+    val _ = SMT_Config.trace_msg ctxt (pretty "Time:") [Time.message elapsed]
+    val _ = SMT_Config.statistics_msg ctxt (pretty "Time:") [Time.message elapsed]
 
     val _ = member (op =) (normal_return_codes name) return_code orelse
       raise SMT_Failure.SMT (SMT_Failure.Abnormal_Termination return_code)
@@ -136,17 +148,25 @@ fun trace_replay_data ({context = ctxt, typs, terms, ...} : SMT_Translate.replay
 
 in
 
-fun invoke name command options smt_options ithms ctxt =
+fun invoke memoize_fun_call name command cmd_options smt_options ithms ctxt =
   let
-    val options = options @ SMT_Config.solver_options_of ctxt
-    val comments = [space_implode " " options]
+    val options = cmd_options @ SMT_Config.solver_options_of ctxt
+    val comments = [implode_space options]
 
-    val (str, replay_data as {context = ctxt', ...}) =
+    val (input, replay_data as {context = ctxt', ...}) =
       ithms
       |> tap (trace_assms ctxt)
       |> SMT_Translate.translate ctxt name smt_options comments
       ||> tap trace_replay_data
-  in (run_solver ctxt' name (make_command command options) str, replay_data) end
+
+    val cmd = Bash.script (Bash.strings (command () @ options))
+    val run_cmd = run_solver ctxt' name cmd
+
+    val output_lines =
+      (case memoize_fun_call of
+        NONE => run_cmd input
+      | SOME memoize => split_lines (memoize (cat_lines o run_cmd) input))
+  in (output_lines, replay_data) end
 
 end
 
@@ -213,6 +233,7 @@ local
           SOME pp => pp outer_ctxt replay_data xfacts prems concl lines
         | NONE => {outcome = NONE, fact_ids = NONE, atp_proof = K []})
     | (Time_Out, _) => raise SMT_Failure.SMT (SMT_Failure.Time_Out)
+    | (Unknown, _) => raise SMT_Failure.SMT (SMT_Failure.Other_Failure "Unknown")
     | (result, _) => raise SMT_Failure.SMT (SMT_Failure.Counterexample (result = Sat)))
 
   fun replay outcome replay0 oracle outer_ctxt
@@ -227,13 +248,14 @@ local
           | NONE => error "No proof reconstruction for solver -- \
             \declare [[smt_oracle]] to allow oracle")
     | (Time_Out, _) => raise SMT_Failure.SMT (SMT_Failure.Time_Out)
+    | (Unknown, _) => raise SMT_Failure.SMT (SMT_Failure.Other_Failure "Unknown")
     | (result, _) => raise SMT_Failure.SMT (SMT_Failure.Counterexample (result = Sat)))
 
   val cfalse = Thm.cterm_of \<^context> \<^prop>\<open>False\<close>
 in
 
-fun add_solver ({name, class, avail, command, options, smt_options, good_slices, outcome,
-    parse_proof = parse_proof0, replay = replay0} : solver_config) =
+fun add_solver {dummy, sledgehammer_default} ({name, class, avail, command, options, smt_options,
+    good_slices, outcome, parse_proof = parse_proof0, replay = replay0} : solver_config) =
   let
     fun solver oracle = {
       command = command,
@@ -242,7 +264,8 @@ fun add_solver ({name, class, avail, command, options, smt_options, good_slices,
       parse_proof = parse_proof (outcome name) parse_proof0,
       replay = replay (outcome name) replay0 oracle}
 
-    val info = {name = name, class = class, avail = avail, options = options}
+    val info = {name = name, dummy = dummy, sledgehammer_default = sledgehammer_default,
+      class = class, avail = avail, options = options}
   in
     Thm.add_oracle (Binding.name name, K cfalse) #-> (fn (_, oracle) =>
     Context.theory_map (Solvers.map (Symtab.update_new (name, solver oracle)))) #>
@@ -264,13 +287,13 @@ fun apply_solver_and_replay ctxt thms0 =
     val thms = map (pair SMT_Util.Axiom o check_topsort ctxt) thms0
     val (name, {command, smt_options, replay, ...}) = name_and_info_of ctxt
     val (output, replay_data) =
-      invoke name command [] smt_options (SMT_Normalize.normalize ctxt thms) ctxt
+      invoke NONE name command [] smt_options (SMT_Normalize.normalize ctxt thms) ctxt
   in replay ctxt replay_data output end
 
 
 (* filter (for Sledgehammer) *)
 
-fun smt_filter ctxt0 goal xfacts i time_limit options =
+fun smt_filter ctxt0 goal xfacts i time_limit memoize_fun_call options =
   let
     val ctxt = ctxt0 |> Config.put SMT_Config.timeout (Time.toReal time_limit)
 
@@ -290,7 +313,8 @@ fun smt_filter ctxt0 goal xfacts i time_limit options =
 
     val (name, {command, smt_options, parse_proof, ...}) = name_and_info_of ctxt
     val (output, replay_data) =
-      invoke name command options smt_options (SMT_Normalize.normalize ctxt thms) ctxt
+      invoke (SOME memoize_fun_call) name command options smt_options
+        (SMT_Normalize.normalize ctxt thms) ctxt
   in
     parse_proof ctxt replay_data xfacts (map Thm.prop_of prems) (Thm.term_of concl) output
   end
@@ -307,11 +331,12 @@ local
     handle
       SMT_Failure.SMT (fail as SMT_Failure.Counterexample _) =>
         (SMT_Config.verbose_msg ctxt (str_of ctxt) fail; NONE)
+    | SMT_Failure.SMT (fail as SMT_Failure.Other_Failure _) =>
+        (SMT_Config.verbose_msg ctxt (str_of ctxt) fail; NONE)
     | SMT_Failure.SMT (fail as SMT_Failure.Time_Out) =>
-        (SMT_Config.verbose_msg ctxt (K ("SMT: Solver " ^ quote (SMT_Config.solver_of ctxt) ^ ": " ^
+        error ("SMT: Solver " ^ quote (SMT_Config.solver_of ctxt) ^ ": " ^
           SMT_Failure.string_of_failure fail ^ " (setting the " ^
-          "configuration option " ^ quote (Config.name_of SMT_Config.timeout) ^ " might help)")) ();
-         NONE)
+          "configuration option " ^ quote (Config.name_of SMT_Config.timeout) ^ " might help)")
     | SMT_Failure.SMT fail => error (str_of ctxt fail)
 
   fun resolve ctxt (SOME thm) = resolve_tac ctxt [thm] 1

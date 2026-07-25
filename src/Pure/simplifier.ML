@@ -7,7 +7,6 @@ raw_simplifier.ML for the actual meta-level rewriting engine).
 
 signature BASIC_SIMPLIFIER =
 sig
-  include BASIC_RAW_SIMPLIFIER
   val simp_tac: Proof.context -> int -> tactic
   val asm_simp_tac: Proof.context -> int -> tactic
   val full_simp_tac: Proof.context -> int -> tactic
@@ -28,9 +27,7 @@ end;
 signature SIMPLIFIER =
 sig
   include BASIC_SIMPLIFIER
-  val dest_simps: simpset -> (Thm_Name.T * thm) list
-  val dest_congs: simpset -> (cong_name * thm) list
-  val map_ss: (Proof.context -> Proof.context) -> Context.generic -> Context.generic
+  include RAW_SIMPLIFIER
   val attrib: (thm -> Proof.context -> Proof.context) -> attribute
   val simp_add: attribute
   val simp_del: attribute
@@ -51,32 +48,8 @@ sig
   val simproc_setup: (term, morphism -> proc, thm list) simproc_spec -> simproc
   val simproc_setup_cmd: (string, morphism -> proc, thm list) simproc_spec -> simproc
   val simproc_setup_command: (local_theory -> local_theory) parser
-  val add_proc: simproc -> Proof.context -> Proof.context
-  val del_proc: simproc -> Proof.context -> Proof.context
   val pretty_simpset: bool -> Proof.context -> Pretty.T
-  val default_mk_sym: Proof.context -> thm -> thm option
-  val prems_of: Proof.context -> thm list
-  val add_simp: thm -> Proof.context -> Proof.context
-  val del_simp: thm -> Proof.context -> Proof.context
-  val init_simpset: thm list -> Proof.context -> Proof.context
-  val mk_cong: Proof.context -> thm -> thm
-  val add_eqcong: thm -> Proof.context -> Proof.context
-  val del_eqcong: thm -> Proof.context -> Proof.context
-  val add_cong: thm -> Proof.context -> Proof.context
-  val del_cong: thm -> Proof.context -> Proof.context
-  val add_prems: thm list -> Proof.context -> Proof.context
-  val mksimps: Proof.context -> thm -> thm list
-  val get_mksimps_context: Proof.context -> (thm -> Proof.context -> thm list * Proof.context)
-  val set_mksimps_context: (thm -> Proof.context -> thm list * Proof.context) ->
-    Proof.context -> Proof.context
   val set_mksimps: (Proof.context -> thm -> thm list) -> Proof.context -> Proof.context
-  val set_mkcong: (Proof.context -> thm -> thm) -> Proof.context -> Proof.context
-  val set_mksym: (Proof.context -> thm -> thm option) -> Proof.context -> Proof.context
-  val set_mkeqTrue: (Proof.context -> thm -> thm option) -> Proof.context -> Proof.context
-  val set_term_ord: term ord -> Proof.context -> Proof.context
-  val set_subgoaler: (Proof.context -> int -> tactic) -> Proof.context -> Proof.context
-  type trace_ops
-  val set_trace_ops: trace_ops -> theory -> theory
   val rewrite: Proof.context -> conv
   val asm_rewrite: Proof.context -> conv
   val full_rewrite: Proof.context -> conv
@@ -90,6 +63,7 @@ sig
   val unsafe_solver: solver
   val safe_solver_tac: Proof.context -> int -> tactic
   val safe_solver: solver
+  val prune_params_tac: Proof.context -> tactic
 end;
 
 structure Simplifier: SIMPLIFIER =
@@ -105,7 +79,7 @@ fun set_mksimps mk = set_mksimps_context (fn thm => fn ctxt => (mk ctxt thm, ctx
 
 (* attributes *)
 
-fun attrib f = Thm.declaration_attribute (map_ss o f);
+fun attrib f = Thm.declaration_attribute (map_simpset o f);
 
 val simp_add = attrib add_simp;
 val simp_del = attrib del_simp;
@@ -175,7 +149,7 @@ fun define_simproc {passive, name, kind, lhss, proc, identifier} lthy =
         in
           context
           |> Simprocs.map (#2 o Name_Space.define context true (name', simproc'))
-          |> not passive ? map_ss (add_proc simproc')
+          |> not passive ? map_simpset (add_proc simproc')
         end)
     |> pair simproc0
   end;
@@ -184,10 +158,10 @@ fun define_simproc {passive, name, kind, lhss, proc, identifier} lthy =
 (* simproc_setup with concrete syntax *)
 
 val simproc_setup =
-  Named_Target.setup_result Raw_Simplifier.transform_simproc o define_simproc;
+  Named_Target.setup_result transform_simproc o define_simproc;
 
 fun simproc_setup_cmd args =
-  Named_Target.setup_result Raw_Simplifier.transform_simproc
+  Named_Target.setup_result transform_simproc
     (fn lthy => lthy |> define_simproc (read_simproc_spec lthy args));
 
 val parse_proc_kind =
@@ -296,7 +270,7 @@ fun pretty_simpset verbose ctxt =
 
     fun pretty_simproc (name, lhss) =
       Pretty.block
-        (Pretty.mark_str name :: Pretty.str ":" :: Pretty.fbrk ::
+        (Pretty.marks_str name :: Pretty.str ":" :: Pretty.fbrk ::
           Pretty.fbreaks (map (Pretty.item o single o pretty_term) lhss));
 
     fun pretty_congproc (name, {lhss, proc}) =
@@ -307,7 +281,7 @@ fun pretty_simpset verbose ctxt =
           | NONE => []);
       in
         Pretty.block
-          (Pretty.mark_str name :: Pretty.str ":" :: Pretty.fbrk ::
+          (Pretty.marks_str name :: Pretty.str ":" :: Pretty.fbrk ::
             Pretty.fbreaks (map (Pretty.item o single o pretty_term) lhss) @ prt_rule)
       end;
 
@@ -318,8 +292,8 @@ fun pretty_simpset verbose ctxt =
 
     val ss = dest_ss (simpset_of ctxt);
     val simproc_space = Name_Space.space_of_table (get_simprocs ctxt);
-    val simprocs = Name_Space.markup_entries verbose ctxt simproc_space (#simprocs ss);
-    val congprocs = Name_Space.markup_entries verbose ctxt simproc_space (#congprocs ss);
+    val simprocs = Name_Space.markups_entries verbose ctxt simproc_space (#simprocs ss);
+    val congprocs = Name_Space.markups_entries verbose ctxt simproc_space (#congprocs ss);
   in
     [Pretty.big_list "simplification rules:" (map (pretty_thm_item o #2) (#simps ss)),
       Pretty.big_list "simplification procedures:" (map pretty_simproc simprocs),
@@ -337,20 +311,20 @@ fun pretty_simpset verbose ctxt =
 
 fun solve_all_tac solvers ctxt =
   let
-    val subgoal_tac = Raw_Simplifier.subgoal_tac (Raw_Simplifier.set_solvers solvers ctxt);
+    val subgoal_tac = subgoal_tac (set_solvers solvers ctxt);
     val solve_tac = subgoal_tac THEN_ALL_NEW (K no_tac);
   in DEPTH_SOLVE (solve_tac 1) end;
 
 (*NOTE: may instantiate unknowns that appear also in other subgoals*)
 fun generic_simp_tac safe mode ctxt =
   let
-    val loop_tac = Raw_Simplifier.loop_tac ctxt;
-    val (unsafe_solvers, solvers) = Raw_Simplifier.solvers ctxt;
-    val solve_tac = FIRST' (map (Raw_Simplifier.solver ctxt)
+    val loop_tac = loop_tac ctxt;
+    val (unsafe_solvers, solvers) = solvers ctxt;
+    val solve_tac = FIRST' (map (solver ctxt)
       (rev (if safe then solvers else unsafe_solvers)));
 
     fun simp_loop_tac i =
-      Raw_Simplifier.generic_rewrite_goal_tac mode (solve_all_tac unsafe_solvers) ctxt i THEN
+      generic_rewrite_goal_tac mode (solve_all_tac unsafe_solvers) ctxt i THEN
       (solve_tac i ORELSE TRY ((loop_tac THEN_ALL_NEW simp_loop_tac) i));
   in PREFER_GOAL (simp_loop_tac 1) end;
 
@@ -358,15 +332,15 @@ local
 
 fun simp rew mode ctxt thm =
   let
-    val (unsafe_solvers, _) = Raw_Simplifier.solvers ctxt;
+    val (unsafe_solvers, _) = solvers ctxt;
     val tacf = solve_all_tac (rev unsafe_solvers);
     fun prover s th = Option.map #1 (Seq.pull (tacf s th));
   in rew mode prover ctxt thm end;
 
 in
 
-val simp_thm = simp Raw_Simplifier.rewrite_thm;
-val simp_cterm = simp Raw_Simplifier.rewrite_cterm;
+val simp_thm = simp rewrite_thm;
+val simp_cterm = simp rewrite_cterm;
 
 end;
 
@@ -385,6 +359,9 @@ val safe_asm_simp_tac = generic_simp_tac true (false, true, false);
 val safe_full_simp_tac = generic_simp_tac true (true, false, false);
 val safe_asm_lr_simp_tac = generic_simp_tac true (true, true, false);
 val safe_asm_full_simp_tac = generic_simp_tac true (true, true, true);
+
+(*Prunes all redundant parameters from the proof state by rewriting.*)
+fun prune_params_tac ctxt = rewrite_goals_tac ctxt [Drule.triv_forall_equality];
 
 
 (* conversions *)
@@ -425,7 +402,7 @@ val add_del =
   (Args.del -- Args.colon >> K del_proc ||
     Scan.option (Args.add -- Args.colon) >> K add_proc)
   >> (fn f => fn simproc => Morphism.entity (fn phi => Thm.declaration_attribute
-      (K (Raw_Simplifier.map_ss (f (transform_simproc phi simproc))))));
+      (K (map_simpset (f (transform_simproc phi simproc))))));
 
 in
 
@@ -452,8 +429,8 @@ in
 
 val simplified = conv_mode -- Attrib.thms >>
   (fn (f, ths) => Thm.rule_attribute ths (fn context =>
-    f ((if null ths then I else Raw_Simplifier.clear_simpset)
-        (Context.proof_of context) addsimps ths)));
+    f (Context.proof_of context |>
+      (if null ths then I else clear_simpset #> add_simps ths))));
 
 end;
 
@@ -487,7 +464,7 @@ val simp_modifiers =
   Args.$$$ simpN -- Args.del -- Args.colon >> K (Method.modifier simp_del \<^here>),
   Args.$$$ simpN -- Args.$$$ flipN -- Args.colon >> K (Method.modifier simp_flip \<^here>),
   Args.$$$ simpN -- Args.$$$ onlyN -- Args.colon >>
-    K {init = Raw_Simplifier.clear_simpset, attribute = simp_add, pos = \<^here>}]
+    K {init = clear_simpset, attribute = simp_add, pos = \<^here>}]
    @ cong_modifiers;
 
 val simp_modifiers' =
@@ -495,7 +472,7 @@ val simp_modifiers' =
   Args.del -- Args.colon >> K (Method.modifier simp_del \<^here>),
   Args.$$$ flipN -- Args.colon >> K (Method.modifier simp_flip \<^here>),
   Args.$$$ onlyN -- Args.colon >>
-    K {init = Raw_Simplifier.clear_simpset, attribute = simp_add, pos = \<^here>}]
+    K {init = clear_simpset, attribute = simp_add, pos = \<^here>}]
    @ cong_modifiers;
 
 val simp_options =
@@ -527,21 +504,21 @@ fun method_setup more_mods =
     "simplification (all goals)";
 
 fun unsafe_solver_tac ctxt =
-  FIRST' [resolve_tac ctxt (Drule.reflexive_thm :: Raw_Simplifier.prems_of ctxt), assume_tac ctxt];
+  FIRST' [resolve_tac ctxt (Drule.reflexive_thm :: prems_of ctxt), assume_tac ctxt];
 val unsafe_solver = mk_solver "Pure unsafe" unsafe_solver_tac;
 
 (*no premature instantiation of variables during simplification*)
 fun safe_solver_tac ctxt =
-  FIRST' [match_tac ctxt (Drule.reflexive_thm :: Raw_Simplifier.prems_of ctxt), eq_assume_tac];
+  FIRST' [match_tac ctxt (Drule.reflexive_thm :: prems_of ctxt), eq_assume_tac];
 val safe_solver = mk_solver "Pure safe" safe_solver_tac;
 
 val _ =
   Theory.setup
-    (method_setup [] #> Context.theory_map (map_ss (fn ctxt =>
-      empty_simpset ctxt
-      setSSolver safe_solver
-      setSolver unsafe_solver
-      |> set_subgoaler asm_simp_tac)));
+    (method_setup [] #> Context.theory_map (map_simpset (
+      empty_simpset
+      #> set_safe_solver safe_solver
+      #> set_unsafe_solver unsafe_solver
+      #> set_subgoaler asm_simp_tac)));
 
 end;
 

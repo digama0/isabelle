@@ -58,12 +58,12 @@ instance
 
 end
 
-abbreviation fempty :: "'a fset" ("{||}") where "{||} \<equiv> bot"
-abbreviation fsubset_eq :: "'a fset \<Rightarrow> 'a fset \<Rightarrow> bool" (infix "|\<subseteq>|" 50) where "xs |\<subseteq>| ys \<equiv> xs \<le> ys"
-abbreviation fsubset :: "'a fset \<Rightarrow> 'a fset \<Rightarrow> bool" (infix "|\<subset>|" 50) where "xs |\<subset>| ys \<equiv> xs < ys"
-abbreviation funion :: "'a fset \<Rightarrow> 'a fset \<Rightarrow> 'a fset" (infixl "|\<union>|" 65) where "xs |\<union>| ys \<equiv> sup xs ys"
-abbreviation finter :: "'a fset \<Rightarrow> 'a fset \<Rightarrow> 'a fset" (infixl "|\<inter>|" 65) where "xs |\<inter>| ys \<equiv> inf xs ys"
-abbreviation fminus :: "'a fset \<Rightarrow> 'a fset \<Rightarrow> 'a fset" (infixl "|-|" 65) where "xs |-| ys \<equiv> minus xs ys"
+abbreviation fempty :: "'a fset" (\<open>{||}\<close>) where "{||} \<equiv> bot"
+abbreviation fsubset_eq :: "'a fset \<Rightarrow> 'a fset \<Rightarrow> bool" (infix \<open>|\<subseteq>|\<close> 50) where "xs |\<subseteq>| ys \<equiv> xs \<le> ys"
+abbreviation fsubset :: "'a fset \<Rightarrow> 'a fset \<Rightarrow> bool" (infix \<open>|\<subset>|\<close> 50) where "xs |\<subset>| ys \<equiv> xs < ys"
+abbreviation funion :: "'a fset \<Rightarrow> 'a fset \<Rightarrow> 'a fset" (infixl \<open>|\<union>|\<close> 65) where "xs |\<union>| ys \<equiv> sup xs ys"
+abbreviation finter :: "'a fset \<Rightarrow> 'a fset \<Rightarrow> 'a fset" (infixl \<open>|\<inter>|\<close> 65) where "xs |\<inter>| ys \<equiv> inf xs ys"
+abbreviation fminus :: "'a fset \<Rightarrow> 'a fset \<Rightarrow> 'a fset" (infixl \<open>|-|\<close> 65) where "xs |-| ys \<equiv> minus xs ys"
 
 instantiation fset :: (equal) equal
 begin
@@ -113,22 +113,17 @@ instance
 proof
   fix x z :: "'a fset"
   fix X :: "'a fset set"
-  {
-    assume "x \<in> X" "bdd_below X"
-    then show "Inf X |\<subseteq>| x" by transfer auto
-  next
-    assume "X \<noteq> {}" "(\<And>x. x \<in> X \<Longrightarrow> z |\<subseteq>| x)"
-    then show "z |\<subseteq>| Inf X" by transfer (clarsimp, blast)
-  next
-    assume "x \<in> X" "bdd_above X"
-    then obtain z where "x \<in> X" "(\<And>x. x \<in> X \<Longrightarrow> x |\<subseteq>| z)"
+  show "x \<in> X \<Longrightarrow> bdd_below X \<Longrightarrow> Inf X |\<subseteq>| x" by transfer auto
+  show "X \<noteq> {} \<Longrightarrow> (\<And>x. x \<in> X \<Longrightarrow> z |\<subseteq>| x) \<Longrightarrow> z |\<subseteq>| Inf X" by transfer (clarsimp, blast)
+  show "x |\<subseteq>| Sup X" if "x \<in> X" "bdd_above X"
+  proof -
+    from that obtain z where "x \<in> X" "(\<And>x. x \<in> X \<Longrightarrow> x |\<subseteq>| z)"
       by (auto simp: bdd_above_def)
-    then show "x |\<subseteq>| Sup X"
+    then show ?thesis
       by transfer (auto intro!: finite_Sup)
-  next
-    assume "X \<noteq> {}" "(\<And>x. x \<in> X \<Longrightarrow> x |\<subseteq>| z)"
-    then show "Sup X |\<subseteq>| z" by transfer (clarsimp, blast)
-  }
+  qed
+  show "X \<noteq> {} \<Longrightarrow> (\<And>x. x \<in> X \<Longrightarrow> x |\<subseteq>| z) \<Longrightarrow> Sup X |\<subseteq>| z"
+    by transfer (clarsimp, blast)
 qed
 end
 
@@ -154,7 +149,7 @@ instance
 end
 
 abbreviation fUNIV :: "'a::finite fset" where "fUNIV \<equiv> top"
-abbreviation fuminus :: "'a::finite fset \<Rightarrow> 'a fset" ("|-| _" [81] 80) where "|-| x \<equiv> uminus x"
+abbreviation fuminus :: "'a::finite fset \<Rightarrow> 'a fset" (\<open>|-| _\<close> [81] 80) where "|-| x \<equiv> uminus x"
 
 declare top_fset.rep_eq[simp]
 
@@ -164,21 +159,18 @@ subsection \<open>Other operations\<close>
 lift_definition finsert :: "'a \<Rightarrow> 'a fset \<Rightarrow> 'a fset" is insert parametric Lifting_Set.insert_transfer
   by simp
 
-nonterminal fset_args
 syntax
-  "" :: "'a \<Rightarrow> fset_args"  ("_")
-  "_fset_args" :: "'a \<Rightarrow> fset_args \<Rightarrow> fset_args"  ("_,/ _")
-  "_fset" :: "fset_args => 'a fset"  ("{|(_)|}")
+  "_fset" :: "args => 'a fset"  (\<open>(\<open>indent=2 notation=\<open>mixfix finite set enumeration\<close>\<close>{|_|})\<close>)
 syntax_consts
-  "_fset_args" "_fset" == finsert
+  "_fset" \<rightleftharpoons> finsert
 translations
   "{|x, xs|}" == "CONST finsert x {|xs|}"
   "{|x|}"     == "CONST finsert x {||}"
 
-abbreviation fmember :: "'a \<Rightarrow> 'a fset \<Rightarrow> bool" (infix "|\<in>|" 50) where
+abbreviation fmember :: "'a \<Rightarrow> 'a fset \<Rightarrow> bool" (infix \<open>|\<in>|\<close> 50) where
   "x |\<in>| X \<equiv> x \<in> fset X"
 
-abbreviation not_fmember :: "'a \<Rightarrow> 'a fset \<Rightarrow> bool" (infix "|\<notin>|" 50) where
+abbreviation not_fmember :: "'a \<Rightarrow> 'a fset \<Rightarrow> bool" (infix \<open>|\<notin>|\<close> 50) where
   "x |\<notin>| X \<equiv> x \<notin> fset X"
 
 context
@@ -197,25 +189,48 @@ alias fBex = FSet.Bex
 end
 
 syntax (input)
-  "_fBall"       :: "pttrn \<Rightarrow> 'a fset \<Rightarrow> bool \<Rightarrow> bool"      ("(3! (_/|:|_)./ _)" [0, 0, 10] 10)
-  "_fBex"        :: "pttrn \<Rightarrow> 'a fset \<Rightarrow> bool \<Rightarrow> bool"      ("(3? (_/|:|_)./ _)" [0, 0, 10] 10)
+  "_fBall" :: "pttrn \<Rightarrow> 'a fset \<Rightarrow> bool \<Rightarrow> bool"  (\<open>(\<open>indent=3 notation=\<open>binder finite !\<close>\<close>! (_/|:|_)./ _)\<close> [0, 0, 10] 10)
+  "_fBex"  :: "pttrn \<Rightarrow> 'a fset \<Rightarrow> bool \<Rightarrow> bool"  (\<open>(\<open>indent=3 notation=\<open>binder finite ?\<close>\<close>? (_/|:|_)./ _)\<close> [0, 0, 10] 10)
+  "_fBex1" :: "pttrn \<Rightarrow> 'a fset \<Rightarrow> bool \<Rightarrow> bool"  (\<open>(\<open>indent=3 notation=\<open>binder finite ?!\<close>\<close>?! (_/:_)./ _)\<close> [0, 0, 10] 10)
 
 syntax
-  "_fBall"       :: "pttrn \<Rightarrow> 'a fset \<Rightarrow> bool \<Rightarrow> bool"      ("(3\<forall>(_/|\<in>|_)./ _)" [0, 0, 10] 10)
-  "_fBex"        :: "pttrn \<Rightarrow> 'a fset \<Rightarrow> bool \<Rightarrow> bool"      ("(3\<exists>(_/|\<in>|_)./ _)" [0, 0, 10] 10)
+  "_fBall" :: "pttrn \<Rightarrow> 'a fset \<Rightarrow> bool \<Rightarrow> bool"  (\<open>(\<open>indent=3 notation=\<open>binder finite \<forall>\<close>\<close>\<forall>(_/|\<in>|_)./ _)\<close> [0, 0, 10] 10)
+  "_fBex"  :: "pttrn \<Rightarrow> 'a fset \<Rightarrow> bool \<Rightarrow> bool"  (\<open>(\<open>indent=3 notation=\<open>binder finite \<exists>\<close>\<close>\<exists>(_/|\<in>|_)./ _)\<close> [0, 0, 10] 10)
+  "_fBnex" :: "pttrn \<Rightarrow> 'a fset \<Rightarrow> bool \<Rightarrow> bool"  (\<open>(\<open>indent=3 notation=\<open>binder finite \<nexists>\<close>\<close>\<nexists>(_/|\<in>|_)./ _)\<close> [0, 0, 10] 10)
+  "_fBex1" :: "pttrn \<Rightarrow> 'a fset \<Rightarrow> bool \<Rightarrow> bool"  (\<open>(\<open>indent=3 notation=\<open>binder finite \<exists>!\<close>\<close>\<exists>!(_/|\<in>|_)./ _)\<close> [0, 0, 10] 10)
 
 syntax_consts
-  "_fBall" \<rightleftharpoons> FSet.Ball and
-  "_fBex" \<rightleftharpoons> FSet.Bex
+  "_fBall" "_fBnex" \<rightleftharpoons> fBall and
+  "_fBex" \<rightleftharpoons> fBex and
+  "_fBex1" \<rightleftharpoons> Ex1
 
 translations
   "\<forall>x|\<in>|A. P" \<rightleftharpoons> "CONST FSet.Ball A (\<lambda>x. P)"
   "\<exists>x|\<in>|A. P" \<rightleftharpoons> "CONST FSet.Bex A (\<lambda>x. P)"
+  "\<nexists>x|\<in>|A. P" \<rightleftharpoons> "CONST fBall A (\<lambda>x. \<not> P)"
+  "\<exists>!x|\<in>|A. P" \<rightharpoonup> "\<exists>!x. x |\<in>| A \<and> P"
 
-print_translation \<open>
- [Syntax_Trans.preserve_binder_abs2_tr' \<^const_syntax>\<open>fBall\<close> \<^syntax_const>\<open>_fBall\<close>,
-  Syntax_Trans.preserve_binder_abs2_tr' \<^const_syntax>\<open>fBex\<close> \<^syntax_const>\<open>_fBex\<close>]
+typed_print_translation \<open>
+ [(\<^const_syntax>\<open>fBall\<close>, Syntax_Trans.preserve_binder_abs2_tr' \<^syntax_const>\<open>_fBall\<close>),
+  (\<^const_syntax>\<open>fBex\<close>, Syntax_Trans.preserve_binder_abs2_tr' \<^syntax_const>\<open>_fBex\<close>)]
 \<close> \<comment> \<open>to avoid eta-contraction of body\<close>
+
+syntax
+  "_setlessfAll" :: "[idt, 'a, bool] \<Rightarrow> bool"   (\<open>(\<open>indent=3 notation=\<open>binder finite \<forall>\<close>\<close>\<forall>_|\<subset>|_./ _)\<close>  [0, 0, 10] 10)
+  "_setlessfEx"  :: "[idt, 'a, bool] \<Rightarrow> bool"   (\<open>(\<open>indent=3 notation=\<open>binder finite \<exists>\<close>\<close>\<exists>_|\<subset>|_./ _)\<close>  [0, 0, 10] 10)
+  "_setlefAll"   :: "[idt, 'a, bool] \<Rightarrow> bool"   (\<open>(\<open>indent=3 notation=\<open>binder finite \<forall>\<close>\<close>\<forall>_|\<subseteq>|_./ _)\<close> [0, 0, 10] 10)
+  "_setlefEx"    :: "[idt, 'a, bool] \<Rightarrow> bool"   (\<open>(\<open>indent=3 notation=\<open>binder finite \<exists>\<close>\<close>\<exists>_|\<subseteq>|_./ _)\<close> [0, 0, 10] 10)
+
+syntax_consts
+  "_setlessfAll" "_setlefAll" \<rightleftharpoons> All and
+  "_setlessfEx" "_setlefEx" \<rightleftharpoons> Ex
+
+translations
+ "\<forall>A|\<subset>|B. P" \<rightharpoonup> "\<forall>A. A |\<subset>| B \<longrightarrow> P"
+ "\<exists>A|\<subset>|B. P" \<rightharpoonup> "\<exists>A. A |\<subset>| B \<and> P"
+ "\<forall>A|\<subseteq>|B. P" \<rightharpoonup> "\<forall>A. A |\<subseteq>| B \<longrightarrow> P"
+ "\<exists>A|\<subseteq>|B. P" \<rightharpoonup> "\<exists>A. A |\<subseteq>| B \<and> P"
+
 
 context includes lifting_syntax
 begin
@@ -236,14 +251,14 @@ lemma fBex_transfer0[transfer_rule]:
   by transfer_prover
 
 lift_definition ffilter :: "('a \<Rightarrow> bool) \<Rightarrow> 'a fset \<Rightarrow> 'a fset" is Set.filter
-  parametric Lifting_Set.filter_transfer unfolding Set.filter_def by simp
+  parametric Lifting_Set.filter_transfer by simp
 
 lift_definition fPow :: "'a fset \<Rightarrow> 'a fset fset" is Pow parametric Pow_transfer
 by (simp add: finite_subset)
 
 lift_definition fcard :: "'a fset \<Rightarrow> nat" is card parametric card_transfer .
 
-lift_definition fimage :: "('a \<Rightarrow> 'b) \<Rightarrow> 'a fset \<Rightarrow> 'b fset" (infixr "|`|" 90) is image
+lift_definition fimage :: "('a \<Rightarrow> 'b) \<Rightarrow> 'a fset \<Rightarrow> 'b fset" (infixr \<open>|`|\<close> 90) is image
   parametric image_transfer by simp
 
 lift_definition fthe_elem :: "'a fset \<Rightarrow> 'a" is the_elem .
@@ -269,55 +284,55 @@ lemma fset_eq_iff[no_atp]: "(A = B) = (\<forall>x. (x |\<in>| A) = (x |\<in>| B)
   by (rule set_eq_iff[Transfer.transferred])
 
 lemma fBallI[no_atp]: "(\<And>x. x |\<in>| A \<Longrightarrow> P x) \<Longrightarrow> fBall A P"
-  by (rule ballI[Transfer.transferred])
+  using ballI .
 
 lemma fbspec[no_atp]: "fBall A P \<Longrightarrow> x |\<in>| A \<Longrightarrow> P x"
-  by (rule bspec[Transfer.transferred])
+  using bspec .
 
 lemma fBallE[no_atp]: "fBall A P \<Longrightarrow> (P x \<Longrightarrow> Q) \<Longrightarrow> (x |\<notin>| A \<Longrightarrow> Q) \<Longrightarrow> Q"
-  by (rule ballE[Transfer.transferred])
+  using ballE .
 
 lemma fBexI[no_atp]: "P x \<Longrightarrow> x |\<in>| A \<Longrightarrow> fBex A P"
-  by (rule bexI[Transfer.transferred])
+  using bexI .
 
 lemma rev_fBexI[no_atp]: "x |\<in>| A \<Longrightarrow> P x \<Longrightarrow> fBex A P"
-  by (rule rev_bexI[Transfer.transferred])
+  using rev_bexI .
 
 lemma fBexCI[no_atp]: "(fBall A (\<lambda>x. \<not> P x) \<Longrightarrow> P a) \<Longrightarrow> a |\<in>| A \<Longrightarrow> fBex A P"
-  by (rule bexCI[Transfer.transferred])
+  using bexCI .
 
 lemma fBexE[no_atp]: "fBex A P \<Longrightarrow> (\<And>x. x |\<in>| A \<Longrightarrow> P x \<Longrightarrow> Q) \<Longrightarrow> Q"
-  by (rule bexE[Transfer.transferred])
+  using bexE .
 
 lemma fBall_triv[no_atp]: "fBall A (\<lambda>x. P) = ((\<exists>x. x |\<in>| A) \<longrightarrow> P)"
-  by (rule ball_triv[Transfer.transferred])
+  using ball_triv .
 
 lemma fBex_triv[no_atp]: "fBex A (\<lambda>x. P) = ((\<exists>x. x |\<in>| A) \<and> P)"
-  by (rule bex_triv[Transfer.transferred])
+  using bex_triv .
 
 lemma fBex_triv_one_point1[no_atp]: "fBex A (\<lambda>x. x = a) = (a |\<in>| A)"
-  by (rule bex_triv_one_point1[Transfer.transferred])
+  using bex_triv_one_point1 .
 
 lemma fBex_triv_one_point2[no_atp]: "fBex A ((=) a) = (a |\<in>| A)"
-  by (rule bex_triv_one_point2[Transfer.transferred])
+  using bex_triv_one_point2 .
 
 lemma fBex_one_point1[no_atp]: "fBex A (\<lambda>x. x = a \<and> P x) = (a |\<in>| A \<and> P a)"
-  by (rule bex_one_point1[Transfer.transferred])
+  using bex_one_point1 .
 
 lemma fBex_one_point2[no_atp]: "fBex A (\<lambda>x. a = x \<and> P x) = (a |\<in>| A \<and> P a)"
-  by (rule bex_one_point2[Transfer.transferred])
+  using bex_one_point2 .
 
 lemma fBall_one_point1[no_atp]: "fBall A (\<lambda>x. x = a \<longrightarrow> P x) = (a |\<in>| A \<longrightarrow> P a)"
-  by (rule ball_one_point1[Transfer.transferred])
+  using ball_one_point1 .
 
 lemma fBall_one_point2[no_atp]: "fBall A (\<lambda>x. a = x \<longrightarrow> P x) = (a |\<in>| A \<longrightarrow> P a)"
-  by (rule ball_one_point2[Transfer.transferred])
+  using ball_one_point2 .
 
 lemma fBall_conj_distrib: "fBall A (\<lambda>x. P x \<and> Q x) = (fBall A P \<and> fBall A Q)"
-  by (rule ball_conj_distrib[Transfer.transferred])
+  using ball_conj_distrib .
 
 lemma fBex_disj_distrib: "fBex A (\<lambda>x. P x \<or> Q x) = (fBex A P \<or> fBex A Q)"
-  by (rule bex_disj_distrib[Transfer.transferred])
+  using bex_disj_distrib .
 
 lemma fBall_cong[fundef_cong]: "A = B \<Longrightarrow> (\<And>x. x |\<in>| B \<Longrightarrow> P x = Q x) \<Longrightarrow> fBall A P = fBall B Q"
   by (rule ball_cong[Transfer.transferred])
@@ -995,7 +1010,7 @@ lemma fbind_const: "fbind A (\<lambda>_. B) = (if A = {||} then {||} else B)"
   by (rule bind_const[Transfer.transferred])
 
 lemma ffmember_filter[simp]: "(x |\<in>| ffilter P A) = (x |\<in>| A \<and> P x)"
-  by (rule member_filter[Transfer.transferred])
+  by transfer simp
 
 lemma fequalityI: "A |\<subseteq>| B \<Longrightarrow> B |\<subseteq>| A \<Longrightarrow> A = B"
   by (rule equalityI[Transfer.transferred])
@@ -1092,7 +1107,7 @@ subsubsection \<open>\<open>fset_of_list\<close>\<close>
 
 lemma fset_of_list_filter[simp]:
   "fset_of_list (filter P xs) = ffilter P (fset_of_list xs)"
-  by transfer (auto simp: Set.filter_def)
+  by transfer auto
 
 lemma fset_of_list_subset[intro]:
   "set xs \<subseteq> set ys \<Longrightarrow> fset_of_list xs |\<subseteq>| fset_of_list ys"
@@ -1175,15 +1190,13 @@ by auto
 
 lemma atomize_fBall:
     "(\<And>x. x |\<in>| A ==> P x) == Trueprop (fBall A (\<lambda>x. P x))"
-apply (simp only: atomize_all atomize_imp)
-apply (rule equal_intr_rule)
-  by (transfer, simp)+
+  by (simp add: Set.atomize_ball)
 
 lemma fBall_mono[mono]: "P \<le> Q \<Longrightarrow> fBall S P \<le> fBall S Q"
-by auto
+  by auto
 
 lemma fBex_mono[mono]: "P \<le> Q \<Longrightarrow> fBex S P \<le> fBex S Q"
-by auto
+  by auto
 
 end
 
@@ -1552,7 +1565,7 @@ qed
 lemma fset_strong_cases:
   obtains "xs = {||}"
     | ys x where "x |\<notin>| ys" and "xs = finsert x ys"
-by transfer blast
+  by auto
 
 lemma fset_induct2:
   "P {||} {||} \<Longrightarrow>
@@ -1560,12 +1573,7 @@ lemma fset_induct2:
   (\<And>y ys. y |\<notin>| ys \<Longrightarrow> P {||} (finsert y ys)) \<Longrightarrow>
   (\<And>x xs y ys. \<lbrakk>P xs ys; x |\<notin>| xs; y |\<notin>| ys\<rbrakk> \<Longrightarrow> P (finsert x xs) (finsert y ys)) \<Longrightarrow>
   P xsa ysa"
-  apply (induct xsa arbitrary: ysa)
-  apply (induct_tac x rule: fset_induct_stronger)
-  apply simp_all
-  apply (induct_tac xa rule: fset_induct_stronger)
-  apply simp_all
-  done
+by (induct xsa arbitrary: ysa; metis fset_induct_stronger)
 
 
 subsection \<open>Lemmas depending on induction\<close>
@@ -1583,25 +1591,16 @@ parametric rel_set_transfer .
 
 lemma rel_fset_alt_def: "rel_fset R = (\<lambda>A B. (\<forall>x.\<exists>y. x|\<in>|A \<longrightarrow> y|\<in>|B \<and> R x y)
   \<and> (\<forall>y. \<exists>x. y|\<in>|B \<longrightarrow> x|\<in>|A \<and> R x y))"
-apply (rule ext)+
-apply transfer'
-apply (subst rel_set_def[unfolded fun_eq_iff])
-by blast
+  by transfer' (metis (no_types, opaque_lifting) rel_set_def)
 
 lemma finite_rel_set:
   assumes fin: "finite X" "finite Z"
   assumes R_S: "rel_set (R OO S) X Z"
   shows "\<exists>Y. finite Y \<and> rel_set R X Y \<and> rel_set S Y Z"
 proof -
-  obtain f where f: "\<forall>x\<in>X. R x (f x) \<and> (\<exists>z\<in>Z. S (f x) z)"
-  apply atomize_elim
-  apply (subst bchoice_iff[symmetric])
-  using R_S[unfolded rel_set_def OO_def] by blast
-
-  obtain g where g: "\<forall>z\<in>Z. S (g z) z \<and> (\<exists>x\<in>X. R x (g z))"
-  apply atomize_elim
-  apply (subst bchoice_iff[symmetric])
-  using R_S[unfolded rel_set_def OO_def] by blast
+  obtain f g where f: "\<forall>x\<in>X. R x (f x) \<and> (\<exists>z\<in>Z. S (f x) z)"
+               and g: "\<forall>z\<in>Z. S (g z) z \<and> (\<exists>x\<in>X. R x (g z))"
+    using R_S[unfolded rel_set_def OO_def] by metis
 
   let ?Y = "f ` X \<union> g ` Z"
   have "finite ?Y" by (simp add: fin)
@@ -1713,13 +1712,13 @@ lemma fInf_transfer [transfer_rule]:
 lemma ffilter_transfer [transfer_rule]:
   assumes "bi_unique A"
   shows "((A ===> (=)) ===> rel_fset A ===> rel_fset A) ffilter ffilter"
-  using assms unfolding rel_fun_def
-  using Lifting_Set.filter_transfer[unfolded rel_fun_def, rule_format, Transfer.transferred] by blast
+  using assms Lifting_Set.filter_transfer
+  unfolding rel_fun_def by (metis ffilter.rep_eq rel_fset.rep_eq)
 
 lemma card_transfer [transfer_rule]:
   "bi_unique A \<Longrightarrow> (rel_fset A ===> (=)) fcard fcard"
-  unfolding rel_fun_def
-  using card_transfer[unfolded rel_fun_def, rule_format, Transfer.transferred] by blast
+  using card_transfer unfolding rel_fun_def
+  by (metis fcard.rep_eq rel_fset.rep_eq)
 
 end
 
@@ -1735,13 +1734,10 @@ begin
 
 lemma rel_fset_alt:
   "rel_fset R a b \<longleftrightarrow> (\<forall>t \<in> fset a. \<exists>u \<in> fset b. R t u) \<and> (\<forall>t \<in> fset b. \<exists>u \<in> fset a. R u t)"
-by transfer (simp add: rel_set_def)
+  by transfer (simp add: rel_set_def)
 
 lemma fset_to_fset: "finite A \<Longrightarrow> fset (the_inv fset A) = A"
-apply (rule f_the_inv_into_f[unfolded inj_on_def])
-apply (simp add: fset_inject)
-apply (rule range_eqI Abs_fset_inverse[symmetric] CollectI)+
-.
+  by (metis CollectI f_the_inv_into_f fset_cases fset_cong inj_onI rangeI)
 
 lemma rel_fset_aux:
 "(\<forall>t \<in> fset a. \<exists>u \<in> fset b. R t u) \<and> (\<forall>u \<in> fset b. \<exists>t \<in> fset a. R t u) \<longleftrightarrow>
@@ -1762,10 +1758,7 @@ proof
   qed (auto simp add: *)
 next
   assume ?R thus ?L unfolding Grp_def relcompp.simps conversep.simps
-  apply (simp add: subset_eq Ball_def)
-  apply (rule conjI)
-  apply (transfer, clarsimp, metis snd_conv)
-  by (transfer, clarsimp, metis fst_conv)
+    using Product_Type.Collect_case_prodD by blast
 qed
 
 bnf "'a fset"
@@ -1790,7 +1783,7 @@ apply transfer apply simp
 done
 
 lemma rel_fset_fset: "rel_set \<chi> (fset A1) (fset A2) = rel_fset \<chi> A1 A2"
-  by transfer (rule refl)
+  by (simp add: rel_fset.rep_eq)
 
 end
 
@@ -1802,11 +1795,13 @@ declare
 
 subsection \<open>Size setup\<close>
 
-context includes fset.lifting begin
+context includes fset.lifting 
+begin
 lift_definition size_fset :: "('a \<Rightarrow> nat) \<Rightarrow> 'a fset \<Rightarrow> nat" is "\<lambda>f. sum (Suc \<circ> f)" .
 end
 
-instantiation fset :: (type) size begin
+instantiation fset :: (type) size 
+begin
 definition size_fset where
   size_fset_overloaded_def: "size_fset = FSet.size_fset (\<lambda>_. 0)"
 instance ..
@@ -1821,8 +1816,8 @@ lemma size_fset_overloaded_simps[simp]: "size X = (\<Sum>x \<in> fset X. Suc 0)"
     folded size_fset_overloaded_def])
 
 lemma fset_size_o_map: "inj f \<Longrightarrow> size_fset g \<circ> fimage f = size_fset (g \<circ> f)"
-  apply (subst fun_eq_iff)
-  including fset.lifting by transfer (auto intro: sum.reindex_cong subset_inj_on)
+  unfolding fun_eq_iff
+  by (simp add: inj_def inj_onI sum.reindex)
 
 setup \<open>
 BNF_LFP_Size.register_size_global \<^type_name>\<open>fset\<close> \<^const_name>\<open>size_fset\<close>
@@ -1902,16 +1897,11 @@ qed
 subsubsection \<open>Countability\<close>
 
 lemma exists_fset_of_list: "\<exists>xs. fset_of_list xs = S"
-including fset.lifting
-by transfer (rule finite_list)
+  including fset.lifting
+  by transfer (rule finite_list)
 
 lemma fset_of_list_surj[simp, intro]: "surj fset_of_list"
-proof -
-  have "x \<in> range fset_of_list" for x :: "'a fset"
-    unfolding image_iff
-    using exists_fset_of_list by fastforce
-  thus ?thesis by auto
-qed
+  by (metis exists_fset_of_list surj_def)
 
 instance fset :: (countable) countable
 proof
@@ -1930,7 +1920,7 @@ subsection \<open>Quickcheck setup\<close>
 
 text \<open>Setup adapted from sets.\<close>
 
-notation Quickcheck_Exhaustive.orelse (infixr "orelse" 55)
+notation Quickcheck_Exhaustive.orelse (infixr \<open>orelse\<close> 55)
 
 context
   includes term_syntax
@@ -1964,7 +1954,7 @@ instance ..
 
 end
 
-no_notation Quickcheck_Exhaustive.orelse (infixr "orelse" 55)
+no_notation Quickcheck_Exhaustive.orelse  (infixr \<open>orelse\<close> 55)
 
 instantiation fset :: (random) random
 begin

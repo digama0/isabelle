@@ -19,37 +19,47 @@ import scala.jdk.CollectionConverters._
 
 
 object Isabelle_System {
+  /* properties */
+
+  def get_property(name: String): String = System.getProperty(name, "").nn
+
+  def get_property_bool(name: String): Boolean = get_property(name) == "true"
+
+  def get_property_int(name: String): Int =
+    Value.Int.unapply(System.getProperty(name, "0").nn).getOrElse(0)
+
+
   /* settings environment */
 
   trait Settings { def get(name: String): String }
   trait Settings_Env extends Settings { def env: JMap[String, String] }
 
   class Env(val env: JMap[String, String]) extends Settings_Env {
-    override def get(name: String): String = Option(env.get(name)).getOrElse("")
+    override def get(name: String): String = proper_value(env.get(name)).getOrElse("")
   }
 
-  object No_Env extends Env(JMap.of())
+  object No_Env extends Env(JMap.of().nn)
 
-  def settings(putenv: List[(String, String)] = Nil): JMap[String, String] = {
-    val env0 = isabelle.setup.Environment.settings()
-    if (putenv.isEmpty) env0
-    else {
-      val env = new HashMap(env0)
-      for ((a, b) <- putenv) env.put(a, b)
-      env
+  object Settings {
+    def env(putenv: List[(String, String)] = Nil): JMap[String, String] = {
+      val env0 = isabelle.setup.Environment.settings().nn
+      if (putenv.isEmpty) env0
+      else {
+        val env = new HashMap(env0)
+        for ((a, b) <- putenv) env.put(a, b)
+        env
+      }
     }
+
+    def apply(putenv: List[(String, String)] = Nil): Settings_Env =
+      new Env(env(putenv = putenv))
   }
 
-  def settings_env(putenv: List[(String, String)] = Nil): Settings_Env =
-    new Env(settings(putenv = putenv))
+  def getenv(name: String, env: Settings = Settings()): String = env.get(name)
 
-  def getenv(name: String, env: Settings = settings_env()): String = env.get(name)
-
-  def getenv_strict(name: String, env: Settings = settings_env()): String =
+  def getenv_strict(name: String, env: Settings = Settings()): String =
     proper_string(getenv(name, env)) getOrElse
       error("Undefined Isabelle environment variable: " + quote(name))
-
-  def ml_identifier(): String = getenv("ML_IDENTIFIER")
 
   def hostname(default: String = ""): String =
     proper_string(default) getOrElse getenv_strict("ISABELLE_HOSTNAME")
@@ -100,7 +110,8 @@ object Isabelle_System {
   def isabelle_id(root: Path = Path.ISABELLE_HOME): String =
     getetc("ISABELLE_ID", root = root) orElse
     Mercurial.archive_id(root) orElse
-    Mercurial.id_repository(root, rev = "") getOrElse
+    Mercurial.id_repository(root, rev = "") orElse
+    Mercurial.Hg_Sync.id_directory(root) getOrElse
     error("Failed to identify Isabelle distribution " + root.expand)
 
   object Isabelle_Id extends Scala.Fun_String("isabelle_id") {
@@ -111,7 +122,7 @@ object Isabelle_System {
   def isabelle_tags(root: Path = Path.ISABELLE_HOME): String =
     getetc("ISABELLE_TAGS", root = root) orElse Mercurial.archive_tags(root) getOrElse {
       if (Mercurial.is_repository(root)) {
-        val hg = Mercurial.repository(root)
+        val hg = Mercurial.this_repository(root)
         hg.tags(rev = hg.parent())
       }
       else ""
@@ -176,15 +187,8 @@ object Isabelle_System {
     if (path.is_dir) error("Directory already exists: " + path.absolute)
     else make_directory(path)
 
-  def copy_dir(dir1: Path, dir2: Path, direct: Boolean = false): Unit = {
-    def make_path(dir: Path): String =
-      Url.dir_path(File.standard_path(dir.absolute), direct = direct)
-    val p1 = make_path(dir1)
-    val p2 = make_path(dir2)
-    make_directory(if (direct) dir2.absolute else dir2.absolute.dir)
-    val res = bash("cp -a " + Bash.string(p1) + " " + Bash.string(p2))
-    if (!res.ok) cat_error("Failed to copy " + quote(p1) + " to " + quote(p2), res.err)
-  }
+  def copy_dir(path1: Path, path2: Path, direct: Boolean = false): Unit =
+    SSH.Local.copy_directory(path1, path2, direct = direct, thorough = true)
 
   def with_copy_dir[A](dir1: Path, dir2: Path)(body: => A): A = {
     new_directory(dir2)
@@ -210,7 +214,7 @@ object Isabelle_System {
     val target = if (dst.isDirectory) new JFile(dst, src.getName) else dst
     if (!File.eq(src, target)) {
       try {
-        Files.copy(src.toPath, target.toPath,
+        Files.copy(src.java_path, target.java_path,
           StandardCopyOption.COPY_ATTRIBUTES,
           StandardCopyOption.REPLACE_EXISTING)
       }
@@ -250,7 +254,7 @@ object Isabelle_System {
   def move_file(src: JFile, dst: JFile): Unit = {
     val target = if (dst.isDirectory) new JFile(dst, src.getName) else dst
     if (!File.eq(src, target))
-      Files.move(src.toPath, target.toPath, StandardCopyOption.REPLACE_EXISTING)
+      Files.move(src.java_path, target.java_path, StandardCopyOption.REPLACE_EXISTING)
   }
 
   def move_file(src: Path, dst: Path): Unit = move_file(src.file, dst.file)
@@ -261,7 +265,7 @@ object Isabelle_System {
   def symlink(src: Path, dst: Path, force: Boolean = false, native: Boolean = false): Unit = {
     val src_file = src.file
     val dst_file = dst.file
-    val target = if (dst_file.isDirectory) new JFile(dst_file, src_file.getName) else dst_file
+    val target = if (dst_file.isDirectory) new JFile(dst_file, src_file.file_name) else dst_file
 
     if (force) target.delete
 
@@ -273,8 +277,7 @@ object Isabelle_System {
       else isabelle.setup.Environment.cygwin_link(File.standard_path(src), target)
     }
 
-
-    try { Files.createSymbolicLink(target.toPath, src_file.toPath) }
+    try { Files.createSymbolicLink(target.java_path, src_file.java_path) }
     catch {
       case _: UnsupportedOperationException if Platform.is_windows => cygwin_link()
       case _: FileSystemException if Platform.is_windows => cygwin_link()
@@ -297,7 +300,7 @@ object Isabelle_System {
     initialized: Boolean = true
   ): JFile = {
     val suffix = if_proper(ext, "." + ext)
-    val file = Files.createTempFile(base_dir.toPath, name, suffix).toFile
+    val file = Files.createTempFile(base_dir.java_path, name, suffix).nn.java_file
     if (initialized) file.deleteOnExit() else file.delete()
     file
   }
@@ -317,7 +320,7 @@ object Isabelle_System {
   def rm_tree(root: JFile): Unit = {
     root.delete
     if (root.isDirectory) {
-      Files.walkFileTree(root.toPath,
+      Files.walkFileTree(root.java_path,
         new SimpleFileVisitor[JPath] {
           override def visitFile(file: JPath, attrs: BasicFileAttributes): FileVisitResult = {
             try { Files.deleteIfExists(file) }
@@ -325,13 +328,13 @@ object Isabelle_System {
             FileVisitResult.CONTINUE
           }
 
-          override def postVisitDirectory(dir: JPath, e: IOException): FileVisitResult = {
+          override def postVisitDirectory(dir: JPath, e: IOException | Null): FileVisitResult = {
             if (e == null) {
               try { Files.deleteIfExists(dir) }
               catch { case _: IOException => }
               FileVisitResult.CONTINUE
             }
-            else throw e
+            else throw e.asInstanceOf[IOException]
           }
         }
       )
@@ -346,7 +349,7 @@ object Isabelle_System {
   }
 
   def tmp_dir(name: String, base_dir: JFile = isabelle_tmp_prefix()): JFile = {
-    val dir = Files.createTempDirectory(base_dir.toPath, name).toFile
+    val dir = Files.createTempDirectory(base_dir.java_path, name).nn.java_file
     dir.deleteOnExit()
     dir
   }
@@ -390,16 +393,16 @@ object Isabelle_System {
   /* JVM shutdown hook */
 
   def create_shutdown_hook(body: => Unit): Thread = {
-    val shutdown_hook = Isabelle_Thread.create(new Runnable { def run: Unit = body })
+    val shutdown_hook = Isabelle_Thread.create(new Runnable { def run(): Unit = body })
 
-    try { Runtime.getRuntime.addShutdownHook(shutdown_hook) }
+    try { Runtime.getRuntime.nn.addShutdownHook(shutdown_hook) }
     catch { case _: IllegalStateException => }
 
     shutdown_hook
   }
 
   def remove_shutdown_hook(shutdown_hook: Thread): Unit =
-    try { Runtime.getRuntime.removeShutdownHook(shutdown_hook) }
+    try { Runtime.getRuntime.nn.removeShutdownHook(shutdown_hook) }
     catch { case _: IllegalStateException => }
 
 
@@ -412,7 +415,7 @@ object Isabelle_System {
     description: String = "",
     ssh: SSH.System = SSH.Local,
     cwd: Path = Path.current,
-    env: JMap[String, String] = settings(),  // ignored for remote ssh
+    env: JMap[String, String] = Settings.env(),  // ignored for remote ssh
     redirect: Boolean = false,
     input: String = "",
     progress_stdout: String => Unit = (_: String) => (),
@@ -427,12 +430,21 @@ object Isabelle_System {
         watchdog = watchdog, strict = strict)
   }
 
+  lazy val bash_functions: List[String] =
+    bash("declare -Fx").check.out_lines.flatMap(s => Word.explode(s).lastOption)
+
+  def no_bash_functions: List[String] = bash_functions.map("-" + _)
+
+  object Bash_Functions extends Scala.Fun_Strings("bash_functions") {
+    val here = Scala_Project.here
+    def apply(args: List[String]): List[String] = bash_functions
+  }
+
 
   /* command-line tools */
 
-  def require_command(cmd: String, test: String = "--version"): Unit = {
-    if (!bash(Bash.string(cmd) + " " + test).ok) error("Missing system command: " + quote(cmd))
-  }
+  def require_command(cmd: String, test: String = "--version"): Unit =
+    SSH.Local.require_command(cmd, test = test)
 
   private lazy val gnutar_check: Boolean =
     try { bash("tar --version").check.out.containsSlice("GNU tar") || error("") }
@@ -455,25 +467,24 @@ object Isabelle_System {
   }
 
   def extract(archive: Path, dir: Path, strip: Boolean = false): Unit = {
-    val name = archive.file_name
     make_directory(dir)
-    if (File.is_zip(name) || File.is_jar(name)) {
+    if (File.is_zip(archive) || File.is_jar(archive)) {
       using(new ZipFile(archive.file)) { zip_file =>
         val items =
-          for (entry <- zip_file.entries().asScala.toList)
+          for (entry <- zip_file.entries().nn.asScala.toList)
           yield {
-            val input = JPath.of(entry.getName)
+            val input = JPath.of(entry.getName).nn
             val count = input.getNameCount
             val output =
               if (strip && count <= 1) None
-              else if (strip) Some(input.subpath(1, count))
+              else if (strip) Some(input.subpath(1, count).nn)
               else Some(input)
-            val result = output.map(dir.java_path.resolve(_))
+            val result = output.map(p => dir.java_path.resolve(p).nn)
             for (res <- result) {
               if (entry.isDirectory) Files.createDirectories(res)
               else {
                 val bytes = using(zip_file.getInputStream(entry))(Bytes.read_stream(_))
-                Files.createDirectories(res.getParent)
+                Files.createDirectories(res.getParent.nn)
                 Files.write(res, bytes.make_array)
               }
             }
@@ -482,25 +493,43 @@ object Isabelle_System {
         for {
           case (entry, Some(res)) <- items
           if !entry.isDirectory
-          t <- Option(entry.getLastModifiedTime)
+          t <- proper_value(entry.getLastModifiedTime)
         } Files.setLastModifiedTime(res, t)
       }
     }
-    else if (File.is_tar_bz2(name) || File.is_tgz(name) || File.is_tar_gz(name)) {
-      val flags = if (File.is_tar_bz2(name)) "-xjf " else "-xzf "
-      Isabelle_System.gnutar(flags + File.bash_path(archive), dir = dir, strip = strip).check
+    else {
+      val extr =
+        if (File.is_tar_bz2(archive)) "-xjf"
+        else if (File.is_tgz(archive) || File.is_tar_gz(archive)) "-xzf"
+        else if (File.is_tar_xz(archive)) "--xz -xf"
+        else ""
+      if (extr.nonEmpty) {
+        Isabelle_System.gnutar(extr + " " + File.bash_path(archive), dir = dir, strip = strip).check
+      }
+      else error("Cannot extract " + archive)
     }
-    else error("Cannot extract " + archive)
   }
 
-  def make_patch(base_dir: Path, src: Path, dst: Path, diff_options: String = ""): String = {
-    with_tmp_file("patch") { patch =>
-      Isabelle_System.bash(
-        "diff -ru " + diff_options + " -- " + File.bash_path(src) + " " + File.bash_path(dst) +
-          " > " + File.bash_path(patch),
-        cwd = base_dir).check_rc(_ <= 1)
-      File.read(patch)
-    }
+  def require_patch(): Unit = SSH.Local.require_patch()
+
+  def make_patch(base_dir: Path, src: Path, dst: Path, diff_options: String = ""): String =
+    SSH.Local.make_patch(base_dir, src, dst, diff_options = diff_options)
+
+  def apply_patch(base_dir: Path, patch: String,
+    strip: Int = 1,
+    progress: Progress = new Progress
+  ): Unit = SSH.Local.apply_patch(base_dir, patch, strip = strip, progress = progress)
+
+  def git_clone(url: String, target: Path,
+    checkout: String = "HEAD",
+    ssh: SSH.System = SSH.Local,
+    progress: Progress = new Progress
+  ): Unit = {
+    progress.echo("Cloning " + quote(url) + " ...")
+    bash(
+      "git clone --quiet --no-checkout " + Bash.string(url) + " . && " +
+      "git checkout --quiet --detach " + Bash.string(checkout),
+      ssh = ssh, cwd = ssh.make_directory(target)).check
   }
 
   def open(arg: String): Unit =
@@ -520,6 +549,16 @@ object Isabelle_System {
     external
   }
 
+  def macos_version(): Int =
+    if (Platform.is_macos) {
+      val Version = """^(\d+).*""".r
+      bash("sw_vers -productVersion").check.out match {
+        case Version(Value.Int(x)) => x
+        case s => error("Malformed macOS version: " + quote(s))
+      }
+    }
+    else 0
+
 
 
   /** Isabelle resources **/
@@ -531,12 +570,8 @@ object Isabelle_System {
 
   /* default logic */
 
-  def default_logic(args: String*): String = {
-    args.find(_ != "") match {
-      case Some(logic) => logic
-      case None => getenv_strict("ISABELLE_LOGIC")
-    }
-  }
+  def default_logic(args: String*): String =
+    args.find(_.nonEmpty) getOrElse getenv_strict("ISABELLE_LOGIC")
 
 
   /* download file */
@@ -564,7 +599,7 @@ object Isabelle_System {
     Mercurial.Server("https://isabelle.in.tum.de/repos/isabelle")
 
   val afp_repository: Mercurial.Server =
-    Mercurial.Server("https://foss.heptapod.net/isa-afp/afp-devel")
+    Mercurial.Server("https://isabelle.sketis.net/repos/afp-devel")
 
   def official_releases(): List[String] =
     Library.trim_split_lines(

@@ -116,17 +116,7 @@ setup \<open>Sign.parent_path\<close>
 abbreviation rec_nat :: "'a \<Rightarrow> (nat \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> nat \<Rightarrow> 'a"
   where "rec_nat \<equiv> old.rec_nat"
 
-declare nat.sel[code del]
-
 hide_const (open) Nat.pred \<comment> \<open>hide everything related to the selector\<close>
-hide_fact
-  nat.case_eq_if
-  nat.collapse
-  nat.expand
-  nat.sel
-  nat.exhaust_sel
-  nat.split_sel
-  nat.split_sel_asm
 
 lemma nat_exhaust [case_names 0 Suc, cases type: nat]:
   "(y = 0 \<Longrightarrow> P) \<Longrightarrow> (\<And>nat. y = Suc nat \<Longrightarrow> P) \<Longrightarrow> P"
@@ -223,7 +213,7 @@ begin
 
 primrec plus_nat
   where
-    add_0: "0 + n = (n::nat)"
+    add_0 [code]: "0 + n = (n::nat)"
   | add_Suc: "Suc m + n = Suc (m + n)"
 
 lemma add_0_right [simp]: "m + 0 = m"
@@ -232,8 +222,6 @@ lemma add_0_right [simp]: "m + 0 = m"
 
 lemma add_Suc_right [simp]: "m + Suc n = Suc (m + n)"
   by (induct m) simp_all
-
-declare add_0 [code]
 
 lemma add_Suc_shift [code]: "Suc m + n = m + Suc n"
   by simp
@@ -1012,7 +1000,7 @@ lemma Least_Suc2: "P n \<Longrightarrow> Q m \<Longrightarrow> \<not> P 0 \<Long
 
 lemma ex_least_nat_le:
   fixes P :: "nat \<Rightarrow> bool"
-  assumes "P n" "\<not> P 0" 
+  assumes "P n"
   shows "\<exists>k\<le>n. (\<forall>i<k. \<not> P i) \<and> P k"
 proof (cases n)
   case (Suc m)
@@ -1027,7 +1015,7 @@ lemma ex_least_nat_less:
 proof (cases n)
   case (Suc m)
   then obtain k where k: "k \<le> n" "\<forall>i<k. \<not> P i" "P k"
-    using ex_least_nat_le [OF assms] by blast
+    using ex_least_nat_le \<open>P n\<close> by blast
   show ?thesis 
     by (cases k) (use assms k less_eq_Suc_le in auto)
 qed (use assms in auto)
@@ -1276,7 +1264,7 @@ lemma diff_is_0_eq [simp]: "m - n = 0 \<longleftrightarrow> m \<le> n"
 
 lemma diff_is_0_eq' [simp]: "m \<le> n \<Longrightarrow> m - n = 0"
   for m n :: nat
-  by (rule iffD2, rule diff_is_0_eq)
+  by simp
 
 lemma zero_less_diff [simp]: "0 < n - m \<longleftrightarrow> m < n"
   for m n :: nat
@@ -1304,6 +1292,8 @@ lemma nat_diff_split_asm: "P (a - b) \<longleftrightarrow> \<not> (a < b \<and> 
   for a b :: nat
   \<comment> \<open>elimination of \<open>-\<close> on \<open>nat\<close> in assumptions\<close>
   by (auto split: nat_diff_split)
+  
+lemmas nat_diff_splits = nat_diff_split nat_diff_split_asm
 
 lemma Suc_pred': "0 < n \<Longrightarrow> n = Suc(n - 1)"
   by simp
@@ -1463,11 +1453,11 @@ text \<open>
 
 consts compow :: "nat \<Rightarrow> 'a \<Rightarrow> 'a"
 
-abbreviation compower :: "'a \<Rightarrow> nat \<Rightarrow> 'a" (infixr "^^" 80)
+abbreviation compower :: "'a \<Rightarrow> nat \<Rightarrow> 'a" (infixr \<open>^^\<close> 80)
   where "f ^^ n \<equiv> compow n f"
 
 notation (latex output)
-  compower ("(_\<^bsup>_\<^esup>)" [1000] 1000)
+  compower (\<open>(_\<^bsup>_\<^esup>)\<close> [1000] 1000)
 
 text \<open>\<open>f ^^ n = f \<circ> \<dots> \<circ> f\<close>, the \<open>n\<close>-fold composition of \<open>f\<close>\<close>
 
@@ -1507,8 +1497,8 @@ qualified definition funpow :: "nat \<Rightarrow> ('a \<Rightarrow> 'a) \<Righta
   where funpow_code_def [code_abbrev]: "funpow = compow"
 
 lemma [code]:
-  "funpow (Suc n) f = f \<circ> funpow n f"
   "funpow 0 f = id"
+  "funpow (Suc n) f = f \<circ> funpow n f"
   by (simp_all add: funpow_code_def)
 
 end
@@ -1538,13 +1528,13 @@ lemma Suc_funpow[simp]: "Suc ^^ n = ((+) n)"
 lemma id_funpow[simp]: "id ^^ n = id"
   by (induct n) simp_all
 
-lemma funpow_mono: "mono f \<Longrightarrow> A \<le> B \<Longrightarrow> (f ^^ n) A \<le> (f ^^ n) B"
-  for f :: "'a \<Rightarrow> ('a::order)"
-  by (induct n arbitrary: A B)
-     (auto simp del: funpow.simps(2) simp add: funpow_Suc_right mono_def)
+lemma funpow_mono: "mono_on UNIV f \<Longrightarrow> A \<le> B \<Longrightarrow> (f ^^ n) A \<le> (f ^^ n) B"
+  for f :: "'a \<Rightarrow> ('a::preorder)"
+  by (induct n) (auto simp: mono_on_def)
 
 lemma funpow_mono2:
-  assumes "mono f"
+  fixes f :: "'a \<Rightarrow> 'a :: preorder"
+  assumes "mono_on UNIV f"
     and "i \<le> j"
     and "x \<le> y"
     and "x \<le> f x"
@@ -1559,12 +1549,13 @@ next
   proof(cases "i = Suc j")
     case True
     with assms(1) Suc show ?thesis
-      by (simp del: funpow.simps add: funpow_simps_right monoD funpow_mono)
+      by (simp del: funpow.simps add: funpow_simps_right mono_onD funpow_mono)
   next
     case False
-    with assms(1,4) Suc show ?thesis
+    have "x \<le> f y"
+      using assms(4) Suc(3) mono_onD[OF assms(1)] order.trans[of x "f x" "f y"] by simp
+    with False Suc(1,2) show ?thesis
       by (simp del: funpow.simps add: funpow_simps_right le_eq_less_or_eq less_Suc_eq_le)
-        (simp add: Suc.hyps monoD order_subst1)
   qed
 qed
 
@@ -1630,9 +1621,9 @@ proof (rule antisym)
     using Kleene_iter_lpfp[OF assms(1)] lfp_unfold[OF assms(1)] by simp
 qed
 
-lemma mono_pow: "mono f \<Longrightarrow> mono (f ^^ n)"
-  for f :: "'a \<Rightarrow> 'a::complete_lattice"
-  by (induct n) (auto simp: mono_def)
+lemma mono_pow: "mono_on UNIV f \<Longrightarrow> mono_on UNIV (f ^^ n)"
+  for f :: "'a \<Rightarrow> 'a::preorder"
+  by (induct n) (auto simp: mono_on_def)
 
 lemma lfp_funpow:
   assumes f: "mono f"
@@ -1761,6 +1752,9 @@ proof -
     by simp
 qed
 
+lemma of_nat_diff_if: \<open>of_nat (m - n) = (if n\<le>m then of_nat m - of_nat n else 0)\<close>
+  by (simp add: not_le less_imp_le)
+
 end
 
 text \<open>Class for unital semirings with characteristic zero.
@@ -1797,11 +1791,11 @@ end
 
 class ring_char_0 = ring_1 + semiring_char_0
 
+lemma (in ordered_semiring_1) of_nat_0_le_iff [simp]: "0 \<le> of_nat n"
+  by (induct n) simp_all
+
 context linordered_nonzero_semiring
 begin
-
-lemma of_nat_0_le_iff [simp]: "0 \<le> of_nat n"
-  by (induct n) simp_all
 
 lemma of_nat_less_0_iff [simp]: "\<not> of_nat m < 0"
   by (simp add: not_less)
@@ -1891,7 +1885,7 @@ subsection \<open>The set of natural numbers\<close>
 context semiring_1
 begin
 
-definition Nats :: "'a set"  ("\<nat>")
+definition Nats :: "'a set"  (\<open>\<nat>\<close>)
   where "\<nat> = range of_nat"
 
 lemma of_nat_in_Nats [simp]: "of_nat n \<in> \<nat>"
@@ -1990,7 +1984,7 @@ simproc_setup natdiff_cancel_sums
   ("(l::nat) + m - n" | "(l::nat) - (m + n)" | "Suc m - n" | "m - Suc n") =
   \<open>K (try o Nat_Arith.cancel_diff_conv)\<close>
 
-context order
+context preorder
 begin
 
 lemma lift_Suc_mono_le:
@@ -2000,7 +1994,7 @@ lemma lift_Suc_mono_le:
 proof (cases "n < n'")
   case True
   then show ?thesis
-    by (induct n n' rule: less_Suc_induct) (auto intro: mono)
+    by (induct n n' rule: less_Suc_induct) (auto intro: mono order.trans)
 next
   case False
   with \<open>n \<le> n'\<close> show ?thesis by auto
@@ -2013,7 +2007,7 @@ lemma lift_Suc_antimono_le:
 proof (cases "n < n'")
   case True
   then show ?thesis
-    by (induct n n' rule: less_Suc_induct) (auto intro: mono)
+    by (induct n n' rule: less_Suc_induct) (auto intro: mono order.trans)
 next
   case False
   with \<open>n \<le> n'\<close> show ?thesis by auto
@@ -2023,7 +2017,7 @@ lemma lift_Suc_mono_less:
   assumes mono: "\<And>n. f n < f (Suc n)"
     and "n < n'"
   shows "f n < f n'"
-  using \<open>n < n'\<close> by (induct n n' rule: less_Suc_induct) (auto intro: mono)
+  using \<open>n < n'\<close> by (induct n n' rule: less_Suc_induct) (auto intro: mono order.strict_trans)
 
 lemma lift_Suc_mono_less_iff: "(\<And>n. f n < f (Suc n)) \<Longrightarrow> f n < f m \<longleftrightarrow> n < m"
   by (blast intro: less_asym' lift_Suc_mono_less [of f]
@@ -2031,19 +2025,22 @@ lemma lift_Suc_mono_less_iff: "(\<And>n. f n < f (Suc n)) \<Longrightarrow> f n 
 
 end
 
-lemma mono_iff_le_Suc: "mono f \<longleftrightarrow> (\<forall>n. f n \<le> f (Suc n))"
-  unfolding mono_def by (auto intro: lift_Suc_mono_le [of f])
+lemma mono_iff_le_Suc: "mono_on UNIV f \<longleftrightarrow> (\<forall>n. f n \<le> f (Suc n))"
+  for f :: "nat \<Rightarrow> 'a::preorder"
+  unfolding mono_on_def by (auto intro: lift_Suc_mono_le [of f])
 
-lemma antimono_iff_le_Suc: "antimono f \<longleftrightarrow> (\<forall>n. f (Suc n) \<le> f n)"
-  unfolding antimono_def by (auto intro: lift_Suc_antimono_le [of f])
+lemma antimono_iff_le_Suc: "antimono_on UNIV f \<longleftrightarrow> (\<forall>n. f (Suc n) \<le> f n)"
+  for f :: "nat \<Rightarrow> 'a::preorder"
+  unfolding monotone_on_def by (auto intro: lift_Suc_antimono_le [of f])
 
-lemma strict_mono_Suc_iff: "strict_mono f \<longleftrightarrow> (\<forall>n. f n < f (Suc n))"
-proof (intro iffI strict_monoI)
+lemma strict_mono_Suc_iff: "strict_mono_on UNIV f \<longleftrightarrow> (\<forall>n. f n < f (Suc n))"
+  for f :: "nat \<Rightarrow> 'a::preorder"
+proof (intro iffI strict_mono_onI)
   assume *: "\<forall>n. f n < f (Suc n)"
   fix m n :: nat assume "m < n"
   thus "f m < f n"
-    by (induction rule: less_Suc_induct) (use * in auto)
-qed (auto simp: strict_mono_def)
+    by (induction rule: less_Suc_induct) (use * in \<open>auto intro: order.strict_trans\<close>)
+qed (auto simp: strict_mono_on_def)
 
 lemma strict_mono_add: "strict_mono (\<lambda>n::'a::linordered_semidom. n + k)"
   by (auto simp: strict_mono_def)
@@ -2062,6 +2059,39 @@ next
     by (simp add: Suc_le_eq)
   finally show ?case by simp
 qed
+
+lemma bex_const1_if_mono_below_diag: fixes f :: "nat \<Rightarrow> nat" assumes "mono f"
+shows "f n < n \<Longrightarrow> \<exists>i<n. f(Suc i) = f i"
+proof(induction n)
+  case 0
+  then show ?case by simp
+next
+  case (Suc n)
+  have *: "f n \<le> f(Suc n)" using assms[simplified mono_iff_le_Suc] by blast
+  from Suc.prems[simplified less_Suc_eq]
+  show ?case
+  proof
+    assume "f(Suc n) < n"
+    from order.strict_trans1[OF * this]
+    show ?thesis using Suc.IH less_SucI by blast
+  next
+    assume "f(Suc n) = n"
+    from order.strict_trans1[OF * Suc.prems, simplified less_Suc_eq]
+    show ?case
+    proof
+      assume "f n < n"
+      thus ?thesis using Suc.IH less_SucI by blast
+    next
+      assume "f n = n"
+      with \<open>f(Suc n) = n\<close> show ?thesis by auto
+    qed
+  qed
+qed
+
+lemma bex_const1_if_mono_below_diag_Suc:
+fixes f :: "nat \<Rightarrow> nat" assumes "mono f" "f(Suc m) \<le> m"
+shows "\<exists>i\<le>m. f (Suc i) = f i"
+using bex_const1_if_mono_below_diag[OF assms(1), of "Suc m"] assms(2) less_Suc_eq_le by blast
 
 
 text \<open>Subtraction laws, mostly by Clemens Ballarin\<close>
@@ -2271,7 +2301,7 @@ qed
 lemma strict_inc_induct [consumes 1, case_names base step]:
   assumes less: "i < j"
     and base: "\<And>i. j = Suc i \<Longrightarrow> P i"
-    and step: "\<And>i. i < j \<Longrightarrow> P (Suc i) \<Longrightarrow> P i"
+    and step: "\<And>i. Suc i < j \<Longrightarrow> P (Suc i) \<Longrightarrow> P i"
   shows "P i"
 using less proof (induct "j - i - 1" arbitrary: i)
   case (0 i)
@@ -2289,7 +2319,7 @@ next
   moreover from * have "j - Suc i \<noteq> 0" by auto
   then have "Suc i < j" by (simp add: not_le)
   ultimately have "P (Suc i)" by (rule Suc.hyps)
-  with \<open>i < j\<close> show "P i" by (rule step)
+  with \<open>Suc i < j\<close> show "P i" by (rule step)
 qed
 
 lemma zero_induct_lemma: "P k \<Longrightarrow> (\<And>n. P (Suc n) \<Longrightarrow> P n) \<Longrightarrow> P (k - i)"
@@ -2378,24 +2408,101 @@ lemma GreatestI_ex_nat:
 subsection \<open>Monotonicity of \<open>funpow\<close>\<close>
 
 lemma funpow_increasing: "m \<le> n \<Longrightarrow> mono f \<Longrightarrow> (f ^^ n) \<top> \<le> (f ^^ m) \<top>"
-  for f :: "'a::{lattice,order_top} \<Rightarrow> 'a"
+  for f :: "'a::order_top \<Rightarrow> 'a"
   by (induct rule: inc_induct)
     (auto simp del: funpow.simps(2) simp add: funpow_Suc_right
       intro: order_trans[OF _ funpow_mono])
 
 lemma funpow_decreasing: "m \<le> n \<Longrightarrow> mono f \<Longrightarrow> (f ^^ m) \<bottom> \<le> (f ^^ n) \<bottom>"
-  for f :: "'a::{lattice,order_bot} \<Rightarrow> 'a"
+  for f :: "'a::order_bot \<Rightarrow> 'a"
   by (induct rule: dec_induct)
     (auto simp del: funpow.simps(2) simp add: funpow_Suc_right
       intro: order_trans[OF _ funpow_mono])
 
 lemma mono_funpow: "mono Q \<Longrightarrow> mono (\<lambda>i. (Q ^^ i) \<bottom>)"
-  for Q :: "'a::{lattice,order_bot} \<Rightarrow> 'a"
+  for Q :: "'a::order_bot \<Rightarrow> 'a"
   by (auto intro!: funpow_decreasing simp: mono_def)
 
 lemma antimono_funpow: "mono Q \<Longrightarrow> antimono (\<lambda>i. (Q ^^ i) \<top>)"
-  for Q :: "'a::{lattice,order_top} \<Rightarrow> 'a"
+  for Q :: "'a::order_top \<Rightarrow> 'a"
   by (auto intro!: funpow_increasing simp: antimono_def)
+
+
+subsection \<open>Kleene's fixed point theorem for continuous functions\<close>
+
+text \<open>Kleene's fixed point theorem shows that the \<open>lfp\<close> of a omega-continuous function
+can be obtained as the supremum of an omega chain. It only requires an omega-complete partial order.
+We prove it here for complete lattices because the latter structures are not defined in Main
+but the theorem is also useful for complete lattices.\<close>
+
+definition omega_chain :: "(nat \<Rightarrow> ('a::complete_lattice)) \<Rightarrow> bool" where
+"omega_chain C = (\<forall>i. C i \<le> C(Suc i))"
+
+definition omega_cont :: "(('a::complete_lattice) \<Rightarrow> ('b::complete_lattice)) \<Rightarrow> bool" where
+"omega_cont f = (\<forall>C. omega_chain C \<longrightarrow> f(SUP n. C n) = (SUP n. f(C n)))"
+
+lemma omega_chain_mono: "omega_chain C \<Longrightarrow> i \<le> j \<Longrightarrow> C i \<le> C j"
+unfolding omega_chain_def using lift_Suc_mono_le[of C]  
+by(induction "j-i" arbitrary: i j)auto
+
+lemma mono_if_omega_cont: fixes f :: "('a::complete_lattice) \<Rightarrow> ('b::complete_lattice)"
+  assumes "omega_cont f" shows "mono f"
+proof
+  fix a b :: "'a" assume "a \<le> b"
+  let ?C = "\<lambda>n::nat. if n=0 then a else b"
+  have *: "omega_chain ?C" using \<open>a \<le> b\<close> by(auto simp: omega_chain_def)
+  have "f a \<le> sup (f a) (SUP n. f(?C n))" by(rule sup.cobounded1)
+  also have "\<dots> = sup (f(?C 0)) (SUP n. f(?C n))" by (simp)
+  also have "\<dots> = (SUP n. f (?C n))" using SUP_absorb[OF UNIV_I] .
+  also have "\<dots> = f (SUP n. ?C n)"
+    using assms * by (simp add: omega_cont_def del: if_image_distrib)
+  also have "f (SUP n. ?C n) = f b"
+    using \<open>a \<le> b\<close> by (auto simp add: gt_ex sup.absorb2 split: if_splits)
+  finally show "f a \<le> f b" .
+qed
+
+lemma omega_chain_iterates: fixes f :: "('a::complete_lattice) \<Rightarrow> 'a"
+  assumes "mono f" shows "omega_chain(\<lambda>n. (f^^n) bot)"
+proof-
+  have "(f ^^ n) bot \<le> (f ^^ Suc n) bot" for n
+  proof (induction n)
+    case 0 show ?case by simp
+  next
+    case (Suc n) thus ?case using assms by (auto simp: mono_def)
+  qed
+  thus ?thesis by(auto simp: omega_chain_def assms)
+qed
+
+theorem Kleene_lfp:
+  assumes "omega_cont f" shows "lfp f = (SUP n. (f^^n) bot)" (is "_ = ?U")
+proof(rule Orderings.antisym)
+  from assms mono_if_omega_cont
+  have mono: "(f ^^ n) bot \<le> (f ^^ Suc n) bot" for n
+    using funpow_decreasing [of n "Suc n"] by auto
+  show "lfp f \<le> ?U"
+  proof (rule lfp_lowerbound)
+    have "f ?U = (SUP n. (f^^Suc n) bot)"
+      using omega_chain_iterates[OF mono_if_omega_cont[OF assms]] assms
+      by(simp add: omega_cont_def)
+    also have "\<dots> = ?U" using mono by(blast intro: SUP_eq)
+    finally show "f ?U \<le> ?U" by simp
+  qed
+next
+  have "(f^^n) bot \<le> p" if "f p \<le> p" for n p
+  proof -
+    show ?thesis
+    proof(induction n)
+      case 0 show ?case by simp
+    next
+      case Suc
+      from monoD[OF mono_if_omega_cont[OF assms] Suc] \<open>f p \<le> p\<close>
+      show ?case by simp
+    qed
+  qed
+  thus "?U \<le> lfp f"
+    using lfp_unfold[OF mono_if_omega_cont[OF assms]]
+    by (simp add: SUP_le_iff)
+qed
 
 
 subsection \<open>The divides relation on \<^typ>\<open>nat\<close>\<close>

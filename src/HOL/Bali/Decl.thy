@@ -68,24 +68,20 @@ definition
 instance
 proof
   fix x y z::acc_modi
-  show "(x < y) = (x \<le> y \<and> \<not> y \<le> x)"
+  show "x < y \<longleftrightarrow> x \<le> y \<and> \<not> y \<le> x"
     by (auto simp add: le_acc_def less_acc_def split: acc_modi.split) 
   show "x \<le> x"                       \<comment> \<open>reflexivity\<close>
     by (auto simp add: le_acc_def)
-  {
-    assume "x \<le> y" "y \<le> z"           \<comment> \<open>transitivity\<close> 
-    then show "x \<le> z"
-      by (auto simp add: le_acc_def less_acc_def split: acc_modi.split)
-  next
-    assume "x \<le> y" "y \<le> x"           \<comment> \<open>antisymmetry\<close>
-    moreover have "\<forall> x y. x < (y::acc_modi) \<and> y < x \<longrightarrow> False"
+  show "x \<le> y \<Longrightarrow> y \<le> z \<Longrightarrow> x \<le> z"  \<comment> \<open>transitivity\<close>
+    by (auto simp add: le_acc_def less_acc_def split: acc_modi.split)
+  show "x = y" if "x \<le> y" "y \<le> x"   \<comment> \<open>antisymmetry\<close>
+  proof -
+    have "\<forall>x y. x < (y::acc_modi) \<and> y < x \<longrightarrow> False"
       by (auto simp add: less_acc_def split: acc_modi.split)
-    ultimately show "x = y" by (unfold le_acc_def) iprover
-  next
-    fix x y:: acc_modi
-    show "x \<le> y \<or> y \<le> x"   
-      by (auto simp add: less_acc_def le_acc_def split: acc_modi.split)
-  }
+    with that show ?thesis by (unfold le_acc_def) iprover
+  qed
+  show "x \<le> y \<or> y \<le> x"
+    by (auto simp add: less_acc_def le_acc_def split: acc_modi.split)
 qed
   
 end
@@ -456,21 +452,21 @@ definition
   where "subcls1 G = {(C,D). C\<noteq>Object \<and> (\<exists>c\<in>class G C: super c = D)}"
 
 abbreviation
-  subcls1_syntax :: "prog => [qtname, qtname] => bool" ("_\<turnstile>_\<prec>\<^sub>C1_"  [71,71,71] 70)
+  subcls1_syntax :: "prog => [qtname, qtname] => bool" (\<open>_\<turnstile>_\<prec>\<^sub>C1_\<close>  [71,71,71] 70)
   where "G\<turnstile>C \<prec>\<^sub>C1 D == (C,D) \<in> subcls1 G"
 
 abbreviation
-  subclseq_syntax :: "prog => [qtname, qtname] => bool" ("_\<turnstile>_\<preceq>\<^sub>C _"  [71,71,71] 70) 
+  subclseq_syntax :: "prog => [qtname, qtname] => bool" (\<open>_\<turnstile>_\<preceq>\<^sub>C _\<close>  [71,71,71] 70) 
   where "G\<turnstile>C \<preceq>\<^sub>C D == (C,D) \<in>(subcls1 G)\<^sup>*" (* cf. 8.1.3 *)
 
 abbreviation
-  subcls_syntax :: "prog => [qtname, qtname] => bool" ("_\<turnstile>_\<prec>\<^sub>C _"  [71,71,71] 70)
+  subcls_syntax :: "prog => [qtname, qtname] => bool" (\<open>_\<turnstile>_\<prec>\<^sub>C _\<close>  [71,71,71] 70)
   where "G\<turnstile>C \<prec>\<^sub>C D == (C,D) \<in>(subcls1 G)\<^sup>+"
 
 notation (ASCII)
-  subcls1_syntax  ("_|-_<:C1_" [71,71,71] 70) and
-  subclseq_syntax  ("_|-_<=:C _"[71,71,71] 70) and
-  subcls_syntax  ("_|-_<:C _"[71,71,71] 70)
+  subcls1_syntax  (\<open>_|-_<:C1_\<close> [71,71,71] 70) and
+  subclseq_syntax  (\<open>_|-_<=:C _\<close>[71,71,71] 70) and
+  subcls_syntax  (\<open>_|-_<:C _\<close>[71,71,71] 70)
 
 lemma subint1I: "\<lbrakk>iface G I = Some i; J \<in> set (isuperIfs i)\<rbrakk> 
                  \<Longrightarrow> (I,J) \<in> subint1 G" 

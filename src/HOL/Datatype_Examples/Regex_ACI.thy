@@ -4,7 +4,7 @@ begin
 
 datatype 'a rexp = Zero | Eps | Atom 'a | Alt "'a rexp" "'a rexp" | Conc "'a rexp" "'a rexp" | Star "'a rexp"
 
-inductive ACI (infix "~" 64) where
+inductive ACI (infix \<open>~\<close> 64) where
   a1: "Alt (Alt r s) t ~ Alt r (Alt s t)"
 | a2: "Alt r (Alt s t) ~ Alt (Alt r s) t"
 | c: "Alt r s ~ Alt s r"
@@ -16,7 +16,7 @@ inductive ACI (infix "~" 64) where
 
 declare ACI.intros[intro]
 
-abbreviation ACIcl (infix "~~" 64) where "(~~) \<equiv> equivclp (~)"
+abbreviation ACIcl (infix \<open>~~\<close> 64) where "(~~) \<equiv> equivclp (~)"
 
 lemma eq_set_preserves_inter:
   fixes eq set
@@ -190,8 +190,8 @@ lemma reflclp_ACI: "(~)\<^sup>=\<^sup>= = (~)"
   by auto
 
 lemma strong_confluentp_ACI: "strong_confluentp (~)"
-  apply (rule strong_confluentpI, unfold reflclp_ACI)
-  subgoal for x y z
+proof -
+  have "\<lbrakk>x ~ y; x ~ z\<rbrakk> \<Longrightarrow> \<exists>u. (~)\<^sup>*\<^sup>* y u \<and> z ~ u" for x y z :: "'a rexp"
   proof (induct x y arbitrary: z rule: ACI.induct)
     case (a1 r s t)
     then show ?case
@@ -238,19 +238,10 @@ lemma strong_confluentp_ACI: "strong_confluentp (~)"
             (metis a1 c A1 r_into_rtranclp rtranclp.rtrancl_into_rtrancl)
       next
         case (XI r)
+        then have "(~)\<^sup>*\<^sup>* (Alt r' s') (Alt (Alt r'' r'') (Alt (Alt s'' s'') s'))"
+          by (meson A1 A2 a1 a2 c r_into_rtranclp rtranclp.rtrancl_into_rtrancl)
         then show ?case
-          apply (elim exI[where P = "\<lambda>x. _ x \<and> _ ~ x", OF conjI[OF _ ACI.A[OF i ACI.A[OF i]]], rotated])
-          apply hypsubst
-          apply (rule converse_rtranclp_into_rtranclp, rule a1)
-          apply (rule converse_rtranclp_into_rtranclp, rule a1)
-          apply (rule converse_rtranclp_into_rtranclp, rule A2, rule a2)
-          apply (rule converse_rtranclp_into_rtranclp, rule A2, rule A1, rule c)
-          apply (rule converse_rtranclp_into_rtranclp, rule A2, rule a1)
-          apply (rule converse_rtranclp_into_rtranclp, rule A2, rule a1)
-          apply (rule converse_rtranclp_into_rtranclp, rule a2)
-          apply (rule converse_rtranclp_into_rtranclp, rule A2, rule a2)
-          apply blast
-          done
+          using XI(1) by auto
       qed auto
     next
       case inner: (a2 s'' t'')
@@ -273,17 +264,10 @@ lemma strong_confluentp_ACI: "strong_confluentp (~)"
             (metis a2 c A2 r_into_rtranclp rtranclp.rtrancl_into_rtrancl)
       next
         case (XI r)
+        then have "(~)\<^sup>*\<^sup>* (Alt r' s') (Alt (Alt r' (Alt s'' s'')) (Alt t'' t''))"
+          by (meson A1 A2 a1 a2 c r_into_rtranclp rtranclp.rtrancl_into_rtrancl)
         then show ?case
-          apply (elim exI[where P = "\<lambda>x. _ x \<and> _ ~ x", OF conjI[OF _ ACI.A[OF ACI.A[OF _ i] i]], rotated])
-          apply hypsubst
-          apply (rule converse_rtranclp_into_rtranclp, rule A2, rule a2)
-          apply (rule converse_rtranclp_into_rtranclp, rule A2, rule A1, rule c)
-          apply (rule converse_rtranclp_into_rtranclp, rule A2, rule a1)
-          apply (rule converse_rtranclp_into_rtranclp, rule A2, rule A2, rule a1)
-          apply (rule converse_rtranclp_into_rtranclp, rule A2, rule a2)
-          apply (rule converse_rtranclp_into_rtranclp, rule a2)
-          apply blast
-          done
+          using XI(1) by auto
       qed auto
     qed (auto 5 0 intro: AAA)
   next
@@ -295,7 +279,9 @@ lemma strong_confluentp_ACI: "strong_confluentp (~)"
     from S(3,1,2) show ?case
       by (cases rule: ACI.cases) (auto intro: SSS)
   qed
-  done
+  then show ?thesis
+    by (simp add: reflclp_ACI strong_confluentpI)
+qed
 
 lemma confluent_quotient_ACI:
   "confluent_quotient (~) (~~) (~~) (~~) (~~) (~~)
@@ -305,7 +291,7 @@ lemma confluent_quotient_ACI:
       intro: equivpI reflpI sympI transpI
       strong_confluentp_imp_confluentp[OF strong_confluentp_ACI])
 
-inductive ACIEQ (infix "\<approx>" 64) where
+inductive ACIEQ (infix \<open>\<approx>\<close> 64) where
   a: "Alt (Alt r s) t \<approx> Alt r (Alt s t)"
 | c: "Alt r s \<approx> Alt s r"
 | i: "Alt r r \<approx> r"
@@ -333,9 +319,8 @@ quotient_type 'a ACI_rexp = "'a rexp" / "(\<approx>)"
 
 lift_bnf 'a ACI_rexp
   unfolding ACIEQ_alt
-  subgoal for A Q by (rule confluent_quotient.subdistributivity[OF confluent_quotient_ACI])
-  subgoal for Ss by (intro eq_set_preserves_inter[rotated] ACIcl_set_eq; auto)
-  done
+  apply (meson confluent_quotient.subdistributivity confluent_quotient_ACI)
+  by (metis ACIcl_set_eq eq_set_preserves_inter)
 
 datatype ldl = Prop string | And ldl ldl | Not ldl | Match "ldl ACI_rexp"
 

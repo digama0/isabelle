@@ -248,7 +248,7 @@ fun preprocess ctxt t =
           @{thm bot_fun_def}, @{thm less_bool_def}])
     val t' = Pattern.rewrite_term thy rewrs [] (Object_Logic.atomize_term ctxt t)
     val (vs, body) = strip_all t'
-    val vs' = Variable.variant_frees ctxt [t'] vs
+    val vs' = Variable.variant_names (Variable.declare_names t' ctxt) vs
   in subst_bounds (map Free (rev vs'), body) end
 
 
@@ -361,7 +361,7 @@ fun define_functions (mk_equations, termination_tac) prfx argnames names Ts =
     let
       val eqs_t = mk_equations (map2 (fn name => fn T => Free (name, T)) names Ts)
     in
-      Function.add_function
+      Function.add_function {verbose = false}
         (map (fn (name, T) => (Binding.concealed (Binding.name name), SOME T, NoSyn))
           (names ~~ Ts))
         (map (fn t => (((Binding.concealed Binding.empty, []), t), [], [])) eqs_t)

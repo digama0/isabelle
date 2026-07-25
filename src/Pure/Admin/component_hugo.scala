@@ -19,12 +19,11 @@ object Component_Hugo {
     def is_windows: Boolean = url_template.contains("windows")
 
     def download(base_url: String, version: String): String =
-      base_url + "/v" + version + "/" + url_template.replace("{V}", version)
+      base_url + "/v" + version + "/" + url_template.replacing("{V}" -> version)
   }
 
   val platforms: List[Download_Platform] =
     List(
-      Download_Platform("arm64-linux", "hugo_extended_{V}_linux-arm64.tar.gz"),
       Download_Platform("x86_64-darwin", "hugo_extended_{V}_darwin-universal.tar.gz"),
       Download_Platform("x86_64-linux", "hugo_extended_{V}_linux-amd64.tar.gz"),
       Download_Platform("x86_64-windows", "hugo_extended_{V}_windows-amd64.zip"))
@@ -33,7 +32,7 @@ object Component_Hugo {
   /* build hugo */
 
   val default_url = "https://github.com/gohugoio/hugo/releases/download"
-  val default_version = "0.119.0"
+  val default_version = "0.152.0"
 
   def build_hugo(
     base_url: String = default_url,

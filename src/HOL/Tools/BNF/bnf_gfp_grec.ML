@@ -261,7 +261,7 @@ fun define_single_primrec b eqs lthy =
     val (([free], [def_free], [simps_free]), (lthy, lthy_old)) = lthy
       |> (snd o Local_Theory.begin_nested)
       |> Local_Theory.map_background_naming (mk_internal true lthy Name_Space.concealed) (*TODO check*)
-      |> primrec false [] [(b, NONE, NoSyn)] (map (fn eq => ((Binding.empty_atts, eq), [], [])) eqs)
+      |> primrec {verbose = false} [] [(b, NONE, NoSyn)] (map (fn eq => ((Binding.empty_atts, eq), [], [])) eqs)
       ||> `Local_Theory.end_nested;
 
     val phi = Proof_Context.export_morphism lthy_old lthy;
@@ -527,7 +527,7 @@ fun bnf_with_deads_and_lives dead_Es live_As Y fpT T lthy =
           end);
 
     val phi =
-      Morphism.term_morphism "BNF" (Raw_Simplifier.rewrite_term (Proof_Context.theory_of lthy)
+      Morphism.term_morphism "BNF" (Simplifier.rewrite_term (Proof_Context.theory_of lthy)
         @{thms BNF_Composition.id_bnf_def} [])
       $> Morphism.thm_morphism "BNF" (unfold_thms lthy @{thms BNF_Composition.id_bnf_def});
   in

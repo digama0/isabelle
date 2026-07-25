@@ -6,20 +6,18 @@ BibTeX support in Isabelle/jEdit.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
 
-import scala.collection.mutable
-
 import java.awt.event.{ActionListener, ActionEvent}
 
 import javax.swing.text.Segment
-import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.{JMenu, JMenuItem}
 
 import org.gjt.sp.jedit.Buffer
-import org.gjt.sp.jedit.textarea.{JEditTextArea, TextArea}
+import org.gjt.sp.jedit.textarea.JEditTextArea
 import org.gjt.sp.jedit.syntax.{Token => JEditToken, TokenMarker, TokenHandler}
 
 
@@ -105,7 +103,7 @@ object JEdit_Bibtex {
       val line = if (raw_line == null) new Segment else raw_line
 
       def no_markup = {
-        val styled_token = (JEditToken.NULL, line.subSequence(0, line.count).toString)
+        val styled_token = (JEditToken.NULL, Library.make_string(line, 0, line.count))
         (List(styled_token), new Line_Context(None))
       }
 
@@ -120,7 +118,7 @@ object JEdit_Bibtex {
                   yield (token_style(chunk.kind, tok), tok.source)
                 (styled_tokens, new Line_Context(Some(ctxt1)))
               }
-              catch { case ERROR(msg) => Output.warning(msg); no_markup }
+              catch { case ERROR(msg) => GUI.log.warning(msg); no_markup }
             case None => no_markup
           }
 

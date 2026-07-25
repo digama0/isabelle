@@ -24,7 +24,7 @@ sig
   and plain_dict = 
       Dict_Const of (string * class) * (itype * dict list) list
     | Dict_Var of { var: vname, index: int, length: int, class: class, unique: bool }
-  type const = { sym: Code_Symbol.T, typargs: itype list, dicts: dict list list,
+  type const = { sym: Code_Symbol.T, typargs: itype list, dictss: dict list list,
     dom: itype list, range: itype, annotation: itype option }
   datatype iterm =
       IConst of const
@@ -160,7 +160,7 @@ fun unfold_fun_n n ty =
     val (tys3, tys2) = chop n tys1;
   in (tys3, tys2 `--> ty1) end;
 
-type const = { sym: Code_Symbol.T, typargs: itype list, dicts: dict list list,
+type const = { sym: Code_Symbol.T, typargs: itype list, dictss: dict list list,
   dom: itype list, range: itype, annotation: itype option };
 
 datatype iterm =
@@ -187,13 +187,13 @@ val unfold_app = unfoldl
     | _ => NONE);
 
 val unfold_abs = unfoldr
-  (fn (v `|=> (t, _)) => SOME (v, t)
+  (fn (v_ty `|=> (t, _)) => SOME (v_ty, t)
     | _ => NONE);
 
-fun unfold_abs_typed (v_ty `|=> body) =
+fun unfold_abs_typed (v_ty `|=> t_ty) =
       unfoldr
-        (fn (v_ty `|=> body, _) => SOME (v_ty, body)
-          | _ => NONE) body
+        (fn (v_ty `|=> t_ty, _) => SOME (v_ty, t_ty)
+          | _ => NONE) t_ty
       |> apfst (cons v_ty)
       |> SOME
   | unfold_abs_typed _ = NONE
@@ -255,9 +255,6 @@ val declare_varnames = fold_varnames Name.declare;
 
 fun exists_var t v = fold_varnames (fn w => fn b => v = w orelse b) t false;
 
-fun invent_params used tys =
-  Name.invent_names (Name.build_context used) "a" tys;
-
 fun split_pat_abs ((NONE, ty) `|=> (t, _)) = SOME ((IVar NONE, ty), t)
   | split_pat_abs ((SOME v, ty) `|=> (t, _)) = SOME (case t
      of ICase { term = IVar (SOME w), clauses = [(p, body)], ... } =>
@@ -276,7 +273,8 @@ fun unfold_abs_eta [] t = ([], t)
       in (v :: vs, t') end
   | unfold_abs_eta tys t =
       let
-        val vs = map (SOME o fst) (invent_params (declare_varnames t) tys);
+        val names = Name.build_context (declare_varnames t);
+        val vs = map SOME (Name.invent names "a" (length tys));
       in (vs, t `$$ map IVar vs) end;
 
 fun satisfied_application wanted ({ dom, range, ... }, ts) =
@@ -293,9 +291,8 @@ fun satisfied_application wanted ({ dom, range, ... }, ts) =
       in (([], (ts1, rty)), ts2) end
     else
       let
-        val vs_tys = invent_params (fold declare_varnames ts)
-          (((take delta o drop given) dom))
-          |> (map o apfst) SOME;
+        val names = Name.build_context (fold declare_varnames ts);
+        val vs_tys = (map o apfst) SOME (Name.invent_names names "a" (take delta (drop given dom)));
       in ((vs_tys, (ts @ map (IVar o fst) vs_tys, rty)), []) end
   end
 
@@ -353,11 +350,11 @@ fun distill_minimized_clause tys t =
   in distill vs_map (map IVar vs) body end;
 
 fun exists_dict_var f (Dict (_, d)) = exists_plain_dict_var_pred f d
-and exists_plain_dict_var_pred f (Dict_Const (_, dss)) = exists_dictss_var f (map snd dss)
+and exists_plain_dict_var_pred f (Dict_Const (_, dictss)) = exists_dictss_var f (map snd dictss)
   | exists_plain_dict_var_pred f (Dict_Var x) = f x
 and exists_dictss_var f = (exists o exists) (exists_dict_var f);
 
-fun contains_dict_var (IConst { dicts = dss, ... }) = exists_dictss_var (K true) dss
+fun contains_dict_var (IConst { dictss = dictss, ... }) = exists_dictss_var (K true) dictss
   | contains_dict_var (IVar _) = false
   | contains_dict_var (t1 `$ t2) = contains_dict_var t1 orelse contains_dict_var t2
   | contains_dict_var (_ `|=> (t, _)) = contains_dict_var t
@@ -563,8 +560,8 @@ fun construct_dictionaries ctxt (proj_sort, algebra) permissive some_thm (ty, so
   let
     fun class_relation unique (Weakening (classrels, x), sub_class) super_class =
       Weakening ((sub_class, super_class) :: classrels, brand_unique unique x);
-    fun type_constructor (tyco, typs) dss class =
-      Weakening ([], Global ((tyco, class), typs ~~ (map o map) fst dss));
+    fun type_constructor (tyco, typs) dictss class =
+      Weakening ([], Global ((tyco, class), typs ~~ (map o map) fst dictss));
     fun type_variable (TFree (v, sort)) =
       let
         val sort' = proj_sort sort;
@@ -625,7 +622,7 @@ and ensure_const ctxt algbr eqngr permissive c =
           end;
     val stmt_const = case Code.get_type_of_constr_or_abstr thy c
      of SOME (tyco, _) => stmt_datatypecons tyco
-      | NONE => (case Axclass.class_of_param thy c
+      | NONE => (case Code.class_of_param thy c
          of SOME class => stmt_classparam class
           | NONE => stmt_fun (Code_Preproc.cert eqngr c))
   in ensure_stmt Constant stmt_const c end
@@ -633,7 +630,7 @@ and ensure_class ctxt (algbr as (_, algebra)) eqngr permissive class =
   let
     val thy = Proof_Context.theory_of ctxt;
     val super_classes = (Sorts.minimize_sort algebra o Sorts.super_classes algebra) class;
-    val cs = #params (Axclass.get_info thy class);
+    val cs = Code.class_params_of thy class;
     val stmt_class =
       fold_map (fn super_class =>
         ensure_classrel ctxt algbr eqngr permissive (class, super_class)) super_classes
@@ -651,24 +648,23 @@ and ensure_classrel ctxt algbr eqngr permissive (sub_class, super_class) =
 and ensure_inst ctxt (algbr as (_, algebra)) eqngr permissive (tyco, class) =
   let
     val thy = Proof_Context.theory_of ctxt;
-    val super_classes = (Sorts.minimize_sort algebra o Sorts.super_classes algebra) class;
-    val these_class_params = these o try (#params o Axclass.get_info thy);
-    val class_params = these_class_params class;
-    val superclass_params = maps these_class_params
-      ((Sorts.complete_sort algebra o Sorts.super_classes algebra) class);
-    val vs = Name.invent_names Name.context Name.aT (Sorts.mg_domain algebra tyco [class]);
-    val sorts' = Sorts.mg_domain (Sign.classes_of thy) tyco [class];
-    val vs' = map2 (fn (v, sort1) => fn sort2 => (v,
-      Sorts.inter_sort (Sign.classes_of thy) (sort1, sort2))) vs sorts';
+    val super_sort = Sorts.super_classes algebra class;
+    val super_classes = Sorts.minimize_sort algebra super_sort;
+    val class_params = Code.class_params_of thy class;
+    val superclass_params = maps (Code.class_params_of thy) (Sorts.complete_sort algebra super_sort);
+    val sorts = Sorts.mg_domain algebra tyco [class];
+    val vs = Name.invent_types_global sorts;
     val arity_typ = Type (tyco, map TFree vs);
-    val arity_typ' = Type (tyco, map (fn (v, sort) => TVar ((v, 0), sort)) vs');
+    val inst_params_sorts = map2 (curry (Sorts.inter_sort (Sign.classes_of thy)))
+      sorts (Sorts.mg_domain (Sign.classes_of thy) tyco [class]);
+    val inst_params_arity_typ = Type (tyco, map2 (fn (v, _) => fn sort' => TVar ((v, 0), sort')) vs inst_params_sorts);
     fun translate_super_instance super_class =
       ensure_class ctxt algbr eqngr permissive super_class
       ##>> translate_dicts ctxt algbr eqngr permissive NONE (arity_typ, [super_class])
-      #>> (fn (super_class, [Dict ([], Dict_Const (_, dss))]) => (super_class, dss));
+      #>> (fn (super_class, [Dict ([], Dict_Const (_, dictss))]) => (super_class, dictss));
     fun translate_classparam_instance (c, ty) =
       let
-        val raw_const = Const (c, map_type_tfree (K arity_typ') ty);
+        val raw_const = Const (c, map_type_tfree (K inst_params_arity_typ) ty);
         val dom_length = length (binder_types ty);
         val thm = Axclass.unoverload_conv ctxt (Thm.cterm_of ctxt raw_const);
         val const = (apsnd Logic.unvarifyT_global o dest_Const o snd
@@ -742,8 +738,8 @@ and translate_const ctxt algbr eqngr permissive some_thm some_abs (c, ty) (deps,
     ||>> fold_map (translate_typ ctxt algbr eqngr permissive) typargs
     ||>> fold_map (translate_dicts ctxt algbr eqngr permissive some_thm) (typargs ~~ sorts)
     ||>> fold_map (translate_typ ctxt algbr eqngr permissive) (range :: dom)
-    |>> (fn (((c, typargs), dss), range :: dom) =>
-      { sym = Constant c, typargs = typargs, dicts = dss,
+    |>> (fn (((c, typargs), dictss), range :: dom) =>
+      { sym = Constant c, typargs = typargs, dictss = dictss,
         dom = dom, range = range, annotation =
           if annotate then SOME (dom `--> range) else NONE })
   end
@@ -809,11 +805,11 @@ and translate_dicts ctxt algbr eqngr permissive some_thm (ty, sort) =
           fold_map (ensure_classrel ctxt algbr eqngr permissive) classrels
           ##>> translate_plain_dict d
           #>> Dict 
-    and translate_plain_dict (Global (inst, dss)) =
+    and translate_plain_dict (Global (inst, dictss)) =
           ensure_inst ctxt algbr eqngr permissive inst
-          ##>> fold_map (fn (ty, ds) =>
+          ##>> fold_map (fn (ty, dicts) =>
             translate_typ ctxt algbr eqngr permissive ty
-            ##>> fold_map translate_dict ds) dss
+            ##>> fold_map translate_dict dicts) dictss
           #>> Dict_Const
       | translate_plain_dict (Local { var, index, sort, unique }) =
           ensure_class ctxt algbr eqngr permissive (nth sort index)
@@ -998,8 +994,8 @@ fun read_const_exprs_internal ctxt =
       | SOME s =>
           (case try (unsuffix "._") s of
             SOME name => ([], consts_of_select (this_theory name))
-          | NONE => ([Code.read_const thy str], []))
-      | NONE => ([Code.read_const thy str], []));
+          | NONE => ([Code.read_const ctxt str], []))
+      | NONE => ([Code.read_const ctxt str], []));
   in apply2 flat o split_list o map read_const_expr end;
 
 fun read_const_exprs_all ctxt = op @ o read_const_exprs_internal ctxt;

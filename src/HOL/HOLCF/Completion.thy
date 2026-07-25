@@ -11,7 +11,7 @@ begin
 subsection \<open>Ideals over a preorder\<close>
 
 locale preorder =
-  fixes r :: "'a::type \<Rightarrow> 'a \<Rightarrow> bool" (infix "\<preceq>" 50)
+  fixes r :: "'a::type \<Rightarrow> 'a \<Rightarrow> bool" (infix \<open>\<preceq>\<close> 50)
   assumes r_refl: "x \<preceq> x"
   assumes r_trans: "\<lbrakk>x \<preceq> y; y \<preceq> z\<rbrakk> \<Longrightarrow> x \<preceq> z"
 begin
@@ -128,6 +128,7 @@ apply (rule below_refl)
 apply (erule (1) below_trans)
 done
 
+
 subsection \<open>Lemmas about least upper bounds\<close>
 
 lemma is_ub_thelub_ex: "\<lbrakk>\<exists>u. S <<| u; x \<in> S\<rbrakk> \<Longrightarrow> x \<sqsubseteq> lub S"
@@ -145,8 +146,8 @@ subsection \<open>Locale for ideal completion\<close>
 hide_const (open) Filter.principal
 
 locale ideal_completion = preorder +
-  fixes principal :: "'a::type \<Rightarrow> 'b::cpo"
-  fixes rep :: "'b::cpo \<Rightarrow> 'a::type set"
+  fixes principal :: "'a::type \<Rightarrow> 'b"
+  fixes rep :: "'b \<Rightarrow> 'a::type set"
   assumes ideal_rep: "\<And>x. ideal (rep x)"
   assumes rep_lub: "\<And>Y. chain Y \<Longrightarrow> rep (\<Squnion>i. Y i) = (\<Union>i. rep (Y i))"
   assumes rep_principal: "\<And>a. rep (principal a) = {b. b \<preceq> a}"
@@ -183,6 +184,7 @@ by (simp only: principal_below_iff)
 lemma ch2ch_principal [simp]:
   "\<forall>i. Y i \<preceq> Y (Suc i) \<Longrightarrow> chain (\<lambda>i. principal (Y i))"
 by (simp add: chainI principal_mono)
+
 
 subsubsection \<open>Principal ideals approximate all elements\<close>
 
@@ -296,14 +298,15 @@ apply (subgoal_tac "chain (\<lambda>i. principal (Y i))")
 apply (drule (2) admD2, fast, simp)
 done
 
+
 subsection \<open>Defining functions in terms of basis elements\<close>
 
 definition
-  extension :: "('a::type \<Rightarrow> 'c::cpo) \<Rightarrow> 'b \<rightarrow> 'c" where
+  extension :: "('a::type \<Rightarrow> 'c) \<Rightarrow> 'b \<rightarrow> 'c" where
   "extension = (\<lambda>f. (\<Lambda> x. lub (f ` rep x)))"
 
 lemma extension_lemma:
-  fixes f :: "'a::type \<Rightarrow> 'c::cpo"
+  fixes f :: "'a::type \<Rightarrow> 'c"
   assumes f_mono: "\<And>a b. a \<preceq> b \<Longrightarrow> f a \<sqsubseteq> f b"
   shows "\<exists>u. f ` rep x <<| u"
 proof -
@@ -333,7 +336,7 @@ proof -
 qed
 
 lemma extension_beta:
-  fixes f :: "'a::type \<Rightarrow> 'c::cpo"
+  fixes f :: "'a::type \<Rightarrow> 'c"
   assumes f_mono: "\<And>a b. a \<preceq> b \<Longrightarrow> f a \<sqsubseteq> f b"
   shows "extension f\<cdot>x = lub (f ` rep x)"
 unfolding extension_def
@@ -354,7 +357,7 @@ proof (rule beta_cfun)
 qed
 
 lemma extension_principal:
-  fixes f :: "'a::type \<Rightarrow> 'c::cpo"
+  fixes f :: "'a::type \<Rightarrow> 'c"
   assumes f_mono: "\<And>a b. a \<preceq> b \<Longrightarrow> f a \<sqsubseteq> f b"
   shows "extension f\<cdot>(principal a) = f a"
 apply (subst extension_beta, erule f_mono)
@@ -403,7 +406,7 @@ done
 end
 
 lemma (in preorder) typedef_ideal_completion:
-  fixes Abs :: "'a set \<Rightarrow> 'b::cpo"
+  fixes Abs :: "'a set \<Rightarrow> 'b"
   assumes type: "type_definition Rep Abs {S. ideal S}"
   assumes below: "\<And>x y. x \<sqsubseteq> y \<longleftrightarrow> Rep x \<subseteq> Rep y"
   assumes principal: "\<And>a. principal a = Abs {b. b \<preceq> a}"

@@ -6,7 +6,8 @@ Prover command execution: read -- eval -- print.
 
 signature COMMAND =
 sig
-  type blob = {file_node: string, src_path: Path.T, content: (SHA1.digest * string list) option}
+  type blob =
+    {file_node: string, src_path: Path.T, content: (Message_Digest.T * string list) option}
   val read_thy: Toplevel.state -> theory
   val read: Keyword.keywords -> theory -> Path.T-> (unit -> theory) ->
     blob Exn.result list * int -> Token.T list -> Toplevel.transition
@@ -20,12 +21,12 @@ sig
   val eval_finished: eval -> bool
   val eval_result_command: eval -> Toplevel.transition
   val eval_result_state: eval -> Toplevel.state
-  val eval: Keyword.keywords -> Path.T -> (unit -> theory) ->
+  val eval: Options.update -> Keyword.keywords -> Path.T -> (unit -> theory) ->
     blob Exn.result list * int -> Document_ID.command -> Token.T list -> eval -> eval
   type print
   type print_fn = Toplevel.transition -> Toplevel.state -> unit
   val print0: {pri: int, print_fn: print_fn} -> eval -> print
-  val print: Keyword.keywords -> bool -> (string * string list) list -> string ->
+  val print: Options.update -> Keyword.keywords -> bool -> (string * string list) list -> string ->
     eval -> print list -> print list option
   val parallel_print: print -> bool
   type print_function =
@@ -54,18 +55,19 @@ fun task_context group f =
 
 (* read *)
 
-type blob = {file_node: string, src_path: Path.T, content: (SHA1.digest * string list) option};
+type blob =
+  {file_node: string, src_path: Path.T, content: (Message_Digest.T * string list) option};
 
 local
 
-fun blob_file src_path lines digest file_node =
+fun blob_file src_path lines file_node =
   let
     val file_pos =
       Position.file file_node |>
       (case Position.id_of (Position.thread_data ()) of
         NONE => I
       | SOME exec_id => Position.put_id exec_id);
-  in {src_path = src_path, lines = lines, digest = digest, pos = file_pos} end
+  in {src_path = src_path, lines = lines, pos = file_pos} end
 
 fun resolve_files master_dir (blobs, blobs_index) toks =
   (case Outer_Syntax.parse_spans toks of
@@ -83,7 +85,7 @@ fun resolve_files master_dir (blobs, blobs_index) toks =
                       NONE =>
                         Exn.result (fn () =>
                           Resources.read_file_node file_node master_dir (src_path, pos)) ()
-                    | SOME (digest, lines) => Exn.Res (blob_file src_path lines digest file_node)
+                    | SOME (_, lines) => Exn.Res (blob_file src_path lines file_node)
                   end
               | make_file (Exn.Exn e) = Exn.Exn e;
             val files = map make_file blobs;
@@ -127,7 +129,8 @@ fun read keywords thy master_dir init blobs_info span =
         let
           val name = Toplevel.name_of tr;
           val kind = the_default "" (Keyword.command_kind (Thy_Header.get_keywords thy) name);
-          val markup = Markup.command_span {name = name, kind = kind};
+          val is_begin = exists Token.is_begin span;
+          val markup = Markup.command_span {name = name, kind = kind, is_begin = is_begin};
         in Position.report (#1 core_range) markup end;
   in tr end;
 
@@ -183,15 +186,15 @@ fun reset_state keywords tr st0 = Toplevel.setmp_thread_position tr (fn () =>
     | SOME st => (Output.error_message (Toplevel.type_error tr ^ " -- using reset state"); st))
   end) ();
 
-fun run keywords int tr st =
+fun run keywords tr st =
   if Future.proofs_enabled 1 andalso Keyword.is_diag keywords (Toplevel.name_of tr) then
     let
       val (tr1, tr2) = Toplevel.fork_presentation tr;
       val _ =
         Execution.fork {name = "Toplevel.diag", pos = Toplevel.pos_of tr, pri = ~1}
-          (fn () => Toplevel.command_exception int tr1 st);
-    in Toplevel.command_errors int tr2 st end
-  else Toplevel.command_errors int tr st;
+          (fn () => Toplevel.command_exception tr1 st);
+    in Toplevel.command_errors tr2 st end
+  else Toplevel.command_errors tr st;
 
 fun check_comments ctxt =
   Document_Output.check_comments ctxt o Input.source_explode o Token.input_of;
@@ -213,14 +216,14 @@ fun report_indent tr st =
             NONE => ()
           | SOME 0 => ()
           | SOME n =>
-              let val report = Markup.markup_only (Markup.command_indent (n - 1));
+              let val report = YXML.output_markup_only (Markup.command_indent (n - 1));
               in Toplevel.setmp_thread_position tr (fn () => Output.report [report]) () end)
         else ()
       end
   | NONE => ());
 
 fun status tr m =
-  Toplevel.setmp_thread_position tr (fn () => Output.status [Markup.markup_only m]) ();
+  Toplevel.setmp_thread_position tr (fn () => Output.status [YXML.output_markup_only m]) ();
 
 fun eval_state keywords span tr ({state, ...}: eval_state) =
   let
@@ -230,7 +233,7 @@ fun eval_state keywords span tr ({state, ...}: eval_state) =
 
     val _ = report_indent tr st;
     val _ = status tr Markup.running;
-    val (errs1, result) = run keywords true tr st;
+    val (errs1, result) = run keywords tr st;
     val errs2 =
       (case result of
         NONE => []
@@ -259,10 +262,10 @@ fun eval_state keywords span tr ({state, ...}: eval_state) =
 
 in
 
-fun eval keywords master_dir init blobs_info command_id span eval0 =
+fun eval options keywords master_dir init blobs_info command_id span eval0 =
   let
     val exec_id = Document_ID.make ();
-    fun process () =
+    val process = Options.permissive_thread_update options (fn () =>
       let
         val eval_state0 = eval_result eval0;
         val thy = read_thy (#state eval_state0);
@@ -270,7 +273,7 @@ fun eval keywords master_dir init blobs_info command_id span eval0 =
           Position.setmp_thread_data (Position.id_only (Document_ID.print exec_id))
             (fn () =>
               read keywords thy master_dir init blobs_info span |> Toplevel.exec_id exec_id) ();
-      in eval_state keywords span tr eval_state0 end;
+      in eval_state keywords span tr eval_state0 end);
   in
     Eval {command_id = command_id, exec_id = exec_id,
       eval_process = Lazy.lazy_name "Command.eval" process}
@@ -300,11 +303,13 @@ local
 val print_functions =
   Synchronized.var "Command.print_functions" ([]: (string * print_function) list);
 
-fun print_wrapper tr opt_context =
-  Toplevel.setmp_thread_position tr o Runtime.controlled_execution opt_context;
+fun print_wrapper options tr opt_context =
+  Options.permissive_thread_update options o
+  Toplevel.setmp_thread_position tr o
+  Runtime.controlled_execution opt_context;
 
-fun print_error tr opt_context e =
-  (case Exn.result (fn () => print_wrapper tr opt_context e ()) () of
+fun print_error options tr opt_context e =
+  (case Exn.result (fn () => print_wrapper options tr opt_context e ()) () of
     Exn.Res res => res
   | Exn.Exn exn => List.app (Future.error_message (Toplevel.pos_of tr)) (Runtime.exn_messages exn));
 
@@ -314,7 +319,7 @@ fun print_persistent (Print {persistent, ...}) = persistent;
 
 val overlay_ord = prod_ord string_ord (list_ord string_ord);
 
-fun make_print (name, args) {delay, pri, persistent, strict, print_fn} eval =
+fun make_print options (name, args) {delay, pri, persistent, strict, print_fn} eval =
   let
     val exec_id = Document_ID.make ();
     fun process () =
@@ -324,7 +329,7 @@ fun make_print (name, args) {delay, pri, persistent, strict, print_fn} eval =
         val opt_context = try Toplevel.generic_theory_of st';
       in
         if failed andalso strict then ()
-        else print_error tr opt_context (fn () => print_fn tr st')
+        else print_error options tr opt_context (fn () => print_fn tr st')
       end;
   in
     Print {
@@ -333,16 +338,16 @@ fun make_print (name, args) {delay, pri, persistent, strict, print_fn} eval =
   end;
 
 fun bad_print name_args exn =
-  make_print name_args {delay = NONE, pri = 0, persistent = false,
+  make_print [] name_args {delay = NONE, pri = 0, persistent = false,
     strict = false, print_fn = fn _ => fn _ => Exn.reraise exn};
 
 in
 
 fun print0 {pri, print_fn} =
-  make_print ("", [serial_string ()])
+  make_print [] ("", [serial_string ()])
     {delay = NONE, pri = pri, persistent = true, strict = true, print_fn = print_fn};
 
-fun print keywords visible overlays command_name eval old_prints =
+fun print options keywords visible overlays command_name eval old_prints =
   let
     val print_functions = Synchronized.value print_functions;
 
@@ -356,7 +361,7 @@ fun print keywords visible overlays command_name eval old_prints =
       in
         (case Exn.capture (Runtime.controlled_execution NONE get_pr) params of
           Exn.Res NONE => NONE
-        | Exn.Res (SOME pr) => SOME (make_print (name, args) pr eval)
+        | Exn.Res (SOME pr) => SOME (make_print options (name, args) pr eval)
         | Exn.Exn exn => SOME (bad_print (name, args) exn eval))
       end;
 
@@ -482,6 +487,7 @@ val _ =
       then
         SOME {delay = NONE, pri = Task_Queue.urgent_pri + 1, persistent = false, strict = false,
           print_fn = fn _ => fn st =>
-            if Toplevel.is_proof st then Output.state (Toplevel.string_of_state st)
+            if Toplevel.is_proof st
+            then Output.state (Pretty.strings_of (Pretty.chunks (Toplevel.pretty_state st)))
             else ()}
       else NONE);

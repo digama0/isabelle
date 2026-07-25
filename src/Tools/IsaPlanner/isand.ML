@@ -56,11 +56,8 @@ fun variant_names ctxt ts xs =
   let
     val names =
       Variable.names_of ctxt
-      |> (fold o fold_aterms)
-          (fn Var ((a, _), _) => Name.declare a
-            | Free (a, _) => Name.declare a
-            | _ => I) ts;
-  in fst (fold_map Name.variant xs names) end;
+      |> fold (fn t => Term.declare_free_names t #> Term.declare_var_names (K true) t) ts;
+  in Name.variants names xs end;
 
 (* fix parameters of a subgoal "i", as free variables, and create an
 exporting function that will use the result of this proved goal to
@@ -105,7 +102,7 @@ unrotated to get backto the originial position(s) *)
 fun hide_other_goals th =
   let
     (* tl beacuse fst sg is the goal we are interested in *)
-    val cprems = tl (Drule.cprems_of th);
+    val cprems = tl (Thm.cprems_of th);
     val aprems = map Thm.assume cprems;
   in (Drule.implies_elim_list (Drule.rotate_prems 1 th) aprems, cprems) end;
 

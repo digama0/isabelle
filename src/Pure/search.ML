@@ -52,10 +52,10 @@ fun DEPTH_FIRST satp tac =
 fun has_fewer_prems n rule = Thm.nprems_of rule < n;
 
 (*Apply a tactic if subgoals remain, else do nothing.*)
-val IF_UNSOLVED = COND (has_fewer_prems 1) all_tac;
+val IF_UNSOLVED = COND Thm.no_prems all_tac;
 
 (*Force a tactic to solve its goal completely, otherwise fail *)
-fun SOLVE tac = tac THEN COND (has_fewer_prems 1) all_tac no_tac;
+fun SOLVE tac = tac THEN COND Thm.no_prems all_tac no_tac;
 
 (*Execute tac1, but only execute tac2 if there are at least as many subgoals
   as before.  This ensures that tac2 is only applied to an outcome of tac1.*)
@@ -72,7 +72,7 @@ fun DEPTH_SOLVE_1 tac st = st |>
   | n => DEPTH_FIRST (has_fewer_prems n) tac);
 
 (*Uses depth-first search to solve ALL subgoals*)
-val DEPTH_SOLVE = DEPTH_FIRST (has_fewer_prems 1);
+val DEPTH_SOLVE = DEPTH_FIRST Thm.no_prems;
 
 
 
@@ -129,7 +129,7 @@ fun THEN_ITER_DEEPEN lim tac0 satp tac1 st =
                 let
                   val np' = Thm.nprems_of st;
                   (*rgd' calculation assumes tactic operates on subgoal 1*)
-                  val rgd' = not (has_vars (hd (Thm.prems_of st)));
+                  val rgd' = not (has_vars (hd (Thm.take_prems_of 1 st)));
                   val k' = k + np' - np + 1;  (*difference in # of subgoals, +1*)
                 in
                   if k' + np' >= bnd then depth (bnd, Int.min (inc, k' + np' + 1 - bnd)) qs

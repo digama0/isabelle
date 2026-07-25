@@ -8,7 +8,8 @@ theory Universal
 imports Bifinite Completion "HOL-Library.Nat_Bijection"
 begin
 
-no_notation binomial  (infix "choose" 64)
+unbundle no binomial_syntax
+
 
 subsection \<open>Basis for universal domain\<close>
 
@@ -79,6 +80,7 @@ lemma node_induct:
  apply (simp add: 2 node_gt1 node_gt2)
 done
 
+
 subsubsection \<open>Basis ordering\<close>
 
 inductive
@@ -104,6 +106,7 @@ apply standard
 apply (rule ubasis_le_refl)
 apply (erule (1) ubasis_le_trans)
 done
+
 
 subsubsection \<open>Generic take function\<close>
 
@@ -249,10 +252,10 @@ end
 
 instance compact_basis :: (pcpo) po
 using type_definition_compact_basis compact_le_def
-by (rule typedef_po)
+by (rule typedef_po_class)
 
 definition
-  approximants :: "'a \<Rightarrow> 'a compact_basis set" where
+  approximants :: "'a::pcpo \<Rightarrow> 'a compact_basis set" where
   "approximants = (\<lambda>x. {a. Rep_compact_basis a \<sqsubseteq> x})"
 
 definition
@@ -274,6 +277,7 @@ of approx functions on the type to be embedded.\<close>
 locale bifinite_approx_chain =
   approx_chain approx for approx :: "nat \<Rightarrow> 'a::bifinite \<rightarrow> 'a"
 begin
+
 
 subsubsection \<open>Choosing a maximal element from a finite set\<close>
 
@@ -389,6 +393,7 @@ lemma choose_pos_lessD:
  apply (simp add: choose_pos.simps)
 done
 
+
 subsubsection \<open>Compact basis take function\<close>
 
 primrec
@@ -442,6 +447,7 @@ apply (clarsimp simp add: Rep_cb_take)
 apply (rule finite_range_approx)
 apply (rule inj_onI, simp add: Rep_compact_basis_inject)
 done
+
 
 subsubsection \<open>Rank of basis elements\<close>
 
@@ -522,6 +528,7 @@ unfolding rank_lt_def rank_eq_def rank_le_def by auto
 lemma rank_lt_Un_rank_eq: "rank_lt x \<union> rank_eq x = rank_le x"
 unfolding rank_lt_def rank_eq_def rank_le_def by auto
 
+
 subsubsection \<open>Sequencing basis elements\<close>
 
 definition
@@ -570,6 +577,7 @@ done
 
 lemma inj_place: "inj place"
 by (rule inj_onI, erule place_eqD)
+
 
 subsubsection \<open>Embedding and projection on basis elements\<close>
 
@@ -831,6 +839,7 @@ proof -
     by (rule bifinite_approx_chain.ideal_completion)
 qed
 
+
 subsubsection \<open>EP-pair from any bifinite domain into \emph{udom}\<close>
 
 context bifinite_approx_chain begin
@@ -878,6 +887,7 @@ abbreviation "udom_prj \<equiv> bifinite_approx_chain.udom_prj"
 
 lemmas ep_pair_udom =
   bifinite_approx_chain.ep_pair_udom [unfolded bifinite_approx_chain_def]
+
 
 subsection \<open>Chain of approx functions for type \emph{udom}\<close>
 
@@ -973,6 +983,6 @@ instance udom :: bifinite
 
 hide_const (open) node
 
-notation binomial  (infixl "choose" 65)
+unbundle binomial_syntax
 
 end

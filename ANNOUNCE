@@ -1,31 +1,50 @@
-Subject: Announcing Isabelle2024
+Subject: Announcing Isabelle2025-1
 To: isabelle-users@cl.cam.ac.uk
 
-Isabelle2024 is now available.
+Isabelle2025-2 is now available.
 
-This version introduces various changes over Isabelle2023: see the
-NEWS file for further details. Here are various details:
+This version supersedes Isabelle2025-1, which in turn introduces many changes
+over Isabelle2025: see the NEWS file for further details. Here are notable
+details:
 
-* More robust and scalable support for distributed build clusters.
+* PIDE: load markup from background session image (e.g. theory "HOL.Nat").
 
-* Official support for ARM64 on Linux (notably Docker on Apple Silicon).
+* Isabelle/jEdit: support for command-line system options ("-o").
 
-* HOL: various improvements of theory libraries, notably in HOL-Analysis.
+* Isabelle/jEdit: support for dark mode and screen readers.
 
-* HOL: updates and improvements of Sledgehammer.
+* Isabelle/jEdit: built-in navigator, without requiring plugins.
 
-* ML: antiquotations for try-catch-finally.
+* Isabelle/jEdit: more reactive mouse handling, notably on macOS.
 
-* ML: physical interrupts are now distinguished from runtime system failures.
+* Isabelle/jEdit: updated FlatLaf GUI L&F with scalable SVG icons.
 
-* System: support for global registry in TOML format.
+* Isabelle/jEdit: improved appearance on Linux (GUI scaling) and macOS (L&F).
 
-* System: support the Go development environment (all platforms).
+* Isabelle/VSCode: more robust session build process on console.
 
-* System: bundled MLton now includes both Linux and macOS (Intel).
+* Isabelle/VSCode: GUI panels for Documentation, Symbols, Sledgehammer.
+
+* Isabelle/VSCode: update of underlying VSCodium distribution.
+
+* HOL: various improvements of theory libraries.
+
+* HOL: various improvements to code generation.
+
+* HOL: updates and improvements of Sledgehammer and external provers.
+
+* HOL: generation of running time functions for HOL functions.
+
+* System: ML settings may depend on command-line system options ("-o").
+
+* System: command-line tool to process theories within adhoc session.
+
+* System: more detailed build progress.
+
+* System: more robust build cluster management.
 
 
-You may get Isabelle2024 from the following mirror sites:
+You may get Isabelle2025-2 from the following mirror sites:
 
   Cambridge (UK)       https://www.cl.cam.ac.uk/research/hvg/Isabelle
   Munich (Germany)     https://isabelle.in.tum.de

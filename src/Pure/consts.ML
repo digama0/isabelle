@@ -11,7 +11,7 @@ sig
   val eq_consts: T * T -> bool
   val change_base: bool -> T -> T
   val change_ignore: T -> T
-  val retrieve_abbrevs: T -> string list -> term -> (term * term) list
+  val revert_abbrevs: T -> string list -> (term * term) Item_Net.T list
   val dest: T ->
    {const_space: Name_Space.T,
     constants: (string * (typ * term option)) list,
@@ -85,16 +85,8 @@ val empty_abbrevs =
 fun update_abbrevs mode abbrs =
   Symtab.map_default (mode, empty_abbrevs) (Item_Net.update abbrs);
 
-fun retrieve_abbrevs (Consts {rev_abbrevs, ...}) modes =
-  let val nets = map_filter (Symtab.lookup rev_abbrevs) modes in
-    fn t =>
-      let
-        val retrieve =
-          if Term.could_beta_eta_contract t
-          then Item_Net.retrieve
-          else Item_Net.retrieve_matching
-      in maps (fn net => retrieve net t) nets end
-  end;
+fun revert_abbrevs (Consts {rev_abbrevs, ...}) modes =
+  map_filter (Symtab.lookup rev_abbrevs) modes;
 
 
 (* dest consts *)
@@ -321,7 +313,7 @@ fun strip_abss (t as Abs (x, T, b)) =
 fun rev_abbrev lhs rhs =
   let
     val (xs, body) = strip_abss (Envir.beta_eta_contract rhs);
-    val vars = fold (fn (x, T) => cons (Var ((x, 0), T))) (Term.rename_wrt_term body xs) [];
+    val vars = map (fn (x, T) => Var ((x, 0), T)) (Term.variant_bounds body xs);
   in (Term.subst_bounds (rev vars, body), Term.list_comb (lhs, vars)) end;
 
 in

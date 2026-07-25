@@ -126,7 +126,7 @@ lemma eval_single [simp]:
   "eval (single x) = (=) x"
   by (simp add: single_def)
 
-definition bind :: "'a pred \<Rightarrow> ('a \<Rightarrow> 'b pred) \<Rightarrow> 'b pred" (infixl "\<bind>" 70) where
+definition bind :: "'a pred \<Rightarrow> ('a \<Rightarrow> 'b pred) \<Rightarrow> 'b pred" (infixl \<open>\<bind>\<close> 70) where
   "P \<bind> f = (\<Squnion>(f ` {x. eval P x}))"
 
 lemma eval_bind [simp]:
@@ -533,14 +533,14 @@ definition equal_pred
 instance by standard simp
 
 end
-    
-lemma [code]:
-  "HOL.equal P Q \<longleftrightarrow> P \<le> Q \<and> Q \<le> P" for P Q :: "'a pred"
-  by auto
 
 lemma [code nbe]:
   "HOL.equal P P \<longleftrightarrow> True" for P :: "'a pred"
   by (fact equal_refl)
+
+lemma [code]:
+  "HOL.equal P Q \<longleftrightarrow> P \<le> Q \<and> Q \<le> P" for P Q :: "'a pred"
+  by auto
 
 lemma [code]:
   "case_pred f P = f (eval P)"
@@ -727,8 +727,7 @@ lemma pred_of_set_set_foldr_sup [code]:
   "pred_of_set (set xs) = foldr sup (List.map Predicate.single xs) bot"
   by (simp add: pred_of_set_set_fold_sup ac_simps foldr_fold fun_eq_iff)
 
-no_notation
-  bind (infixl "\<bind>" 70)
+no_notation bind  (infixl \<open>\<bind>\<close> 70)
 
 hide_type (open) pred seq
 hide_const (open) Pred eval single bind is_empty singleton if_pred not_pred holds

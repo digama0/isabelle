@@ -37,12 +37,12 @@ datatype ind_scheme = IndScheme of
   branches: scheme_branch list,
   cases: scheme_case list}
 
-fun ind_atomize ctxt = Raw_Simplifier.rewrite ctxt true @{thms induct_atomize}
-fun ind_rulify ctxt = Raw_Simplifier.rewrite ctxt true @{thms induct_rulify}
+fun ind_atomize ctxt = Simplifier.rewrite_wrt ctxt true @{thms induct_atomize}
+fun ind_rulify ctxt = Simplifier.rewrite_wrt ctxt true @{thms induct_rulify}
 
 fun meta thm = thm RS eq_reflection
 
-fun sum_prod_conv ctxt = Raw_Simplifier.rewrite ctxt true
+fun sum_prod_conv ctxt = Simplifier.rewrite_wrt ctxt true
   (map meta (@{thm split_conv} :: @{thms sum.case}))
 
 fun term_conv ctxt cv t =
@@ -121,7 +121,8 @@ fun mk_completeness ctxt (IndScheme {cases, branches, ...}) bidx =
     val relevant_cases = filter (fn SchemeCase {bidx=bidx', ...} => bidx' = bidx) cases
 
     val allqnames = fold (fn SchemeCase {qs, ...} => fold (insert (op =) o Free) qs) relevant_cases []
-    val (Pbool :: xs') = map Free (Variable.variant_frees ctxt allqnames (("P", HOLogic.boolT) :: xs))
+    val (Pbool :: xs') =
+      map Free (Variable.variant_names (fold Variable.declare_names allqnames ctxt) (("P", HOLogic.boolT) :: xs))
     val Cs' = map (Pattern.rewrite_term (Proof_Context.theory_of ctxt) (filter_out (op aconv) (map Free xs ~~ xs')) []) Cs
 
     fun mk_case (SchemeCase {qs, oqnames, gs, lhs, ...}) =
@@ -140,7 +141,7 @@ fun mk_completeness ctxt (IndScheme {cases, branches, ...}) bidx =
   end
 
 fun mk_wf R (IndScheme {T, ...}) =
-  HOLogic.Trueprop $ (Const (\<^const_abbrev>\<open>wf\<close>, mk_relT T --> HOLogic.boolT) $ R)
+  HOLogic.mk_Trueprop (Const (\<^const_abbrev>\<open>wf\<close>, mk_relT T --> HOLogic.boolT) $ R)
 
 fun mk_ineqs R thesisn (IndScheme {T, cases, branches}) =
   let
@@ -252,7 +253,7 @@ fun mk_induct_rule ctxt R x complete_thms wf_thm ineqss
             val ags = map (Thm.assume o Thm.cterm_of ctxt) gs
 
             val replace_x_simpset =
-              put_simpset HOL_basic_ss ctxt addsimps (branch_hyp :: case_hyps)
+              put_simpset HOL_basic_ss ctxt |> Simplifier.add_simps (branch_hyp :: case_hyps)
             val sih = full_simplify replace_x_simpset aihyp
 
             fun mk_Prec (idx, Gvs, Gas, rcargs) (ineq, pres) =

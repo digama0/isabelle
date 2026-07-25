@@ -249,12 +249,12 @@ translations
   (type) "tys" <= (type) "ty + ty list"
 
 
-inductive wt :: "env \<Rightarrow> dyn_ty \<Rightarrow> [term,tys] \<Rightarrow> bool" ("_,_\<Turnstile>_\<Colon>_"  [51,51,51,51] 50)
-  and wt_stmt :: "env \<Rightarrow> dyn_ty \<Rightarrow>  stmt       \<Rightarrow> bool" ("_,_\<Turnstile>_\<Colon>\<surd>"  [51,51,51] 50)
-  and ty_expr :: "env \<Rightarrow> dyn_ty \<Rightarrow> [expr ,ty ] \<Rightarrow> bool" ("_,_\<Turnstile>_\<Colon>-_" [51,51,51,51] 50)
-  and ty_var :: "env \<Rightarrow> dyn_ty \<Rightarrow> [var  ,ty ] \<Rightarrow> bool" ("_,_\<Turnstile>_\<Colon>=_" [51,51,51,51] 50)
+inductive wt :: "env \<Rightarrow> dyn_ty \<Rightarrow> [term,tys] \<Rightarrow> bool" (\<open>_,_\<Turnstile>_\<Colon>_\<close>  [51,51,51,51] 50)
+  and wt_stmt :: "env \<Rightarrow> dyn_ty \<Rightarrow>  stmt       \<Rightarrow> bool" (\<open>_,_\<Turnstile>_\<Colon>\<surd>\<close>  [51,51,51] 50)
+  and ty_expr :: "env \<Rightarrow> dyn_ty \<Rightarrow> [expr ,ty ] \<Rightarrow> bool" (\<open>_,_\<Turnstile>_\<Colon>-_\<close> [51,51,51,51] 50)
+  and ty_var :: "env \<Rightarrow> dyn_ty \<Rightarrow> [var  ,ty ] \<Rightarrow> bool" (\<open>_,_\<Turnstile>_\<Colon>=_\<close> [51,51,51,51] 50)
   and ty_exprs :: "env \<Rightarrow> dyn_ty \<Rightarrow> [expr list, ty   list] \<Rightarrow> bool"
-    ("_,_\<Turnstile>_\<Colon>\<doteq>_" [51,51,51,51] 50)
+    (\<open>_,_\<Turnstile>_\<Colon>\<doteq>_\<close> [51,51,51,51] 50)
 where
 
   "E,dt\<Turnstile>s\<Colon>\<surd> \<equiv> E,dt\<Turnstile>In1r s\<Colon>Inl (PrimT Void)"
@@ -426,36 +426,36 @@ where
 
 (* for purely static typing *)
 abbreviation
-  wt_syntax :: "env \<Rightarrow> [term,tys] \<Rightarrow> bool" ("_\<turnstile>_\<Colon>_"  [51,51,51] 50)
+  wt_syntax :: "env \<Rightarrow> [term,tys] \<Rightarrow> bool" (\<open>_\<turnstile>_\<Colon>_\<close>  [51,51,51] 50)
   where "E\<turnstile>t\<Colon>T == E,empty_dt\<Turnstile>t\<Colon> T"
 
 abbreviation
-  wt_stmt_syntax :: "env \<Rightarrow> stmt \<Rightarrow> bool" ("_\<turnstile>_\<Colon>\<surd>"  [51,51   ] 50)
+  wt_stmt_syntax :: "env \<Rightarrow> stmt \<Rightarrow> bool" (\<open>_\<turnstile>_\<Colon>\<surd>\<close>  [51,51   ] 50)
   where "E\<turnstile>s\<Colon>\<surd> == E\<turnstile>In1r s \<Colon> Inl (PrimT Void)"
 
 abbreviation
-  ty_expr_syntax :: "env \<Rightarrow> [expr, ty] \<Rightarrow> bool" ("_\<turnstile>_\<Colon>-_" [51,51,51] 50) 
+  ty_expr_syntax :: "env \<Rightarrow> [expr, ty] \<Rightarrow> bool" (\<open>_\<turnstile>_\<Colon>-_\<close> [51,51,51] 50) 
   where "E\<turnstile>e\<Colon>-T == E\<turnstile>In1l e \<Colon> Inl T"
 
 abbreviation
-  ty_var_syntax :: "env \<Rightarrow> [var, ty] \<Rightarrow> bool" ("_\<turnstile>_\<Colon>=_" [51,51,51] 50)
+  ty_var_syntax :: "env \<Rightarrow> [var, ty] \<Rightarrow> bool" (\<open>_\<turnstile>_\<Colon>=_\<close> [51,51,51] 50)
   where "E\<turnstile>e\<Colon>=T == E\<turnstile>In2 e \<Colon> Inl T"
 
 abbreviation
-  ty_exprs_syntax :: "env \<Rightarrow> [expr list, ty list] \<Rightarrow> bool" ("_\<turnstile>_\<Colon>\<doteq>_" [51,51,51] 50)
+  ty_exprs_syntax :: "env \<Rightarrow> [expr list, ty list] \<Rightarrow> bool" (\<open>_\<turnstile>_\<Colon>\<doteq>_\<close> [51,51,51] 50)
   where "E\<turnstile>e\<Colon>\<doteq>T == E\<turnstile>In3 e \<Colon> Inr T"
 
 notation (ASCII)
-  wt_syntax  ("_|-_::_" [51,51,51] 50) and
-  wt_stmt_syntax  ("_|-_:<>" [51,51   ] 50) and
-  ty_expr_syntax  ("_|-_:-_" [51,51,51] 50) and
-  ty_var_syntax  ("_|-_:=_" [51,51,51] 50) and
-  ty_exprs_syntax  ("_|-_:#_" [51,51,51] 50)
+  wt_syntax  (\<open>_|-_::_\<close> [51,51,51] 50) and
+  wt_stmt_syntax  (\<open>_|-_:<>\<close> [51,51   ] 50) and
+  ty_expr_syntax  (\<open>_|-_:-_\<close> [51,51,51] 50) and
+  ty_var_syntax  (\<open>_|-_:=_\<close> [51,51,51] 50) and
+  ty_exprs_syntax  (\<open>_|-_:#_\<close> [51,51,51] 50)
 
 declare not_None_eq [simp del] 
 declare if_split [split del] if_split_asm [split del]
 declare split_paired_All [simp del] split_paired_Ex [simp del]
-setup \<open>map_theory_simpset (fn ctxt => ctxt delloop "split_all_tac")\<close>
+setup \<open>Simplifier.map_theory_simpset (Simplifier.del_loop "split_all_tac")\<close>
 
 inductive_cases wt_elim_cases [cases set]:
         "E,dt\<Turnstile>In2  (LVar vn)               \<Colon>T"
@@ -491,7 +491,7 @@ inductive_cases wt_elim_cases [cases set]:
 declare not_None_eq [simp] 
 declare if_split [split] if_split_asm [split]
 declare split_paired_All [simp] split_paired_Ex [simp]
-setup \<open>map_theory_simpset (fn ctxt => ctxt addloop ("split_all_tac", split_all_tac))\<close>
+setup \<open>Simplifier.map_theory_simpset (Simplifier.add_loop ("split_all_tac", split_all_tac))\<close>
 
 lemma is_acc_class_is_accessible: 
   "is_acc_class G P C \<Longrightarrow> G\<turnstile>(Class C) accessible_in P"

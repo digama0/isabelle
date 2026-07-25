@@ -11,7 +11,7 @@ text \<open>
   heavy: Isabelle/Scala for the system infrastructure and Isabelle/ML for the
   logic session (e.g.\ HOL). In principle, these processes can be invoked
   directly on the command-line, e.g.\ via @{tool java}, @{tool scala}, @{tool
-  process}, @{tool console}, but this approach is inadequate for reactive
+  ML_process}, @{tool console}, but this approach is inadequate for reactive
   applications that require quick responses from the prover.
 
   In contrast, the Isabelle server exposes Isabelle/Scala as a
@@ -36,7 +36,7 @@ text \<open>
 \<open>Usage: isabelle server [OPTIONS]
 
   Options are:
-    -L FILE      logging on FILE
+    -L FILE      logging on FILE (default: console stderr)
     -c           console interaction with specified server
     -l           list servers (alternative operation)
     -n NAME      explicit server name (default: isabelle)
@@ -82,7 +82,7 @@ text \<open>
 
   \<^medskip>
   Option \<^verbatim>\<open>-L\<close> specifies a log file for exceptional output of internal server
-  and session operations.
+  and session operations. The default is the console (stderr).
 
   \<^medskip>
   Operation \<^verbatim>\<open>-l\<close> lists all active server processes with their connection
@@ -806,7 +806,7 @@ text \<open>
   The \<open>print_mode\<close> field adds identifiers of print modes to be made active for
   this session. For example, \<^verbatim>\<open>"print_mode": ["ASCII"]\<close> prefers ASCII
   replacement syntax over mathematical Isabelle symbols. See also option \<^verbatim>\<open>-m\<close>
-  in @{tool process} (\secref{sec:tool-process}).
+  in @{tool ML_process} (\secref{sec:tool-ml-process}).
 \<close>
 
 

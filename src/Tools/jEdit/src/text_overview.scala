@@ -6,12 +6,13 @@ GUI component for text status overview.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
 import scala.annotation.tailrec
 
-import java.awt.{Graphics, Graphics2D, BorderLayout, Dimension, Color}
+import java.awt.{Graphics, Graphics2D, BorderLayout, Dimension}
 import java.awt.event.{MouseAdapter, MouseEvent}
 import javax.swing.{JPanel, ToolTipManager}
 
@@ -33,9 +34,13 @@ class Text_Overview(doc_view: Document_View) extends JPanel(new BorderLayout) {
 
   addMouseListener(new MouseAdapter {
     override def mousePressed(event: MouseEvent): Unit = {
-      val line = (event.getY * lines()) / getHeight
-      if (line >= 0 && line < text_area.getLineCount)
-        text_area.setCaretPosition(text_area.getLineStartOffset(line))
+      if (!event.isConsumed() && GUI.no_modifier(event)) {
+        val line = (event.getY * lines()) / getHeight
+        if (line >= 0 && line < text_area.getLineCount) {
+          event.consume()
+          text_area.setCaretPosition(text_area.getLineStartOffset(line))
+        }
+      }
     }
   })
 
@@ -74,7 +79,7 @@ class Text_Overview(doc_view: Document_View) extends JPanel(new BorderLayout) {
   private var current_overview = Overview()
 
   private val delay_repaint =
-    Delay.first(PIDE.session.update_delay, gui = true) { repaint() }
+    GUI.Delay.first(PIDE.session.update_delay) { repaint() }
 
   override def paintComponent(gfx: Graphics): Unit = {
     super.paintComponent(gfx)
@@ -114,7 +119,7 @@ class Text_Overview(doc_view: Document_View) extends JPanel(new BorderLayout) {
   def revoke(): Unit = { delay_refresh.revoke(); future_refresh.change { x => x.cancel(); x } }
 
   private val delay_refresh =
-    Delay.first(PIDE.session.update_delay, gui = true) {
+    GUI.Delay.first(PIDE.session.update_delay) {
       if (!doc_view.rich_text_area.check_robust_body) invoke()
       else {
         JEdit_Lib.buffer_lock(buffer) {

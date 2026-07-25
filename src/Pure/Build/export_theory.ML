@@ -190,8 +190,8 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
     fun entity_markup space name =
       let
         val xname = Name_Space.extern_shortest thy_ctxt space name;
-        val {serial, pos, ...} = Name_Space.the_entry space name;
-      in make_entity_markup name xname pos serial end;
+        val entry as {serial, ...} = Name_Space.the_entry space name;
+      in make_entity_markup name xname (Name_Space.entry_pos entry) serial end;
 
     fun export_entities export_name get_space decls export =
       let
@@ -224,7 +224,7 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
         (fn c =>
           (fn Type.Logical_Type n =>
                 SOME (fn () =>
-                  encode_type (get_syntax_type thy_ctxt c, Name.invent Name.context Name.aT n, NONE))
+                  encode_type (get_syntax_type thy_ctxt c, Name.invent_global_types n, NONE))
             | Type.Abbreviation (args, U, false) =>
                 SOME (fn () =>
                   encode_type (get_syntax_type thy_ctxt c, args, SOME U))
@@ -263,7 +263,7 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
         val args' = args |> filter (is_free o #1);
         val typargs' = typargs |> filter (is_free o #1);
         val used_typargs = fold (Name.declare o #1) typargs' used;
-        val sorts = Name.invent used_typargs Name.aT (length extra_shyps) ~~ extra_shyps;
+        val sorts = Name.invent_types used_typargs extra_shyps;
       in ((sorts @ typargs', args', prop), proof) end;
 
     fun standard_prop_of thm =
@@ -296,7 +296,7 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
       let
         val space = Global_Theory.fact_space thy;
         val xname = Name_Space.extern_shortest thy_ctxt space name;
-        val {pos, ...} = Name_Space.the_entry space name;
+        val pos = Name_Space.entry_pos (Name_Space.the_entry space name);
       in make_entity_markup (Thm_Name.print (name, i)) (Thm_Name.print (xname, i)) pos serial end;
 
     fun encode_thm thm_id raw_thm =
@@ -390,7 +390,7 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
         (fn loc => fn () => SOME (fn () =>
           let
             val {typargs, args, axioms} = locale_content thy loc;
-            val used = fold Name.declare (map #1 typargs @ map (#1 o #1) args) Name.context;
+            val used = Name.build_context (fold Name.declare (map #1 typargs @ map (#1 o #1) args));
           in encode_locale used (typargs, args, axioms) end
           handle ERROR msg =>
             cat_error msg ("The error(s) above occurred in locale " ^

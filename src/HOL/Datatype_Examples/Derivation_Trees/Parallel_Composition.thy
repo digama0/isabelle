@@ -11,17 +11,15 @@ theory Parallel_Composition
 imports DTree
 begin
 
-no_notation plus_class.plus (infixl "+" 65)
-
-consts Nplus :: "N \<Rightarrow> N \<Rightarrow> N" (infixl "+" 60)
+consts Nplus :: "N \<Rightarrow> N \<Rightarrow> N"  (infixl \<open>\<^bold>+\<close> 60)
 
 axiomatization where
-    Nplus_comm: "(a::N) + b = b + (a::N)"
-and Nplus_assoc: "((a::N) + b) + c = a + (b + c)"
+    Nplus_comm: "(a::N) \<^bold>+ b = b \<^bold>+ (a::N)"
+and Nplus_assoc: "((a::N) \<^bold>+ b) \<^bold>+ c = a \<^bold>+ (b \<^bold>+ c)"
 
 subsection\<open>Corecursive Definition of Parallel Composition\<close>
 
-fun par_r where "par_r (tr1,tr2) = root tr1 + root tr2"
+fun par_r where "par_r (tr1,tr2) = root tr1 \<^bold>+ root tr2"
 fun par_c where
 "par_c (tr1,tr2) =
  Inl ` (Inl -` (cont tr1 \<union> cont tr2)) \<union>
@@ -32,7 +30,7 @@ declare par_r.simps[simp del]  declare par_c.simps[simp del]
 definition par :: "dtree \<times> dtree \<Rightarrow> dtree" where
 "par \<equiv> unfold par_r par_c"
 
-abbreviation par_abbr (infixr "\<parallel>" 80) where "tr1 \<parallel> tr2 \<equiv> par (tr1, tr2)"
+abbreviation par_abbr (infixr \<open>\<parallel>\<close> 80) where "tr1 \<parallel> tr2 \<equiv> par (tr1, tr2)"
 
 lemma finite_par_c: "finite (par_c (tr1, tr2))"
 unfolding par_c.simps apply(rule finite_UnI)
@@ -40,7 +38,7 @@ unfolding par_c.simps apply(rule finite_UnI)
   apply(intro finite_imageI finite_cartesian_product finite_vimageI)
   using finite_cont by auto
 
-lemma root_par: "root (tr1 \<parallel> tr2) = root tr1 + root tr2"
+lemma root_par: "root (tr1 \<parallel> tr2) = root tr1 \<^bold>+ root tr2"
 using unfold(1)[of par_r par_c "(tr1,tr2)"] unfolding par_def par_r.simps by simp
 
 lemma cont_par:

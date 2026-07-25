@@ -10,7 +10,7 @@ begin
 subsection \<open>A set of points sparse in another set\<close>
 
 definition sparse_in:: "'a :: topological_space set \<Rightarrow> 'a set \<Rightarrow> bool"
-    (infixl "(sparse'_in)" 50)
+    (infixl \<open>(sparse'_in)\<close> 50)
   where
   "pts sparse_in A = (\<forall>x\<in>A. \<exists>B. x\<in>B \<and> open B \<and> (\<forall>y\<in>B. \<not> y islimpt pts))"
 
@@ -22,7 +22,7 @@ lemma finite_imp_sparse:
   shows "finite pts \<Longrightarrow> pts sparse_in S"
   by (meson UNIV_I islimpt_finite open_UNIV sparse_in_def)
 
-lemma sparse_in_singleton[simp]: "{x} sparse_in (A::'a:: t1_space set)"
+lemma singleton_sparse_in [simp]: "{x} sparse_in (A::'a:: t1_space set)"
   by (rule finite_imp_sparse) auto
 
 lemma sparse_in_ball_def:
@@ -49,6 +49,38 @@ lemma sparse_in_open:
   shows "pts sparse_in A \<longleftrightarrow> (\<forall>y\<in>A. \<not>y islimpt pts)"
   using assms unfolding sparse_in_def by auto
 
+lemma sparse_in_singleton_iff: "A sparse_in {x} \<longleftrightarrow> \<not>x islimpt closure A"
+proof
+  assume "\<not>x islimpt closure A"
+  then obtain B where B: "x \<in> B" "open B" "\<forall>y\<in>closure A. y \<in> B \<longrightarrow> y = x"
+    by (auto simp: islimpt_def)
+  note B(3)
+  also have "closure A = A \<union> {y. y islimpt A}"
+    by (auto simp: closure_def)
+  finally have "(A \<union> {y. y islimpt A}) \<inter> B \<subseteq> {x}"
+    by blast
+  hence "(\<forall>y\<in>B. y islimpt A \<longrightarrow> y = x)"
+    by auto
+  moreover have "\<not>x islimpt A"
+    using \<open>\<not>x islimpt closure A\<close> by (simp add: closure_def islimpt_Un)
+  ultimately have "(\<forall>y\<in>B. \<not>y islimpt A)"
+    by blast
+  with B show "A sparse_in {x}"
+    unfolding sparse_in_def by blast
+next
+  assume "A sparse_in {x}"
+  then obtain B where B: "x \<in> B" "open B" "\<forall>y\<in>B. \<not>y islimpt A"
+    by (auto simp: sparse_in_def)
+  have "\<not>x islimpt A"
+    using B by auto
+  then obtain C where C: "x \<in> C" "open C" "A \<inter> (C - {x}) = {}"
+    unfolding islimpt_def by blast
+  hence "\<exists>T. x \<in> T \<and> open T \<and> (\<forall>y\<in>closure A. y \<in> T \<longrightarrow> y = x)"
+    by (intro exI[of _ "B \<inter> C"]) (use B C in \<open>auto simp: closure_def\<close>)
+  thus "\<not>x islimpt closure A"
+    unfolding islimpt_def by blast
+qed
+
 lemma sparse_in_not_in:
   assumes "pts sparse_in A" "x\<in>A"
   obtains B where "open B" "x\<in>B" "\<forall>y\<in>B. y\<noteq>x \<longrightarrow> y\<notin>pts"
@@ -71,6 +103,29 @@ lemma sparse_in_union:
   using assms unfolding sparse_in_def islimpt_Un
   by (metis Int_iff open_Int)
 
+lemma sparse_in_union': "A sparse_in C \<Longrightarrow> B sparse_in C \<Longrightarrow> A \<union> B sparse_in C"
+  using sparse_in_union[of A C B C] by simp
+
+lemma sparse_in_Union_finite:
+  assumes "(\<And>A'. A' \<in> A \<Longrightarrow> A' sparse_in B)" "finite A"
+  shows   "\<Union>A sparse_in B"
+  using assms(2,1) by (induction rule: finite_induct) (auto intro!: sparse_in_union')
+
+lemma sparse_in_Union_finite_iff:
+  assumes "finite A"
+  shows   "\<Union>A sparse_in B \<longleftrightarrow> (\<forall>A'\<in>A. A' sparse_in B)"
+  using assms sparse_in_Union_finite sparse_in_subset2 by (metis Union_upper)
+
+lemma sparse_in_UN_finite:
+  assumes "(\<And>x. x \<in> A \<Longrightarrow> f x sparse_in B)" "finite A"
+  shows   "(\<Union>x\<in>A. f x) sparse_in B"
+  by (rule sparse_in_Union_finite) (use assms in auto)
+
+lemma sparse_in_UN_finite_iff:
+  assumes "finite A"
+  shows   "(\<Union>x\<in>A. f  x) sparse_in B \<longleftrightarrow> (\<forall>x\<in>A. f x sparse_in B)"
+  using assms sparse_in_UN_finite sparse_in_subset2 by (metis SUP_upper)
+
 lemma sparse_in_compact_finite:
   assumes "pts sparse_in A" "compact A"
   shows "finite (A \<inter> pts)"
@@ -89,6 +144,10 @@ lemma open_diff_sparse_pts:
   using assms sparse_imp_closedin_pts
   by (metis Diff_Diff_Int Diff_cancel Diff_eq_empty_iff Diff_subset 
       closedin_def double_diff openin_open_eq topspace_euclidean_subtopology)
+
+lemma sparse_in_UNIV_imp_closed: "X sparse_in UNIV \<Longrightarrow> closed X"
+  by (simp add: Compl_eq_Diff_UNIV closed_open open_diff_sparse_pts)
+
 
 lemma sparse_imp_countable:
   fixes D::"'a ::euclidean_space set"
@@ -140,6 +199,44 @@ lemma sparse_disjoint:
       eventually_at_topological
   by blast
 
+lemma sparse_in_translate:
+  fixes A B :: "'a :: real_normed_vector set"
+  assumes "A sparse_in B"
+  shows   "(+) c ` A sparse_in (+) c ` B"
+  unfolding sparse_in_def
+proof safe
+  fix x assume "x \<in> B"
+  from get_sparse_in_cover[OF assms] obtain B' where B': "open B'" "B \<subseteq> B'" "\<forall>y\<in>B'. \<not>y islimpt A"
+    by blast
+  have "c + x \<in> (+) c ` B'" "open ((+) c ` B')"
+    using B' \<open>x \<in> B\<close> by (auto intro: open_translation)
+  moreover have "\<forall>y\<in>(+) c ` B'. \<not>y islimpt ((+) c ` A)"
+  proof safe
+    fix y assume y: "y \<in> B'" "c + y islimpt (+) c ` A"
+    have "(-c) + (c + y) islimpt (+) (-c) ` (+) c ` A"
+      by (intro islimpt_isCont_image[OF y(2)] continuous_intros)
+         (auto simp: algebra_simps eventually_at_topological)
+    hence "y islimpt A"
+      by (simp add: image_image)
+    with y(1) B' show False
+      by blast
+  qed
+  ultimately show "\<exists>B. c + x \<in> B \<and> open B \<and> (\<forall>y\<in>B. \<not> y islimpt (+) c ` A)"
+    by metis
+qed
+
+lemma sparse_in_translate':
+  fixes A B :: "'a :: real_normed_vector set"
+  assumes "A sparse_in B" "C \<subseteq> (+) c ` B"
+  shows   "(+) c ` A sparse_in C"
+  using sparse_in_translate[OF assms(1)] assms(2) by (rule sparse_in_subset)
+
+lemma sparse_in_translate_UNIV:
+  fixes A B :: "'a :: real_normed_vector set"
+  assumes "A sparse_in UNIV"
+  shows   "(+) c ` A sparse_in UNIV"
+  using assms by (rule sparse_in_translate') auto
+
 
 subsection \<open>Co-sparseness filter\<close>
 
@@ -165,35 +262,27 @@ definition cosparse :: "'a set \<Rightarrow> 'a :: topological_space filter" whe
  "cosparse A = Abs_filter (\<lambda>P. {x. \<not>P x} sparse_in A)"
 
 syntax
-  "_eventually_cosparse" :: "pttrn => 'a set => bool => bool"  ("(3\<forall>\<^sub>\<approx>_\<in>_./ _)" [0, 0, 10] 10)
+  "_eventually_cosparse" :: "pttrn => 'a set => bool => bool"  (\<open>(\<open>indent=3 notation=\<open>binder \<forall>\<approx>\<close>\<close>\<forall>\<^sub>\<approx>_\<in>_./ _)\<close> [0, 0, 10] 10)
 syntax_consts
   "_eventually_cosparse" == eventually
 translations
   "\<forall>\<^sub>\<approx>x\<in>A. P" == "CONST eventually (\<lambda>x. P) (CONST cosparse A)"
 
 syntax
-  "_qeventually_cosparse" :: "pttrn \<Rightarrow> bool \<Rightarrow> 'a \<Rightarrow> 'a"  ("(3\<forall>\<^sub>\<approx>_ | (_)./ _)" [0, 0, 10] 10)
+  "_eventually_cosparse_UNIV" :: "pttrn => bool => bool"  (\<open>(\<open>indent=3 notation=\<open>binder \<forall>\<approx>\<close>\<close>\<forall>\<^sub>\<approx>_./ _)\<close> [0, 10] 10)
+syntax_consts
+  "_eventually_cosparse_UNIV" == eventually
+translations
+  "\<forall>\<^sub>\<approx>x. P" == "CONST eventually (\<lambda>x. P) (CONST cosparse CONST UNIV)"
+
+syntax
+  "_qeventually_cosparse" :: "pttrn \<Rightarrow> bool \<Rightarrow> 'a \<Rightarrow> 'a"  (\<open>(\<open>indent=3 notation=\<open>binder \<forall>\<approx>\<close>\<close>\<forall>\<^sub>\<approx>_ | (_)./ _)\<close> [0, 0, 10] 10)
 syntax_consts
   "_qeventually_cosparse" == eventually
 translations
   "\<forall>\<^sub>\<approx>x|P. t" => "CONST eventually (\<lambda>x. t) (CONST cosparse {x. P})"
-
 print_translation \<open>
-let
-  fun ev_cosparse_tr' [Abs (x, Tx, t), 
-        Const (\<^const_syntax>\<open>cosparse\<close>, _) $ (Const (\<^const_syntax>\<open>Collect\<close>, _) $ Abs (y, Ty, P))] =
-        if x <> y then raise Match
-        else
-          let
-            val x' = Syntax_Trans.mark_bound_body (x, Tx);
-            val t' = subst_bound (x', t);
-            val P' = subst_bound (x', P);
-          in
-            Syntax.const \<^syntax_const>\<open>_qeventually_cosparse\<close> $
-              Syntax_Trans.mark_bound_abs (x, Tx) $ P' $ t'
-          end
-    | ev_cosparse_tr' _ = raise Match;
-in [(\<^const_syntax>\<open>eventually\<close>, K ev_cosparse_tr')] end
+  [(\<^const_syntax>\<open>eventually\<close>, K (Collect_binder_tr' \<^syntax_const>\<open>_qeventually_cosparse\<close>))]
 \<close>
 
 lemma eventually_cosparse: "eventually P (cosparse A) \<longleftrightarrow> {x. \<not>P x} sparse_in A"
@@ -211,10 +300,8 @@ lemma eventually_cosparse_open_eq:
 
 lemma eventually_cosparse_imp_eventually_at:
   "eventually P (cosparse A) \<Longrightarrow> x \<in> A \<Longrightarrow> eventually P (at x within B)"
-  unfolding eventually_cosparse sparse_in_def
-  apply (auto simp: islimpt_conv_frequently_at frequently_def)
-   apply (metis UNIV_I eventually_at_topological)
-  done
+  unfolding eventually_cosparse sparse_in_def islimpt_def eventually_at_topological 
+  by fastforce
 
 lemma eventually_in_cosparse:
   assumes "A \<subseteq> X" "open A"
@@ -239,8 +326,17 @@ qed
 lemma cosparse_empty [simp]: "cosparse {} = bot"
   by (rule filter_eqI) (auto simp: eventually_cosparse sparse_in_def)
 
+lemma cosparse_singleton [simp]: "cosparse {x::'a::t1_space} = at x"
+proof (rule filter_eqI)
+  fix P :: "'a \<Rightarrow> bool"
+  have "eventually P (cosparse {x}) \<longleftrightarrow> (\<not> x islimpt {x. \<not> P x})"
+    by (simp add: eventually_cosparse sparse_in_singleton_iff limpt_of_closure)
+  also have "\<dots> \<longleftrightarrow> eventually P (at x)"
+    by (simp add: islimpt_iff_eventually)
+  finally show "eventually P (cosparse {x}) \<longleftrightarrow> \<dots>" .
+qed
+
 lemma cosparse_eq_bot_iff' [simp]: "cosparse (A :: 'a :: perfect_space set) = bot \<longleftrightarrow> A = {}"
   by (auto simp: cosparse_eq_bot_iff not_open_singleton)
-
 
 end

@@ -26,39 +26,39 @@ text \<open>
 \<close>
 
 definition bigo :: "'a filter \<Rightarrow> ('a \<Rightarrow> ('b :: real_normed_field)) \<Rightarrow> ('a \<Rightarrow> 'b) set"
-    (\<open>(1O[_]'(_'))\<close>)
+    (\<open>(\<open>indent=1 notation=\<open>mixfix bigo\<close>\<close>O[_]'(_'))\<close>)
   where "bigo F g = {f. (\<exists>c>0. eventually (\<lambda>x. norm (f x) \<le> c * norm (g x)) F)}"
 
 definition smallo :: "'a filter \<Rightarrow> ('a \<Rightarrow> ('b :: real_normed_field)) \<Rightarrow> ('a \<Rightarrow> 'b) set"
-    (\<open>(1o[_]'(_'))\<close>)
+    (\<open>(\<open>indent=1 notation=\<open>mixfix smallo\<close>\<close>o[_]'(_'))\<close>)
   where "smallo F g = {f. (\<forall>c>0. eventually (\<lambda>x. norm (f x) \<le> c * norm (g x)) F)}"
 
 definition bigomega :: "'a filter \<Rightarrow> ('a \<Rightarrow> ('b :: real_normed_field)) \<Rightarrow> ('a \<Rightarrow> 'b) set"
-    (\<open>(1\<Omega>[_]'(_'))\<close>)
+    (\<open>(\<open>indent=1 notation=\<open>mixfix bigomega\<close>\<close>\<Omega>[_]'(_'))\<close>)
   where "bigomega F g = {f. (\<exists>c>0. eventually (\<lambda>x. norm (f x) \<ge> c * norm (g x)) F)}"
 
 definition smallomega :: "'a filter \<Rightarrow> ('a \<Rightarrow> ('b :: real_normed_field)) \<Rightarrow> ('a \<Rightarrow> 'b) set"
-    (\<open>(1\<omega>[_]'(_'))\<close>)
+    (\<open>(\<open>indent=1 notation=\<open>mixfix smallomega\<close>\<close>\<omega>[_]'(_'))\<close>)
   where "smallomega F g = {f. (\<forall>c>0. eventually (\<lambda>x. norm (f x) \<ge> c * norm (g x)) F)}"
 
 definition bigtheta :: "'a filter \<Rightarrow> ('a \<Rightarrow> ('b :: real_normed_field)) \<Rightarrow> ('a \<Rightarrow> 'b) set"
-    (\<open>(1\<Theta>[_]'(_'))\<close>)
+    (\<open>(\<open>indent=1 notation=\<open>mixfix bigtheta\<close>\<close>\<Theta>[_]'(_'))\<close>)
   where "bigtheta F g = bigo F g \<inter> bigomega F g"
 
-abbreviation bigo_at_top (\<open>(2O'(_'))\<close>) where
-  "O(g) \<equiv> bigo at_top g"
+abbreviation bigo_at_top (\<open>(\<open>indent=2 notation=\<open>mixfix bigo\<close>\<close>O'(_'))\<close>)
+  where "O(g) \<equiv> bigo at_top g"
 
-abbreviation smallo_at_top (\<open>(2o'(_'))\<close>) where
-  "o(g) \<equiv> smallo at_top g"
+abbreviation smallo_at_top (\<open>(\<open>indent=2 notation=\<open>mixfix smallo\<close>\<close>o'(_'))\<close>)
+  where "o(g) \<equiv> smallo at_top g"
 
-abbreviation bigomega_at_top (\<open>(2\<Omega>'(_'))\<close>) where
-  "\<Omega>(g) \<equiv> bigomega at_top g"
+abbreviation bigomega_at_top (\<open>(\<open>indent=2 notation=\<open>mixfix bigomega\<close>\<close>\<Omega>'(_'))\<close>)
+  where "\<Omega>(g) \<equiv> bigomega at_top g"
 
-abbreviation smallomega_at_top (\<open>(2\<omega>'(_'))\<close>) where
-  "\<omega>(g) \<equiv> smallomega at_top g"
+abbreviation smallomega_at_top (\<open>(\<open>indent=2 notation=\<open>mixfix smallomega\<close>\<close>\<omega>'(_'))\<close>)
+  where "\<omega>(g) \<equiv> smallomega at_top g"
 
-abbreviation bigtheta_at_top (\<open>(2\<Theta>'(_'))\<close>) where
-  "\<Theta>(g) \<equiv> bigtheta at_top g"
+abbreviation bigtheta_at_top (\<open>(\<open>indent=2 notation=\<open>mixfix bigtheta\<close>\<close>\<Theta>'(_'))\<close>)
+  where "\<Theta>(g) \<equiv> bigtheta at_top g"
 
 
 text \<open>The following is a set of properties that all Landau symbols satisfy.\<close>
@@ -659,7 +659,7 @@ proof -
     using assms by (intro big_power_increasing[OF small_imp_big]) auto
   finally show ?thesis by simp
 qed
-  
+
 sublocale big: landau_symbol L L' Lr
 proof
   have L: "L = bigo \<or> L = bigomega"
@@ -1522,15 +1522,16 @@ lemma maxmin_in_smallo:
   assumes "f \<in> o[F](h)" "g \<in> o[F](h)"
   shows   "(\<lambda>k. max (f k) (g k)) \<in> o[F](h)" "(\<lambda>k. min (f k) (g k)) \<in> o[F](h)"
 proof -
-  { fix c::real
-    assume "c>0"
-    with assms smallo_def
+  have "\<forall>\<^sub>F x in F. norm (max (f x) (g x)) \<le> c * norm(h x) \<and> norm (min (f x) (g x)) \<le> c * norm(h x)"
+    if "c>0" for c::real
+  proof -
+    from assms smallo_def that
     have "\<forall>\<^sub>F x in F. norm (f x) \<le> c * norm(h x)" "\<forall>\<^sub>F x in F. norm(g x) \<le> c * norm(h x)"
       by (auto simp: smallo_def)
-    then have "\<forall>\<^sub>F x in F. norm (max (f x) (g x)) \<le> c * norm(h x) \<and> norm (min (f x) (g x)) \<le> c * norm(h x)"
+    then show ?thesis
       by (smt (verit) eventually_elim2 max_def min_def)
-  } with assms   
-  show "(\<lambda>x. max (f x) (g x)) \<in> o[F](h)" "(\<lambda>x. min (f x) (g x)) \<in> o[F](h)"
+  qed
+  with assms show "(\<lambda>x. max (f x) (g x)) \<in> o[F](h)" "(\<lambda>x. min (f x) (g x)) \<in> o[F](h)"
     by (smt (verit) eventually_elim2 landau_o.smallI)+
 qed
 
@@ -1735,13 +1736,13 @@ named_theorems asymp_equiv_intros
 named_theorems asymp_equiv_simps
 
 definition asymp_equiv :: "('a \<Rightarrow> ('b :: real_normed_field)) \<Rightarrow> 'a filter \<Rightarrow> ('a \<Rightarrow> 'b) \<Rightarrow> bool"
-  (\<open>_ \<sim>[_] _\<close> [51, 10, 51] 50)
+  (\<open>(\<open>open_block notation=\<open>mixfix asymp_equiv\<close>\<close>_ \<sim>[_] _)\<close> [51, 10, 51] 50)
   where "f \<sim>[F] g \<longleftrightarrow> ((\<lambda>x. if f x = 0 \<and> g x = 0 then 1 else f x / g x) \<longlongrightarrow> 1) F"
 
 abbreviation (input) asymp_equiv_at_top where
   "asymp_equiv_at_top f g \<equiv> f \<sim>[at_top] g"
 
-bundle asymp_equiv_notation
+bundle asymp_equiv_syntax
 begin
 notation asymp_equiv_at_top (infix \<open>\<sim>\<close> 50)
 end

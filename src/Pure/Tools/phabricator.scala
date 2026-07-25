@@ -1,11 +1,11 @@
 /*  Title:      Pure/Tools/phabricator.scala
     Author:     Makarius
 
-Support for Phabricator server, notably for Ubuntu 20.04 or 22.04 LTS.
+Support for Phorge / Phabricator server, notably for Ubuntu 20.04 or 22.04 LTS.
 
 See also:
-  - https://www.phacility.com/phabricator
-  - https://secure.phabricator.com/book/phabricator
+  - https://phorge.it
+  - https://we.phorge.it/book/phorge
 */
 
 package isabelle
@@ -20,21 +20,10 @@ object Phabricator {
 
   /* system packages */
 
-  val packages_ubuntu_20_04: List[String] =
-    Docker_Build.packages :::
-    List(
-      // https://secure.phabricator.com/source/phabricator/browse/master/scripts/install/install_ubuntu.sh 15e6e2adea61
-      "git", "mysql-server", "php", "php-mysql", "php-gd", "php-curl", "php-apcu", "php-cli",
-      "php-json", "php-mbstring",
-      // more packages
-      "php-xml", "php-zip", "python3-pygments", "ssh", "subversion", "python-pygments",
-      // mercurial build packages
-      "make", "gcc", "python", "python2-dev", "python-docutils", "python-openssl")
-
   val packages_ubuntu_22_04: List[String] =
     Docker_Build.packages :::
     List(
-      // https://secure.phabricator.com/source/phabricator/browse/master/scripts/install/install_ubuntu.sh 15e6e2adea61
+      // base packages
       "git", "mysql-server", "php", "php-mysql", "php-gd", "php-curl", "php-apcu", "php-cli",
       "php-json", "php-mbstring",
       // more packages
@@ -42,13 +31,22 @@ object Phabricator {
       // mercurial build packages
       "make", "gcc", "python3", "python3-dev", "python3-docutils")
 
-  def packages(webserver: Webserver): List[String] = {
+  val packages_ubuntu_24_04: List[String] =
+    Docker_Build.packages :::
+    List(
+      // base packages
+      "git", "mysql-server", "php", "php-mysql", "php-gd", "php-curl", "php-apcu", "php-cli",
+      "php-json", "php-mbstring",
+      // more packages
+      "php-xml", "php-zip", "python3-pygments", "ssh", "subversion",
+      // mercurial build packages
+      "make", "gcc", "gettext", "python3", "python3-dev", "python3-docutils", "python3-setuptools")
+
+  def system_packages(): List[String] = {
     val release = Linux.Release()
-    val pkgs =
-      if (release.is_ubuntu_20_04) packages_ubuntu_20_04
-      else if (release.is_ubuntu_22_04) packages_ubuntu_22_04
-      else error("Bad Linux version: expected Ubuntu 20.04 or 22.04 LTS")
-    pkgs ::: webserver.packages()
+    if (release.is_ubuntu_22_04) packages_ubuntu_22_04
+    else if (release.is_ubuntu_24_04) packages_ubuntu_24_04
+    else error("Bad Linux version: expected Ubuntu 20.04 or 22.04 or 24.04 LTS")
   }
 
 
@@ -204,8 +202,8 @@ object Phabricator {
 
   def standard_mercurial_source: String = {
     val release = Linux.Release()
-    if (release.is_ubuntu_20_04) "https://www.mercurial-scm.org/release/mercurial-3.9.2.tar.gz"
-    else "https://www.mercurial-scm.org/release/mercurial-6.1.4.tar.gz"
+    if (release.is_ubuntu_22_04) "https://www.mercurial-scm.org/release/mercurial-6.1.4.tar.gz"
+    else "https://www.mercurial-scm.org/release/mercurial-6.8.2.tar.gz"
   }
 
 
@@ -262,7 +260,7 @@ object Phabricator {
 
   def get_config(name: String): Config =
     read_config().find(config => config.name == name) getOrElse
-      error("Bad Isabelle/Phabricator installation " + quote(name))
+      error("Bad Isabelle/Phorge installation " + quote(name))
 
 
 
@@ -271,7 +269,7 @@ object Phabricator {
   /* Isabelle tool wrapper */
 
   val isabelle_tool1 =
-    Isabelle_Tool("phabricator", "invoke command-line tool within Phabricator home directory",
+    Isabelle_Tool("phabricator", "invoke command-line tool within Phorge home directory",
       Scala_Project.here,
       { args =>
         var list = false
@@ -281,11 +279,11 @@ object Phabricator {
 Usage: isabelle phabricator [OPTIONS] COMMAND [ARGS...]
 
   Options are:
-    -l           list available Phabricator installations
-    -n NAME      Phabricator installation name (default: """ + quote(default_name) + """)
+    -l           list available Phorge installations
+    -n NAME      Phorge installation name (default: """ + quote(default_name) + """)
 
   Invoke a command-line tool within the home directory of the named
-  Phabricator installation.
+  Phorge installation.
 """,
           "l" -> (_ => list = true),
           "n:" -> (arg => name = arg))
@@ -293,7 +291,7 @@ Usage: isabelle phabricator [OPTIONS] COMMAND [ARGS...]
         val more_args = getopts(args)
         if (more_args.isEmpty && !list) getopts.usage()
 
-        val progress = new Console_Progress
+        val progress = new Console_Progress()
 
         if (list) {
           for (config <- read_config()) {
@@ -317,7 +315,7 @@ Usage: isabelle phabricator [OPTIONS] COMMAND [ARGS...]
     }
     else if (Linux.user_description(name) != description) {
       error("User " + quote(name) + " already exists --" +
-        " for Phabricator it should have the description:\n  " + quote(description))
+        " for Phorge it should have the description:\n  " + quote(description))
     }
   }
 
@@ -372,7 +370,8 @@ Usage: isabelle phabricator [OPTIONS] COMMAND [ARGS...]
       Linux.check_reboot_required()
     }
 
-    Linux.package_install(packages(webserver), progress = progress)
+    Linux.package_install(webserver.packages(), progress = progress)
+    Linux.package_install(system_packages(), progress = progress)
     Linux.check_reboot_required()
 
 
@@ -392,13 +391,13 @@ Usage: isabelle phabricator [OPTIONS] COMMAND [ARGS...]
       error("Bad installation name: " + quote(name))
     }
 
-    user_setup(daemon_user, "Phabricator Daemon User", ssh_setup = true)
-    user_setup(name, "Phabricator SSH User")
+    user_setup(daemon_user, "Phorge Daemon User", ssh_setup = true)
+    user_setup(name, "Phorge SSH User")
 
 
     /* basic installation */
 
-    progress.echo("\nPhabricator installation ...")
+    progress.echo("\nPhorge installation ...")
 
     val root_path = if (root.nonEmpty) Path.explode(root) else default_root(name)
     val repo_path = if (repo.nonEmpty) Path.explode(repo) else default_repo(name)
@@ -406,7 +405,7 @@ Usage: isabelle phabricator [OPTIONS] COMMAND [ARGS...]
     val configs = read_config()
 
     for (config <- configs if config.name == name) {
-      error("Duplicate Phabricator installation " + quote(name) + " in " + config.root)
+      error("Duplicate Phorge installation " + quote(name) + " in " + config.root)
     }
 
     if (!Isabelle_System.bash("mkdir -p " + File.bash_path(root_path)).ok) {
@@ -487,7 +486,7 @@ local_infile = 0
     val mysql_root_user = mysql_conf("""^user\s*=\s*(\S*)\s*$""".r, "superuser name")
     val mysql_root_password = mysql_conf("""^password\s*=\s*(\S*)\s*$""".r, "superuser password")
 
-    val mysql_name = phabricator_name(name = name).replace("-", "_")
+    val mysql_name = phabricator_name(name = name).replacing("-" -> "_")
     val mysql_user_string = SQL.string(mysql_name) + "@'localhost'"
     val mysql_password = Linux.generate_password()
 
@@ -497,7 +496,7 @@ local_infile = 0
         """DROP USER IF EXISTS """ + mysql_user_string + "; " +
         """CREATE USER """ + mysql_user_string +
         """ IDENTIFIED BY """ + SQL.string(mysql_password) + """ PASSWORD EXPIRE NEVER; """ +
-        """GRANT ALL ON `""" + (mysql_name + "_%").replace("_", "\\_") +
+        """GRANT ALL ON `""" + (mysql_name + "_%").replacing("_" -> "\\_") +
         """`.* TO """ + mysql_user_string + "; " +
         """GRANT PROCESS ON *.* TO """ + mysql_user_string + ";")).check
 
@@ -522,7 +521,7 @@ echo -n "Creating $ROOT/database/dump.sql.gz ..."
 echo " $(ls -hs "$ROOT/database/dump.sql.gz" | cut -d" " -f1)" """)
 
 
-    /* Phabricator upgrade */
+    /* Phorge upgrade */
 
     command_setup(isabelle_phabricator_name(name = "upgrade"),
       init =
@@ -592,7 +591,7 @@ systemctl start isabelle-phabricator-phd""")
     try {
       Linux.service_install(phd_name,
 """[Unit]
-Description=PHP daemon manager for Isabelle/Phabricator
+Description=PHP daemon manager for Isabelle/Phorge
 After=syslog.target network.target """ + webserver.system_name + """.service mysql.service
 
 [Service]
@@ -619,7 +618,7 @@ WantedBy=multi-user.target
   /* Isabelle tool wrapper */
 
   val isabelle_tool2 =
-    Isabelle_Tool("phabricator_setup", "setup Phabricator server on Ubuntu Linux",
+    Isabelle_Tool("phabricator_setup", "setup Phorge server on Ubuntu Linux",
       Scala_Project.here,
       { args =>
         var mercurial_source = ""
@@ -638,14 +637,14 @@ Usage: isabelle phabricator_setup [OPTIONS]
                  """ + standard_mercurial_source + """
     -R DIR       repository directory (default: """ + default_repo("NAME") + """)
     -U           full update of system packages before installation
-    -n NAME      Phabricator installation name (default: """ + quote(default_name) + """)
+    -n NAME      Phorge installation name (default: """ + quote(default_name) + """)
     -o OPTION    override Isabelle system OPTION (via NAME=VAL or NAME)
     -r DIR       installation root directory (default: """ + default_root("NAME") + """)
     -w NAME      webserver name (""" +
           all_webservers.map(w => quote(w.user_name)).mkString (" or ") +
           ", default: " + quote(default_webserver.user_name) + """)
 
-  Install Phabricator as Linux service, based on webserver + PHP + MySQL.
+  Install Phorge as Linux service, based on webserver + PHP + MySQL.
 
   The installation name (default: """ + quote(default_name) + """) is mapped to a regular
   Unix user; this is relevant for public SSH access.
@@ -661,7 +660,7 @@ Usage: isabelle phabricator_setup [OPTIONS]
         val more_args = getopts(args)
         if (more_args.nonEmpty) getopts.usage()
 
-        val progress = new Console_Progress
+        val progress = new Console_Progress()
 
         phabricator_setup(options, name = name, root = root, repo = repo, webserver = webserver,
           package_update = package_update, mercurial_source = mercurial_source, progress = progress)
@@ -707,7 +706,7 @@ Usage: isabelle phabricator_setup [OPTIONS]
       if (test_user.nonEmpty) {
         progress.echo("Sending test mail to " + quote(test_user))
         progress.bash(cwd = config.home, echo = true,
-          script = """echo "Test from Phabricator ($(date))" | bin/mail send-test --subject "Test" --to """ +
+          script = """echo "Test from Phorge ($(date))" | bin/mail send-test --subject "Test" --to """ +
             Bash.string(test_user)).check
       }
     }
@@ -730,7 +729,7 @@ Usage: isabelle phabricator_setup [OPTIONS]
   /* Isabelle tool wrapper */
 
   val isabelle_tool3 =
-    Isabelle_Tool("phabricator_setup_mail", "setup mail for one Phabricator installation",
+    Isabelle_Tool("phabricator_setup_mail", "setup mail for one Phorge installation",
       Scala_Project.here,
       { args =>
         var test_user = ""
@@ -741,11 +740,11 @@ Usage: isabelle phabricator_setup [OPTIONS]
 Usage: isabelle phabricator_setup_mail [OPTIONS]
 
   Options are:
-    -T USER      send test mail to Phabricator user
-    -f FILE      config file (default: """ + default_mailers + """ within Phabricator root)
-    -n NAME      Phabricator installation name (default: """ + quote(default_name) + """)
+    -T USER      send test mail to Phorge user
+    -f FILE      config file (default: """ + default_mailers + """ within Phorge root)
+    -n NAME      Phorge installation name (default: """ + quote(default_name) + """)
 
-  Provide mail configuration for existing Phabricator installation.
+  Provide mail configuration for existing Phorge installation.
 """,
           "T:" -> (arg => test_user = arg),
           "f:" -> (arg => config_file = Some(Path.explode(arg))),
@@ -754,7 +753,7 @@ Usage: isabelle phabricator_setup_mail [OPTIONS]
         val more_args = getopts(args)
         if (more_args.nonEmpty) getopts.usage()
 
-        val progress = new Console_Progress
+        val progress = new Console_Progress()
 
         phabricator_setup_mail(name = name, config_file = config_file,
           test_user = test_user, progress = progress)
@@ -763,6 +762,9 @@ Usage: isabelle phabricator_setup_mail [OPTIONS]
 
 
   /** setup ssh **/
+
+  // see also https://we.phorge.it/book/phorge/article/diffusion_hosting/#sshd-setup
+
 
   /* sshd config */
 
@@ -812,7 +814,7 @@ Usage: isabelle phabricator_setup_mail [OPTIONS]
     val configs = read_config()
 
     if (server_port == system_port) {
-      error("Port for Phabricator sshd coincides with system port: " + system_port)
+      error("Port for Phorge sshd coincides with system port: " + system_port)
     }
 
     val sshd_conf_system = Path.explode("/etc/ssh/sshd_config")
@@ -838,7 +840,7 @@ then
 fi""", exit = "exit 1")
 
     File.write(sshd_conf_server,
-"""# OpenBSD Secure Shell server for Isabelle/Phabricator
+"""# OpenBSD Secure Shell server for Isabelle/Phorge
 AuthorizedKeysCommand """ + ssh_command.implode + """
 AuthorizedKeysCommandUser """ + daemon_user + """
 AuthorizedKeysFile none
@@ -857,8 +859,8 @@ PidFile /var/run/""" + ssh_name + """.pid
 
     Linux.service_install(ssh_name,
 """[Unit]
-Description=OpenBSD Secure Shell server for Isabelle/Phabricator
-After=network.target auditd.service isabelle-phabricator-phd.service
+Description=OpenBSD Secure Shell server for Isabelle/Phorge
+After=network.target auditd.service ssh.service isabelle-phabricator-phd.service
 ConditionPathExists=!/etc/ssh/sshd_not_to_be_run
 
 [Service]
@@ -890,7 +892,7 @@ Alias=""" + ssh_name + """.service
   /* Isabelle tool wrapper */
 
   val isabelle_tool4 =
-    Isabelle_Tool("phabricator_setup_ssh", "setup ssh service for all Phabricator installations",
+    Isabelle_Tool("phabricator_setup_ssh", "setup ssh service for all Phorge installations",
       Scala_Project.here,
       { args =>
         var server_port = default_server_port
@@ -900,15 +902,15 @@ Alias=""" + ssh_name + """.service
 Usage: isabelle phabricator_setup_ssh [OPTIONS]
 
   Options are:
-    -p PORT      sshd port for Phabricator servers (default: """ + default_server_port + """)
+    -p PORT      sshd port for Phorge servers (default: """ + default_server_port + """)
     -q PORT      sshd port for the operating system (default: """ + default_system_port + """)
 
-  Configure ssh service for all Phabricator installations: a separate sshd
+  Configure ssh service for all Phorge installations: a separate sshd
   is run in addition to the one of the operating system, and ports need to
   be distinct.
 
-  A particular Phabricator installation is addressed by using its
-  name as the ssh user; the actual Phabricator user is determined via
+  A particular Phorge installation is addressed by using its
+  name as the ssh user; the actual Phorge user is determined via
   stored ssh keys.
 """,
           "p:" -> (arg => server_port = Value.Int.parse(arg)),
@@ -917,7 +919,7 @@ Usage: isabelle phabricator_setup_ssh [OPTIONS]
         val more_args = getopts(args)
         if (more_args.nonEmpty) getopts.usage()
 
-        val progress = new Console_Progress
+        val progress = new Console_Progress()
 
         phabricator_setup_ssh(
           server_port = server_port, system_port = system_port, progress = progress)

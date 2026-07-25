@@ -47,10 +47,10 @@ object Check_Sources {
 
   def check_hg(root: Path): Unit = {
     Output.writeln("Checking " + root + " ...")
-    val hg = Mercurial.repository(root)
+    val hg = Mercurial.this_repository(root)
     for {
       file <- hg.known_files()
-      if File.is_thy(file) || File.is_ML(file) || file.endsWith("/ROOT")
+      if File.is_scala(file) || File.is_thy(file) || File.is_ML(file) || File.is_ROOT(file)
     } check_file(root + Path.explode(file))
   }
 
@@ -64,7 +64,7 @@ object Check_Sources {
         val getopts = Getopts("""
 Usage: isabelle check_sources [ROOT_DIRS...]
 
-  Check .thy, .ML, ROOT against known files of Mercurial ROOT_DIRS.
+  Check .scala, .thy, .ML, ROOT against known files of Mercurial ROOT_DIRS.
 """)
 
         val specs = getopts(args)

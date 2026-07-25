@@ -178,25 +178,25 @@ class ord =
 begin
 
 notation
-  less_eq  ("'(\<le>')") and
-  less_eq  ("(_/ \<le> _)"  [51, 51] 50) and
-  less  ("'(<')") and
-  less  ("(_/ < _)"  [51, 51] 50)
+  less_eq  (\<open>'(\<le>')\<close>) and
+  less_eq  (\<open>(\<open>notation=\<open>infix \<le>\<close>\<close>_/ \<le> _)\<close>  [51, 51] 50) and
+  less  (\<open>'(<')\<close>) and
+  less  (\<open>(\<open>notation=\<open>infix <\<close>\<close>_/ < _)\<close>  [51, 51] 50)
 
 abbreviation (input)
-  greater_eq  (infix "\<ge>" 50)
+  greater_eq  (infix \<open>\<ge>\<close> 50)
   where "x \<ge> y \<equiv> y \<le> x"
 
 abbreviation (input)
-  greater  (infix ">" 50)
+  greater  (infix \<open>>\<close> 50)
   where "x > y \<equiv> y < x"
 
 notation (ASCII)
-  less_eq  ("'(<=')") and
-  less_eq  ("(_/ <= _)" [51, 51] 50)
+  less_eq  (\<open>'(<=')\<close>) and
+  less_eq  (\<open>(\<open>notation=\<open>infix <=\<close>\<close>_/ <= _)\<close> [51, 51] 50)
 
 notation (input)
-  greater_eq  (infix ">=" 50)
+  greater_eq  (infix \<open>>=\<close> 50)
 
 end
 
@@ -357,7 +357,7 @@ lemma leD: "y \<le> x \<Longrightarrow> \<not> x < y"
 text \<open>Least value operator\<close>
 
 definition (in ord)
-  Least :: "('a \<Rightarrow> bool) \<Rightarrow> 'a" (binder "LEAST " 10) where
+  Least :: "('a \<Rightarrow> bool) \<Rightarrow> 'a" (binder \<open>LEAST \<close> 10) where
   "Least P = (THE x. P x \<and> (\<forall>y. P y \<longrightarrow> x \<le> y))"
 
 lemma Least_equality:
@@ -384,7 +384,7 @@ lemma Least_ex1:
 
 text \<open>Greatest value operator\<close>
 
-definition Greatest :: "('a \<Rightarrow> bool) \<Rightarrow> 'a" (binder "GREATEST " 10) where
+definition Greatest :: "('a \<Rightarrow> bool) \<Rightarrow> 'a" (binder \<open>GREATEST \<close> 10) where
 "Greatest P = (THE x. P x \<and> (\<forall>y. P y \<longrightarrow> x \<ge> y))"
 
 lemma GreatestI2_order:
@@ -403,8 +403,8 @@ by (rule the_equality) (blast intro: order.antisym)+
 end
 
 lemma ordering_orderI:
-  fixes less_eq (infix "\<^bold>\<le>" 50)
-    and less (infix "\<^bold><" 50)
+  fixes less_eq (infix \<open>\<^bold>\<le>\<close> 50)
+    and less (infix \<open>\<^bold><\<close> 50)
   assumes "ordering less_eq less"
   shows "class.order less_eq less"
 proof -
@@ -414,8 +414,8 @@ proof -
 qed
 
 lemma order_strictI:
-  fixes less (infix "\<^bold><" 50)
-    and less_eq (infix "\<^bold>\<le>" 50)
+  fixes less (infix \<open>\<^bold><\<close> 50)
+    and less_eq (infix \<open>\<^bold>\<le>\<close> 50)
   assumes "\<And>a b. a \<^bold>\<le> b \<longleftrightarrow> a \<^bold>< b \<or> a = b"
     assumes "\<And>a b. a \<^bold>< b \<Longrightarrow> \<not> b \<^bold>< a"
   assumes "\<And>a. \<not> a \<^bold>< a"
@@ -506,8 +506,8 @@ end
 text \<open>Alternative introduction rule with bias towards strict order\<close>
 
 lemma linorder_strictI:
-  fixes less_eq (infix "\<^bold>\<le>" 50)
-    and less (infix "\<^bold><" 50)
+  fixes less_eq (infix \<open>\<^bold>\<le>\<close> 50)
+    and less (infix \<open>\<^bold><\<close> 50)
   assumes "class.order less_eq less"
   assumes trichotomy: "\<And>a b. a \<^bold>< b \<or> a = b \<or> b \<^bold>< a"
   shows "class.linorder less_eq less"
@@ -568,7 +568,7 @@ fun print_orders ctxt0 =
         Pretty.quote (Syntax.pretty_typ ctxt (type_of t)), Pretty.brk 1]
     fun pretty_order ({kind = kind, ops = ops, ...}, _) =
       Pretty.block ([Pretty.str (@{make_string} kind), Pretty.str ":", Pretty.brk 1]
-                    @ map pretty_term ops)
+                    @ map pretty_term [#eq ops, #le ops, #lt ops])
   in
     Pretty.writeln (Pretty.big_list "order structures:" (map pretty_order orders))
   end
@@ -653,8 +653,8 @@ local_setup \<open>
 end
 
 setup \<open>
-  map_theory_simpset (fn ctxt0 => ctxt0 addSolver
-    mk_solver "partial and linear orders" (fn ctxt => HOL_Order_Tac.tac (Simplifier.prems_of ctxt) ctxt))
+  Simplifier.map_theory_simpset (Simplifier.add_unsafe_solver
+    (Simplifier.mk_solver "partial and linear orders" (fn ctxt => HOL_Order_Tac.tac (Simplifier.prems_of ctxt) ctxt)))
 \<close>
 
 ML \<open>
@@ -710,40 +710,40 @@ simproc_setup antisym_less ("\<not> (x::'a::linorder) < y") = "K antisym_less_si
 subsection \<open>Bounded quantifiers\<close>
 
 syntax (ASCII)
-  "_All_less" :: "[idt, 'a, bool] => bool"    ("(3ALL _<_./ _)"  [0, 0, 10] 10)
-  "_Ex_less" :: "[idt, 'a, bool] => bool"    ("(3EX _<_./ _)"  [0, 0, 10] 10)
-  "_All_less_eq" :: "[idt, 'a, bool] => bool"    ("(3ALL _<=_./ _)" [0, 0, 10] 10)
-  "_Ex_less_eq" :: "[idt, 'a, bool] => bool"    ("(3EX _<=_./ _)" [0, 0, 10] 10)
+  "_All_less" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder ALL\<close>\<close>ALL _<_./ _)\<close>  [0, 0, 10] 10)
+  "_Ex_less" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder EX\<close>\<close>EX _<_./ _)\<close>  [0, 0, 10] 10)
+  "_All_less_eq" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder ALL\<close>\<close>ALL _<=_./ _)\<close> [0, 0, 10] 10)
+  "_Ex_less_eq" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder EX\<close>\<close>EX _<=_./ _)\<close> [0, 0, 10] 10)
 
-  "_All_greater" :: "[idt, 'a, bool] => bool"    ("(3ALL _>_./ _)"  [0, 0, 10] 10)
-  "_Ex_greater" :: "[idt, 'a, bool] => bool"    ("(3EX _>_./ _)"  [0, 0, 10] 10)
-  "_All_greater_eq" :: "[idt, 'a, bool] => bool"    ("(3ALL _>=_./ _)" [0, 0, 10] 10)
-  "_Ex_greater_eq" :: "[idt, 'a, bool] => bool"    ("(3EX _>=_./ _)" [0, 0, 10] 10)
+  "_All_greater" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder ALL\<close>\<close>ALL _>_./ _)\<close>  [0, 0, 10] 10)
+  "_Ex_greater" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder EX\<close>\<close>EX _>_./ _)\<close>  [0, 0, 10] 10)
+  "_All_greater_eq" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder ALL\<close>\<close>ALL _>=_./ _)\<close> [0, 0, 10] 10)
+  "_Ex_greater_eq" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder EX\<close>\<close>EX _>=_./ _)\<close> [0, 0, 10] 10)
 
-  "_All_neq" :: "[idt, 'a, bool] => bool"    ("(3ALL _~=_./ _)"  [0, 0, 10] 10)
-  "_Ex_neq" :: "[idt, 'a, bool] => bool"    ("(3EX _~=_./ _)"  [0, 0, 10] 10)
+  "_All_neq" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder ALL\<close>\<close>ALL _~=_./ _)\<close>  [0, 0, 10] 10)
+  "_Ex_neq" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder EX\<close>\<close>EX _~=_./ _)\<close>  [0, 0, 10] 10)
 
 syntax
-  "_All_less" :: "[idt, 'a, bool] => bool"    ("(3\<forall>_<_./ _)"  [0, 0, 10] 10)
-  "_Ex_less" :: "[idt, 'a, bool] => bool"    ("(3\<exists>_<_./ _)"  [0, 0, 10] 10)
-  "_All_less_eq" :: "[idt, 'a, bool] => bool"    ("(3\<forall>_\<le>_./ _)" [0, 0, 10] 10)
-  "_Ex_less_eq" :: "[idt, 'a, bool] => bool"    ("(3\<exists>_\<le>_./ _)" [0, 0, 10] 10)
+  "_All_less" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder \<forall>\<close>\<close>\<forall>_<_./ _)\<close>  [0, 0, 10] 10)
+  "_Ex_less" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder \<exists>\<close>\<close>\<exists>_<_./ _)\<close>  [0, 0, 10] 10)
+  "_All_less_eq" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder \<forall>\<close>\<close>\<forall>_\<le>_./ _)\<close> [0, 0, 10] 10)
+  "_Ex_less_eq" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder \<exists>\<close>\<close>\<exists>_\<le>_./ _)\<close> [0, 0, 10] 10)
 
-  "_All_greater" :: "[idt, 'a, bool] => bool"    ("(3\<forall>_>_./ _)"  [0, 0, 10] 10)
-  "_Ex_greater" :: "[idt, 'a, bool] => bool"    ("(3\<exists>_>_./ _)"  [0, 0, 10] 10)
-  "_All_greater_eq" :: "[idt, 'a, bool] => bool"    ("(3\<forall>_\<ge>_./ _)" [0, 0, 10] 10)
-  "_Ex_greater_eq" :: "[idt, 'a, bool] => bool"    ("(3\<exists>_\<ge>_./ _)" [0, 0, 10] 10)
+  "_All_greater" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder \<forall>\<close>\<close>\<forall>_>_./ _)\<close>  [0, 0, 10] 10)
+  "_Ex_greater" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder \<exists>\<close>\<close>\<exists>_>_./ _)\<close>  [0, 0, 10] 10)
+  "_All_greater_eq" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder \<forall>\<close>\<close>\<forall>_\<ge>_./ _)\<close> [0, 0, 10] 10)
+  "_Ex_greater_eq" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder \<exists>\<close>\<close>\<exists>_\<ge>_./ _)\<close> [0, 0, 10] 10)
 
-  "_All_neq" :: "[idt, 'a, bool] => bool"    ("(3\<forall>_\<noteq>_./ _)"  [0, 0, 10] 10)
-  "_Ex_neq" :: "[idt, 'a, bool] => bool"    ("(3\<exists>_\<noteq>_./ _)"  [0, 0, 10] 10)
+  "_All_neq" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder \<forall>\<close>\<close>\<forall>_\<noteq>_./ _)\<close>  [0, 0, 10] 10)
+  "_Ex_neq" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder \<exists>\<close>\<close>\<exists>_\<noteq>_./ _)\<close>  [0, 0, 10] 10)
 
 syntax (input)
-  "_All_less" :: "[idt, 'a, bool] => bool"    ("(3! _<_./ _)"  [0, 0, 10] 10)
-  "_Ex_less" :: "[idt, 'a, bool] => bool"    ("(3? _<_./ _)"  [0, 0, 10] 10)
-  "_All_less_eq" :: "[idt, 'a, bool] => bool"    ("(3! _<=_./ _)" [0, 0, 10] 10)
-  "_Ex_less_eq" :: "[idt, 'a, bool] => bool"    ("(3? _<=_./ _)" [0, 0, 10] 10)
-  "_All_neq" :: "[idt, 'a, bool] => bool"    ("(3! _~=_./ _)"  [0, 0, 10] 10)
-  "_Ex_neq" :: "[idt, 'a, bool] => bool"    ("(3? _~=_./ _)"  [0, 0, 10] 10)
+  "_All_less" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder !\<close>\<close>! _<_./ _)\<close>  [0, 0, 10] 10)
+  "_Ex_less" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder ?\<close>\<close>? _<_./ _)\<close>  [0, 0, 10] 10)
+  "_All_less_eq" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder !\<close>\<close>! _<=_./ _)\<close> [0, 0, 10] 10)
+  "_Ex_less_eq" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder ?\<close>\<close>? _<=_./ _)\<close> [0, 0, 10] 10)
+  "_All_neq" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder !\<close>\<close>! _~=_./ _)\<close>  [0, 0, 10] 10)
+  "_Ex_neq" :: "[idt, 'a, bool] => bool"    (\<open>(\<open>indent=3 notation=\<open>binder ?\<close>\<close>? _~=_./ _)\<close>  [0, 0, 10] 10)
 
 syntax_consts
   "_All_less" "_All_less_eq" "_All_greater" "_All_greater_eq" "_All_neq" \<rightleftharpoons> All and
@@ -820,113 +820,53 @@ lemma ord_eq_less_trans: "a = b \<Longrightarrow> b < c \<Longrightarrow> a < c"
 
 end
 
-lemma order_less_subst2: "(a::'a::order) < b \<Longrightarrow> f b < (c::'c::order) \<Longrightarrow>
-  (!!x y. x < y \<Longrightarrow> f x < f y) \<Longrightarrow> f a < c"
-proof -
-  assume r: "!!x y. x < y \<Longrightarrow> f x < f y"
-  assume "a < b" hence "f a < f b" by (rule r)
-  also assume "f b < c"
-  finally (less_trans) show ?thesis .
-qed
+lemma order_less_subst2: "a < b \<Longrightarrow> f b < (c::'c::preorder) \<Longrightarrow>
+  (\<And>x y. x < y \<Longrightarrow> f x < f y) \<Longrightarrow> f a < c"
+  by (rule less_trans)
 
-lemma order_less_subst1: "(a::'a::order) < f b \<Longrightarrow> (b::'b::order) < c \<Longrightarrow>
-  (!!x y. x < y \<Longrightarrow> f x < f y) \<Longrightarrow> a < f c"
-proof -
-  assume r: "!!x y. x < y \<Longrightarrow> f x < f y"
-  assume "a < f b"
-  also assume "b < c" hence "f b < f c" by (rule r)
-  finally (less_trans) show ?thesis .
-qed
+lemma order_less_subst1: "(a::'a::preorder) < f b \<Longrightarrow> b < c \<Longrightarrow>
+  (\<And>x y. x < y \<Longrightarrow> f x < f y) \<Longrightarrow> a < f c"
+  by (rule less_trans)
 
-lemma order_le_less_subst2: "(a::'a::order) <= b \<Longrightarrow> f b < (c::'c::order) \<Longrightarrow>
-  (!!x y. x <= y \<Longrightarrow> f x <= f y) \<Longrightarrow> f a < c"
-proof -
-  assume r: "!!x y. x <= y \<Longrightarrow> f x <= f y"
-  assume "a <= b" hence "f a <= f b" by (rule r)
-  also assume "f b < c"
-  finally (le_less_trans) show ?thesis .
-qed
+lemma order_le_less_subst2: "a \<le> b \<Longrightarrow> f b < (c::'c::preorder) \<Longrightarrow>
+  (\<And>x y. x \<le> y \<Longrightarrow> f x \<le> f y) \<Longrightarrow> f a < c"
+  by (rule dual_order.strict_trans2)
 
-lemma order_le_less_subst1: "(a::'a::order) <= f b \<Longrightarrow> (b::'b::order) < c \<Longrightarrow>
-  (!!x y. x < y \<Longrightarrow> f x < f y) \<Longrightarrow> a < f c"
-proof -
-  assume r: "!!x y. x < y \<Longrightarrow> f x < f y"
-  assume "a <= f b"
-  also assume "b < c" hence "f b < f c" by (rule r)
-  finally (le_less_trans) show ?thesis .
-qed
+lemma order_le_less_subst1: "(a::'a::preorder) \<le> f b \<Longrightarrow> b < c \<Longrightarrow>
+  (\<And>x y. x < y \<Longrightarrow> f x < f y) \<Longrightarrow> a < f c"
+  by (rule order.strict_trans1)
 
-lemma order_less_le_subst2: "(a::'a::order) < b \<Longrightarrow> f b <= (c::'c::order) \<Longrightarrow>
-  (!!x y. x < y \<Longrightarrow> f x < f y) \<Longrightarrow> f a < c"
-proof -
-  assume r: "!!x y. x < y \<Longrightarrow> f x < f y"
-  assume "a < b" hence "f a < f b" by (rule r)
-  also assume "f b <= c"
-  finally (less_le_trans) show ?thesis .
-qed
+lemma order_less_le_subst2: "(a::'a::ord) < b \<Longrightarrow> f b \<le> (c::'c::preorder) \<Longrightarrow>
+  (\<And>x y. x < y \<Longrightarrow> f x < f y) \<Longrightarrow> f a < c"
+  by (rule dual_order.strict_trans1)
 
-lemma order_less_le_subst1: "(a::'a::order) < f b \<Longrightarrow> (b::'b::order) <= c \<Longrightarrow>
-  (!!x y. x <= y \<Longrightarrow> f x <= f y) \<Longrightarrow> a < f c"
-proof -
-  assume r: "!!x y. x <= y \<Longrightarrow> f x <= f y"
-  assume "a < f b"
-  also assume "b <= c" hence "f b <= f c" by (rule r)
-  finally (less_le_trans) show ?thesis .
-qed
+lemma order_less_le_subst1: "(a::'a::preorder) < f b \<Longrightarrow> b \<le> c \<Longrightarrow>
+  (\<And>x y. x \<le> y \<Longrightarrow> f x \<le> f y) \<Longrightarrow> a < f c"
+  by (rule order.strict_trans2)
 
-lemma order_subst1: "(a::'a::order) <= f b \<Longrightarrow> (b::'b::order) <= c \<Longrightarrow>
-  (!!x y. x <= y \<Longrightarrow> f x <= f y) \<Longrightarrow> a <= f c"
-proof -
-  assume r: "!!x y. x <= y \<Longrightarrow> f x <= f y"
-  assume "a <= f b"
-  also assume "b <= c" hence "f b <= f c" by (rule r)
-  finally (order_trans) show ?thesis .
-qed
+lemma order_subst1: "(a::'a::preorder) \<le> f b \<Longrightarrow> b \<le> c \<Longrightarrow>
+  (\<And>x y. x \<le> y \<Longrightarrow> f x \<le> f y) \<Longrightarrow> a \<le> f c"
+  by (rule order.trans)
 
-lemma order_subst2: "(a::'a::order) <= b \<Longrightarrow> f b <= (c::'c::order) \<Longrightarrow>
-  (!!x y. x <= y \<Longrightarrow> f x <= f y) \<Longrightarrow> f a <= c"
-proof -
-  assume r: "!!x y. x <= y \<Longrightarrow> f x <= f y"
-  assume "a <= b" hence "f a <= f b" by (rule r)
-  also assume "f b <= c"
-  finally (order_trans) show ?thesis .
-qed
+lemma order_subst2: "a \<le> b \<Longrightarrow> f b \<le> (c::'c::preorder) \<Longrightarrow>
+  (\<And>x y. x \<le> y \<Longrightarrow> f x \<le> f y) \<Longrightarrow> f a \<le> c"
+  by (rule dual_order.trans)
 
-lemma ord_le_eq_subst: "a <= b \<Longrightarrow> f b = c \<Longrightarrow>
-  (!!x y. x <= y \<Longrightarrow> f x <= f y) \<Longrightarrow> f a <= c"
-proof -
-  assume r: "!!x y. x <= y \<Longrightarrow> f x <= f y"
-  assume "a <= b" hence "f a <= f b" by (rule r)
-  also assume "f b = c"
-  finally (ord_le_eq_trans) show ?thesis .
-qed
+lemma ord_le_eq_subst: "a \<le> b \<Longrightarrow> f b = c \<Longrightarrow>
+  (\<And>x y. x \<le> y \<Longrightarrow> f x \<le> f y) \<Longrightarrow> f a \<le> c"
+  by (rule subst)
 
-lemma ord_eq_le_subst: "a = f b \<Longrightarrow> b <= c \<Longrightarrow>
-  (!!x y. x <= y \<Longrightarrow> f x <= f y) \<Longrightarrow> a <= f c"
-proof -
-  assume r: "!!x y. x <= y \<Longrightarrow> f x <= f y"
-  assume "a = f b"
-  also assume "b <= c" hence "f b <= f c" by (rule r)
-  finally (ord_eq_le_trans) show ?thesis .
-qed
+lemma ord_eq_le_subst: "a = f b \<Longrightarrow> b \<le> c \<Longrightarrow>
+  (\<And>x y. x \<le> y \<Longrightarrow> f x \<le> f y) \<Longrightarrow> a \<le> f c"
+  by (rule ssubst)
 
 lemma ord_less_eq_subst: "a < b \<Longrightarrow> f b = c \<Longrightarrow>
-  (!!x y. x < y \<Longrightarrow> f x < f y) \<Longrightarrow> f a < c"
-proof -
-  assume r: "!!x y. x < y \<Longrightarrow> f x < f y"
-  assume "a < b" hence "f a < f b" by (rule r)
-  also assume "f b = c"
-  finally (ord_less_eq_trans) show ?thesis .
-qed
+  (\<And>x y. x < y \<Longrightarrow> f x < f y) \<Longrightarrow> f a < c"
+  by (rule subst)
 
 lemma ord_eq_less_subst: "a = f b \<Longrightarrow> b < c \<Longrightarrow>
-  (!!x y. x < y \<Longrightarrow> f x < f y) \<Longrightarrow> a < f c"
-proof -
-  assume r: "!!x y. x < y \<Longrightarrow> f x < f y"
-  assume "a = f b"
-  also assume "b < c" hence "f b < f c" by (rule r)
-  finally (ord_eq_less_trans) show ?thesis .
-qed
+  (\<And>x y. x < y \<Longrightarrow> f x < f y) \<Longrightarrow> a < f c"
+  by (rule ssubst)
 
 text \<open>
   Note that this list of rules is in reverse order of priorities.
@@ -1027,60 +967,60 @@ lemma xt1 [no_atp]:
   by auto
 
 lemma xt2 [no_atp]:
-  assumes "(a::'a::order) \<ge> f b"
+  assumes "(a::'a::preorder) \<ge> f b"
     and "b \<ge> c"
     and "\<And>x y. x \<ge> y \<Longrightarrow> f x \<ge> f y"
   shows  "a \<ge> f c"
-  using assms by force
+  using assms(2,1,3) by (rule order_subst2)
 
 lemma xt3 [no_atp]:
- assumes "(a::'a::order) \<ge> b"
-    and "(f b::'b::order) \<ge> c"
+ assumes "a \<ge> b"
+    and "(f b::'b::preorder) \<ge> c"
     and "\<And>x y. x \<ge> y \<Longrightarrow> f x \<ge> f y"
   shows  "f a \<ge> c"
-  using assms by force
+  using assms(2,1,3) by (rule order_subst1)
 
 lemma xt4 [no_atp]:
- assumes "(a::'a::order) > f b"
-    and "(b::'b::order) \<ge> c"
+ assumes "(a::'a::preorder) > f b"
+    and "b \<ge> c"
     and "\<And>x y. x \<ge> y \<Longrightarrow> f x \<ge> f y"
   shows  "a > f c"
-  using assms by force
+  using assms(2,1,3) by (rule Orderings.order_le_less_subst2)
 
 lemma xt5 [no_atp]:
- assumes "(a::'a::order) > b"
-    and "(f b::'b::order) \<ge> c"
+ assumes "a > b"
+    and "(f b::'b::preorder) \<ge> c"
     and "\<And>x y. x > y \<Longrightarrow> f x > f y"
   shows  "f a > c"
-  using assms by force
+  using assms(2,1,3) by (rule order_le_less_subst1)
 
 lemma xt6 [no_atp]:
- assumes "(a::'a::order) \<ge> f b" 
+ assumes "(a::'a::preorder) \<ge> f b"
     and "b > c"
     and "\<And>x y. x > y \<Longrightarrow> f x > f y"
   shows  "a > f c"
-  using assms by force
+  using assms(2,1,3) by (rule order_less_le_subst2)
 
 lemma xt7 [no_atp]:
- assumes "(a::'a::order) \<ge> b"
-    and "(f b::'b::order) > c"
+ assumes "a \<ge> b"
+    and "(f b::'b::preorder) > c"
     and "\<And>x y. x \<ge> y \<Longrightarrow> f x \<ge> f y"
   shows  "f a > c"
-  using assms by force
+  using assms(2,1,3) by (rule order_less_le_subst1)
 
 lemma xt8 [no_atp]:
- assumes "(a::'a::order) > f b"
-    and "(b::'b::order) > c"
+ assumes "(a::'a::preorder) > f b"
+    and "b > c"
     and "\<And>x y. x > y \<Longrightarrow> f x > f y"
   shows  "a > f c"
-  using assms by force
+  using assms(2,1,3) by (rule order_less_subst2)
 
 lemma xt9 [no_atp]:
- assumes "(a::'a::order) > b"
-    and "(f b::'b::order) > c"
+ assumes "a > b"
+    and "(f b::'b::preorder) > c"
     and "\<And>x y. x > y \<Longrightarrow> f x > f y"
   shows  "f a > c"
-  using assms by force
+  using assms(2,1,3) by (rule order_less_subst1)
 
 lemmas xtrans = xt1 xt2 xt3 xt4 xt5 xt6 xt7 xt8 xt9
 
@@ -1141,7 +1081,7 @@ by(auto simp add: max_def min_def)
 subsection \<open>(Unique) top and bottom elements\<close>
 
 class bot =
-  fixes bot :: 'a ("\<bottom>")
+  fixes bot :: 'a (\<open>\<bottom>\<close>)
 
 class order_bot = order + bot +
   assumes bot_least: "\<bottom> \<le> a"
@@ -1181,7 +1121,7 @@ by(simp add: min_def bot_unique)
 end
 
 class top =
-  fixes top :: 'a ("\<top>")
+  fixes top :: 'a (\<open>\<top>\<close>)
 
 class order_top = order + top +
   assumes top_greatest: "a \<le> \<top>"
@@ -1307,6 +1247,9 @@ class no_bot = order +
 
 class unbounded_dense_linorder = dense_linorder + no_top + no_bot
 
+class unbounded_dense_order = dense_order + no_top + no_bot
+
+instance unbounded_dense_linorder \<subseteq> unbounded_dense_order ..
 
 subsection \<open>Wellorders\<close>
 
@@ -1388,6 +1331,10 @@ next
     from not_less_Least[OF m] have "\<not> P m" . }
   with LeastI_ex[OF H] show ?rhs by blast
 qed
+
+lemma exists_least_iff': 
+  shows "(\<exists>n. P n) \<longleftrightarrow> P (Least P) \<and> (\<forall>m < (Least P). \<not> P m)"
+  using LeastI_ex not_less_Least by auto
 
 end
 

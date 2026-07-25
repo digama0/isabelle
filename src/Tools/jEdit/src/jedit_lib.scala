@@ -6,29 +6,37 @@ Misc library functions for jEdit.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
 import java.io.{File => JFile}
-import java.awt.{Component, Container, GraphicsEnvironment, Point, Rectangle, Dimension, Toolkit}
+import java.util.Locale
+import java.text.{CharacterIterator, BreakIterator}
+import java.awt.{Component, Container}
 import java.awt.event.{InputEvent, KeyEvent, KeyListener}
-import javax.swing.{Icon, ImageIcon, JWindow, SwingUtilities}
+import java.awt.font.FontRenderContext
+import javax.swing.{ImageIcon, JScrollBar, JWindow}
 
 import scala.util.parsing.input.CharSequenceReader
+import scala.util.matching.Regex
 import scala.jdk.CollectionConverters._
+import scala.annotation.tailrec
 
 import org.gjt.sp.jedit.{jEdit, Buffer, View, GUIUtilities, Debug, EditPane}
-import org.gjt.sp.jedit.io.{FileVFS, VFSManager}
+import org.gjt.sp.jedit.io.{VFSFile, FileVFS, VFSManager}
 import org.gjt.sp.jedit.gui.{KeyEventWorkaround, KeyEventTranslator}
-import org.gjt.sp.jedit.buffer.{JEditBuffer, LineManager}
-import org.gjt.sp.jedit.textarea.{JEditTextArea, TextArea, TextAreaPainter}
+import org.gjt.sp.jedit.buffer.{BufferListener, BufferAdapter, JEditBuffer, LineManager, UndoManager}
+import org.gjt.sp.jedit.textarea.{JEditTextArea, TextArea, TextAreaPainter, Selection, AntiAlias}
+
+import com.formdev.flatlaf.extras.FlatSVGIcon
 
 
 object JEdit_Lib {
   /* jEdit directories */
 
   def directories: List[JFile] =
-    (Option(jEdit.getSettingsDirectory).toList ::: List(jEdit.getJEditHome)).map(new JFile(_))
+    (proper_value(jEdit.getSettingsDirectory).toList ::: List(jEdit.getJEditHome)).map(new JFile(_))
 
 
   /* window geometry measurement */
@@ -46,7 +54,7 @@ object JEdit_Lib {
     val old_content = dummy_window.getContentPane
 
     dummy_window.setContentPane(outer)
-    dummy_window.pack
+    dummy_window.pack()
     dummy_window.revalidate()
 
     val geometry =
@@ -59,13 +67,21 @@ object JEdit_Lib {
   }
 
 
-  /* plain files */
+  /* virtual file-systems */
 
-  def is_file(name: String): Boolean =
-    name != null && name.nonEmpty && VFSManager.getVFSForPath(name).isInstanceOf[FileVFS]
+  def get_local_file(name: String): Option[JFile] =
+    if (name != null && name.nonEmpty && VFSManager.getVFSForPath(name).isInstanceOf[FileVFS]) {
+      Some(new JFile(name))
+    }
+    else None
 
-  def check_file(name: String): Option[JFile] =
-    if (is_file(name)) Some(new JFile(name)) else None
+  def is_virtual_dir(view: View, name: String): Boolean =
+    try {
+      val vfs = VFSManager.getVFSForPath(name)
+      val vfs_file = vfs._getFile((), name, view)
+      vfs_file != null && vfs_file.getType == VFSFile.DIRECTORY
+    }
+    catch { case ERROR(_) => false }
 
 
   /* buffers */
@@ -88,15 +104,11 @@ object JEdit_Lib {
   def buffer_line_manager(buffer: JEditBuffer): LineManager =
     Untyped.get[LineManager](buffer, "lineMgr")
 
-  def buffer_name(buffer: Buffer): String = buffer.getSymlinkPath
-
-  def buffer_file(buffer: Buffer): Option[JFile] = check_file(buffer_name(buffer))
-
-  def buffer_undo_in_progress[A](buffer: JEditBuffer, body: => A): A = {
-    val undo_in_progress = buffer.isUndoInProgress
-    def set(b: Boolean): Unit = Untyped.set[Boolean](buffer, "undoInProgress", b)
-    try { set(true); body } finally { set(undo_in_progress) }
-  }
+  def buffer_name(buffer: JEditBuffer): String =
+    buffer match {
+      case buf: Buffer => buf.getSymlinkPath
+      case _ => ""
+    }
 
 
   /* main jEdit components */
@@ -113,16 +125,17 @@ object JEdit_Lib {
   def jedit_views(): Iterator[View] =
     jEdit.getViewManager().getViews().asScala.iterator
 
-  def jedit_view(view: View = null): View =
-    if (view == null) jEdit.getActiveView() else view
-
-  def jedit_edit_panes(view: View): Iterator[EditPane] =
-    if (view == null) Iterator.empty
-    else view.getEditPanes().iterator.filter(_ != null)
+  def jedit_view(view: Option[View] = None): Option[View] =
+    proper_value(view getOrElse jEdit.getActiveView)
 
   def jedit_text_areas(view: View): Iterator[JEditTextArea] =
     if (view == null) Iterator.empty
-    else view.getEditPanes().iterator.filter(_ != null).map(_.getTextArea).filter(_ != null)
+    else {
+      for {
+        edit_pane <- view.getEditPanes().iterator
+        if edit_pane != null && edit_pane.getTextArea != null
+      } yield edit_pane.getTextArea
+    }
 
   def jedit_text_areas(): Iterator[JEditTextArea] =
     jedit_views().flatMap(jedit_text_areas)
@@ -141,17 +154,84 @@ object JEdit_Lib {
   }
 
 
-  /* get text */
+  /* buffer text */
 
   def get_text(buffer: JEditBuffer, range: Text.Range): Option[String] =
     try { Some(buffer.getText(range.start, range.length)) }
     catch { case _: ArrayIndexOutOfBoundsException => None }
 
+  def can_search_text(buffer: JEditBuffer, range: Text.Range, regex: Regex): Boolean =
+    try { regex.findFirstIn(buffer.getSegment(range.start, range.length)).nonEmpty }
+    catch { case _: ArrayIndexOutOfBoundsException => false }
+
+  def search_text(buffer: JEditBuffer, range: Text.Range, regex: Regex): List[Text.Range] =
+    List.from(
+      for {
+        s <- get_text(buffer, range).iterator
+        m <- regex.findAllMatchIn(s)
+      } yield Text.Range(range.start + m.start, range.start + m.end))
+
+  def set_text(buffer: JEditBuffer, text: List[String]): Int = {
+    val old = buffer.isUndoInProgress
+    def set(b: Boolean): Unit = Untyped.set[Boolean](buffer, "undoInProgress", b)
+
+    val length = buffer.getLength
+    var offset = 0
+
+    @tailrec def drop_common_prefix(list: List[String]): List[String] =
+      list match {
+        case s :: rest
+          if offset + s.length <= length &&
+          CharSequence.compare(buffer.getSegment(offset, s.length), s) == 0 =>
+            offset += s.length
+            drop_common_prefix(rest)
+        case _ => list
+      }
+
+    def insert(list: List[String]): Unit =
+      for (s <- list) {
+        buffer.insert(offset, s)
+        offset += s.length
+      }
+
+    try {
+      set(true)
+      buffer.beginCompoundEdit()
+      val rest = drop_common_prefix(text)
+      val update_start = offset
+      if (offset < length) buffer.remove(offset, length - offset)
+      insert(rest)
+      update_start
+    }
+    finally {
+      buffer.endCompoundEdit()
+      set(old)
+    }
+  }
+
+  def undo_manager(buffer: JEditBuffer): UndoManager =
+    Untyped.class_field(classOf[JEditBuffer], "undoMgr").get(buffer).asInstanceOf[UndoManager]
+
+  def char_iterator(buffer: JEditBuffer): CharacterIterator =
+    new TextArea.LineCharacterBreaker.CharIterator(buffer.getSegment(0, buffer.getLength))
+
+  def grapheme_iterator(
+    buffer: JEditBuffer,
+    locale: Locale = Library.locale_root
+  ): BreakIterator = {
+    val it = BreakIterator.getCharacterInstance(locale)
+    assert(it.class_name.containsSlice("GraphemeBreakIterator"),
+      "Bad character break iterator instance: " + it.class_name)
+
+    it.setText(char_iterator(buffer))
+    it
+  }
+
 
   /* point range */
 
   def point_range(buffer: JEditBuffer, offset: Text.Offset): Text.Range =
-    if (offset < 0) Text.Range.offside
+    if (buffer == null || offset < 0) Text.Range.offside
     else
       buffer_lock(buffer) {
         def text(i: Text.Offset): Char = buffer.getText(i, 1).charAt(0)
@@ -176,8 +256,34 @@ object JEdit_Lib {
   def line_range(buffer: JEditBuffer, line: Int): Text.Range =
     Text.Range(buffer.getLineStartOffset(line), buffer.getLineEndOffset(line) min buffer.getLength)
 
-  def caret_range(text_area: TextArea): Text.Range =
-    point_range(text_area.getBuffer, text_area.getCaretPosition)
+  def trim_line_range(buffer: JEditBuffer, line: Int): Text.Range = {
+    val range = line_range(buffer, line)
+    get_text(buffer, range) match {
+      case None => range
+      case Some(text) =>
+        val n = Library.trim_line(text).length
+        Text.Range(range.start, range.start + n)
+    }
+  }
+
+  def selection_ranges(text_area: TextArea): List[Text.Range] = {
+    val buffer = text_area.getBuffer
+    text_area.getSelection.toList.flatMap(
+      {
+        case rect: Selection.Rect =>
+          List.from(
+            for {
+              l <- (rect.getStartLine to rect.getEndLine).iterator
+              r = Text.Range(rect.getStart(buffer, l), rect.getEnd(buffer, l))
+              if !r.is_singularity
+            } yield r)
+        case sel: Selection =>
+          List(Text.Range(sel.getStart, sel.getEnd)).filterNot(_.is_singularity)
+      })
+  }
+
+  def selection_range(text_area: TextArea, offset: Text.Offset): Option[Text.Range] =
+    selection_ranges(text_area).find(_.touches(offset))
 
   def visible_range(text_area: TextArea): Option[Text.Range] = {
     val buffer = text_area.getBuffer
@@ -215,37 +321,87 @@ object JEdit_Lib {
   }
 
 
+  /* scrolling */
+
+  def vertical_scrollbar(text_area: TextArea): JScrollBar =
+    Untyped.get[JScrollBar](text_area, "vertical")
+
+  def horizontal_scrollbar(text_area: TextArea): JScrollBar =
+    Untyped.get[JScrollBar](text_area, "horizontal")
+
+  def scrollbar_at_end(scrollbar: JScrollBar): Boolean =
+    scrollbar.getValue > 0 &&
+      scrollbar.getValue + scrollbar.getVisibleAmount == scrollbar.getMaximum
+
+  def scrollbar_bottom(text_area: TextArea): Boolean =
+    scrollbar_at_end(vertical_scrollbar(text_area))
+
+  def scrollbar_start(text_area: TextArea): Int =
+    text_area.getBuffer.getLineStartOffset(vertical_scrollbar(text_area).getValue)
+
+  def bottom_line_offset(buffer: JEditBuffer): Int =
+    buffer.getLineStartOffset(buffer.getLineOfOffset(buffer.getLength))
+
+  def scroll_to_caret(text_area: TextArea): Unit = {
+    val caret_line = text_area.getCaretLine()
+    val display_manager = text_area.getDisplayManager
+    if (!display_manager.isLineVisible(caret_line)) {
+      display_manager.expandFold(caret_line, true)
+    }
+    text_area.scrollToCaret(true)
+  }
+
+
+  /* font */
+
+  def init_font_context(view: View, painter: TextAreaPainter): Unit = {
+    painter.setAntiAlias(new AntiAlias(jEdit.getProperty("view.antiAlias")))
+    painter.setFractionalFontMetricsEnabled(jEdit.getBooleanProperty("view.fracFontMetrics"))
+    val old = painter.getFontRenderContext
+    Untyped.set[FontRenderContext](painter, "fontRenderContext",
+      new FontRenderContext(view.getGraphicsConfiguration.getDefaultTransform,
+        old.getAntiAliasingHint, old.getFractionalMetricsHint))
+  }
+
+  def font_metric(painter: TextAreaPainter): Font_Metric =
+    new Font_Metric(
+      font = painter.getFont,
+      context = painter.getFontRenderContext)
+
+
   /* graphics range */
 
   case class Gfx_Range(x: Int, y: Int, length: Int)
 
   // NB: jEdit always normalizes \r\n and \r to \n
   // NB: last line lacks \n
-  def gfx_range(text_area: TextArea, range: Text.Range): Option[Gfx_Range] = {
-    val metric = pretty_metric(text_area.getPainter)
-    val char_width = (metric.unit * metric.average).round.toInt
+  def gfx_range(text_area: TextArea): Text.Range => Option[Gfx_Range] = {
+    val metric = font_metric(text_area.getPainter)
+    val char_width = metric.average_width.round.toInt
 
     val buffer = text_area.getBuffer
-
     val end = buffer.getLength
-    val stop = range.stop
 
-    val (p, q, r) =
+    { (range: Text.Range) =>
+      val stop = range.stop
       try {
         val p = text_area.offsetToXY(range.start)
         val (q, r) =
-          if (get_text(buffer, Text.Range(stop - 1, stop)) == Some("\n"))
+          if (get_text(buffer, Text.Range(stop - 1, stop)).contains("\n")) {
             (text_area.offsetToXY(stop - 1), char_width)
-          else if (stop >= end)
+          }
+          else if (stop >= end) {
             (text_area.offsetToXY(end), char_width * (stop - end))
+          }
           else (text_area.offsetToXY(stop), 0)
-        (p, q, r)
-      }
-      catch { case _: ArrayIndexOutOfBoundsException => (null, null, 0) }
 
-    if (p != null && q != null && p.x < q.x + r && p.y == q.y)
-      Some(Gfx_Range(p.x, p.y, q.x + r - p.x))
-    else None
+        if (p != null && q != null && p.x < q.x + r && p.y == q.y) {
+          Some(Gfx_Range(p.x, p.y, q.x + r - p.x))
+        }
+        else None
+      }
+      catch { case _: ArrayIndexOutOfBoundsException => None }
+    }
   }
 
 
@@ -254,12 +410,14 @@ object JEdit_Lib {
   def pixel_range(text_area: TextArea, x: Int, y: Int): Option[Text.Range] = {
     // coordinates wrt. inner painter component
     val painter = text_area.getPainter
+    val buffer = text_area.getBuffer
     if (0 <= x && x < painter.getWidth && 0 <= y && y < painter.getHeight) {
       val offset = text_area.xyToOffset(x, y, false)
       if (offset >= 0) {
-        val range = point_range(text_area.getBuffer, offset)
-        gfx_range(text_area, range) match {
-          case Some(g) if g.x <= x && x < g.x + g.length => Some(range)
+        val range = point_range(buffer, offset)
+        gfx_range(text_area)(range) match {
+          case Some(g) if g.x <= x && x < g.x + g.length =>
+            range.try_restrict(buffer_range(buffer))
           case _ => None
         }
       }
@@ -269,48 +427,38 @@ object JEdit_Lib {
   }
 
 
-  /* pretty text metric */
-
-  abstract class Pretty_Metric extends Pretty.Metric {
-    def average: Double
-  }
-
-  def pretty_metric(painter: TextAreaPainter): Pretty_Metric =
-    new Pretty_Metric {
-      def string_width(s: String): Double =
-        painter.getFont.getStringBounds(s, painter.getFontRenderContext).getWidth
-
-      val unit: Double = string_width(Symbol.space) max 1.0
-      val average: Double = string_width("mix") / (3 * unit)
-      def apply(s: String): Double = if (s == "\n") 1.0 else string_width(s) / unit
-    }
-
-
   /* icons */
 
-  def load_icon(name: String): Icon = {
-    val name1 =
-      if (name.startsWith("idea-icons/")) {
-        val file = File.uri(Path.explode("$ISABELLE_IDEA_ICONS")).toASCIIString
-        "jar:" + file + "!/" + name
-      }
-      else name
-    val icon = GUIUtilities.loadIcon(name1)
-    if (icon.getIconWidth < 0 || icon.getIconHeight < 0) error("Bad icon: " + name)
-    else icon
+  def load_icon(spec: String): ImageIcon =
+    GUIUtilities.loadIcon(spec).asInstanceOf[ImageIcon]
+
+
+  /* buffer event handling */
+
+  private def buffer_edit(ins: Boolean, buf: JEditBuffer, i: Text.Offset, n: Int): Text.Edit = {
+    val try_range = Text.Range(i, i + n.max(0)).try_restrict(buffer_range(buf))
+    val edit_range = try_range.getOrElse(Text.Range.zero)
+    val edit_text = try_range.flatMap(get_text(buf, _)).getOrElse("")
+    Text.Edit.make(ins, edit_range.start, edit_text)
   }
 
-  def load_image_icon(name: String): ImageIcon =
-    load_icon(name) match {
-      case icon: ImageIcon => icon
-      case _ => error("Bad image icon: " + name)
+  def buffer_listener(
+    handle: (Buffer, Text.Edit) => Unit,
+    loaded: Buffer => Unit = _ => ()
+  ): BufferListener =
+    new BufferAdapter {
+      override def contentInserted(buf: JEditBuffer, line: Int, i: Int, lines: Int, n: Int): Unit =
+        handle(buf.asInstanceOf[Buffer], buffer_edit(true, buf, i, n))
+      override def preContentRemoved(buf: JEditBuffer, line: Int, i: Int, lines: Int, n: Int): Unit =
+        handle(buf.asInstanceOf[Buffer], buffer_edit(false, buf, i, n))
+      override def bufferLoaded(buf: JEditBuffer): Unit = loaded(buf.asInstanceOf[Buffer])
     }
 
 
   /* key event handling */
 
   def request_focus_view(alt_view: View = null): Unit = {
-    val view = if (alt_view != null) alt_view else jEdit.getActiveView()
+    val view = if (alt_view != null) alt_view else jEdit.getActiveView
     if (view != null) {
       val text_area = view.getTextArea
       if (text_area != null) text_area.requestFocus()
@@ -340,19 +488,13 @@ object JEdit_Lib {
   }
 
   def special_key(evt: KeyEvent): Boolean = {
-    // cf. 5.2.0/jEdit/org/gjt/sp/jedit/gui/KeyEventWorkaround.java
+    // cf. jEdit/org/gjt/sp/jedit/gui/KeyEventWorkaround.java
     val mod = evt.getModifiersEx
     (mod & InputEvent.CTRL_DOWN_MASK) != 0 && (mod & InputEvent.ALT_DOWN_MASK) == 0 ||
     (mod & InputEvent.CTRL_DOWN_MASK) == 0 && (mod & InputEvent.ALT_DOWN_MASK) != 0 &&
       !Debug.ALT_KEY_PRESSED_DISABLED ||
     (mod & InputEvent.META_DOWN_MASK) != 0
   }
-
-  def command_modifier(evt: InputEvent): Boolean =
-    (evt.getModifiersEx & Toolkit.getDefaultToolkit.getMenuShortcutKeyMaskEx) != 0
-
-  def shift_modifier(evt: InputEvent): Boolean =
-    (evt.getModifiersEx & InputEvent.SHIFT_DOWN_MASK) != 0
 
   def modifier_string(evt: InputEvent): String =
     KeyEventTranslator.getModifierString(evt) match {

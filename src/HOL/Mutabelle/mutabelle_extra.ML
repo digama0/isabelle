@@ -148,9 +148,9 @@ fun invoke_try0 thy t =
   let
     val state = Proof.theorem NONE (K I) (map (single o rpair []) [t]) (Proof_Context.init_global thy)
   in
-    case Try0.try0 (SOME (seconds 5.0)) ([], [], [], []) state of
-      true => (Solved, [])
-    | false => (Unsolved, [])
+    case Try0.try0 (SOME (seconds 5.0)) Try0.empty_facts state of
+      [] => (Unsolved, [])
+    | _ => (Solved, [])
   end
 
 val try0_mtd = ("try0", invoke_try0)
@@ -422,7 +422,7 @@ fun string_of_mutant_subentry' thy thm_name (t, results) =
       (*^ "\n" ^ string_of_reports reports*)
   in
     "mutant of " ^ Thm_Name.short thm_name ^ ":\n" ^
-      YXML.content_of (Syntax.string_of_term_global thy t) ^ "\n" ^
+      Pretty.pure_string_of (Syntax.pretty_term_global thy t) ^ "\n" ^
       space_implode "; " (map string_of_mtd_result results)
   end
 

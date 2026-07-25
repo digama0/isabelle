@@ -36,10 +36,10 @@ object Dotnet_Setup {
   /* dotnet download and setup */
 
   def default_platform: String =
-    Isabelle_Platform.self.ISABELLE_PLATFORM(windows = true, apple = true)
+    Isabelle_Platform.local.ISABELLE_PLATFORM(windows = true, apple = true)
   def default_target_dir: Path = Components.default_components_base
   def default_install_url: String = "https://dot.net/v1/dotnet-install"
-  def default_version: String = Isabelle_System.getenv_strict("ISABELLE_DOTNET_VERSION")
+  def default_version: String = Isabelle_System.getenv_strict("ISABELLE_DOTNET_SETUP_VERSION")
 
   def dotnet_setup(
     platforms: List[String] = List(default_platform),
@@ -95,7 +95,7 @@ DOTNET_CLI_HOME="$(platform_path "$ISABELLE_HOME_USER/dotnet")"
 
     /* platform directories */
 
-    for (platform <- all_platforms if platforms.exists(platform.is)) {
+    for (platform <- all_platforms if platforms.exists(platform.test)) {
       progress.expose_interrupt()
 
       Isabelle_System.with_tmp_file("install", ext = platform.ext) { install =>
@@ -119,9 +119,8 @@ DOTNET_CLI_HOME="$(platform_path "$ISABELLE_HOME_USER/dotnet")"
               " -NoPath"
           progress.bash(script, echo = progress.verbose,
             cwd = if (dry_run) Path.current else component_dir.path).check
-          for (exe <- File.find_files(platform_dir.file, pred = _.getName.endsWith(".exe"))) {
-            File.set_executable(File.path(exe))
-          }
+          File.find_files(platform_dir, pred = File.is_exe)
+            .foreach(File.set_executable(_))
         }
       }
     }
@@ -151,7 +150,7 @@ Usage: isabelle dotnet_setup [OPTIONS]
     -I URL       URL for install script without extension
                  (default: """ + quote(default_install_url) + """)
     -V VERSION   version: empty means "latest"
-                 (default: ISABELLE_DOTNET_VERSION=""" + quote(default_version) + """)
+                 (default: ISABELLE_DOTNET_SETUP_VERSION=""" + quote(default_version) + """)
     -f           force fresh installation of specified platforms
     -n           dry run: try download without installation
     -p PLATFORMS comma-separated list of platform specifications: "all" or

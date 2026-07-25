@@ -18,12 +18,16 @@ text \<open>
 \<close>
 
 record 'a monoid =  "'a partial_object" +
-  mult    :: "['a, 'a] \<Rightarrow> 'a" (infixl "\<otimes>\<index>" 70)
-  one     :: 'a ("\<one>\<index>")
+  mult    :: "['a, 'a] \<Rightarrow> 'a" (infixl \<open>\<otimes>\<index>\<close> 70)
+  one     :: 'a (\<open>\<one>\<index>\<close>)
 
-definition
-  m_inv :: "('a, 'b) monoid_scheme => 'a => 'a" ("inv\<index> _" [81] 80)
-  where "inv\<^bsub>G\<^esub> x = (THE y. y \<in> carrier G \<and> x \<otimes>\<^bsub>G\<^esub> y = \<one>\<^bsub>G\<^esub> \<and> y \<otimes>\<^bsub>G\<^esub> x = \<one>\<^bsub>G\<^esub>)"
+definition m_inv :: "('a, 'b) monoid_scheme => 'a => 'a"
+  where "m_inv G x = (THE y. y \<in> carrier G \<and> x \<otimes>\<^bsub>G\<^esub> y = \<one>\<^bsub>G\<^esub> \<and> y \<otimes>\<^bsub>G\<^esub> x = \<one>\<^bsub>G\<^esub>)"
+
+open_bundle m_inv_syntax
+begin
+notation m_inv  (\<open>(\<open>open_block notation=\<open>prefix inv\<close>\<close>inv\<index> _)\<close> [81] 80)
+end
 
 definition
   Units :: "_ => 'a set"
@@ -353,7 +357,7 @@ lemma (in group) inv_solve_right':
 subsection \<open>Power\<close>
 
 consts
-  pow :: "[('a, 'm) monoid_scheme, 'a, 'b::semiring_1] => 'a"  (infixr "[^]\<index>" 75)
+  pow :: "[('a, 'm) monoid_scheme, 'a, 'b::semiring_1] => 'a"  (infixr \<open>[^]\<index>\<close> 75)
 
 overloading nat_pow == "pow :: [_, 'a, nat] => 'a"
 begin
@@ -793,7 +797,7 @@ qed
 subsection \<open>Direct Products\<close>
 
 definition
-  DirProd :: "_ \<Rightarrow> _ \<Rightarrow> ('a \<times> 'b) monoid" (infixr "\<times>\<times>" 80) where
+  DirProd :: "_ \<Rightarrow> _ \<Rightarrow> ('a \<times> 'b) monoid" (infixr \<open>\<times>\<times>\<close> 80) where
   "G \<times>\<times> H =
     \<lparr>carrier = carrier G \<times> carrier H,
      mult = (\<lambda>(g, h) (g', h'). (g \<otimes>\<^bsub>G\<^esub> g', h \<otimes>\<^bsub>H\<^esub> h')),
@@ -905,7 +909,7 @@ lemma (in group) restrict_hom_iff [simp]:
 definition iso :: "_ => _ => ('a => 'b) set"
   where "iso G H = {h. h \<in> hom G H \<and> bij_betw h (carrier G) (carrier H)}"
 
-definition is_iso :: "_ \<Rightarrow> _ \<Rightarrow> bool" (infixr "\<cong>" 60)
+definition is_iso :: "_ \<Rightarrow> _ \<Rightarrow> bool" (infixr \<open>\<cong>\<close> 60)
   where "G \<cong> H = (iso G H  \<noteq> {})"
 
 definition mon where "mon G H = {f \<in> hom G H. inj_on f (carrier G)}"

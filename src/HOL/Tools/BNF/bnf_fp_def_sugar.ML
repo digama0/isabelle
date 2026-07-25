@@ -1369,7 +1369,7 @@ fun derive_map_set_rel_pred_thms plugins fp live As Bs C E abs_inverses ctr_defs
                 rel_inject
                 |> Thm.instantiate' cTs cts
                 |> Conv.fconv_rule (HOLogic.Trueprop_conv (Conv.arg_conv
-                  (Raw_Simplifier.rewrite lthy false
+                  (Simplifier.rewrite_wrt lthy false
                      @{thms eq_onp_top_eq_eq[symmetric, THEN eq_reflection]})))
                 |> unfold_thms lthy eq_onps
                 |> postproc
@@ -2038,7 +2038,7 @@ fun derive_set_induct_thms_for_types ctxt nn fpTs ctrss setss dtor_set_inducts e
     val consumes_attr = Attrib.consumes 1;
   in
     map (mk_thm ctxt fpTs ctrss
-        #> nn = 1 ? map_prod (fn thm => rotate_prems ~1 (thm RS bspec)) (cons consumes_attr))
+        #> nn = 1 ? map_prod (fn thm => rotate_prems ~1 (thm RS @{thm bspec})) (cons consumes_attr))
       (transpose setss)
   end;
 
@@ -2369,7 +2369,7 @@ fun define_co_datatypes prepare_plugins prepare_constraint prepare_typ prepare_t
           fold (fn T => fold_index (fn (j, X) =>
             (i <> j andalso exists_subtype_in [X] T) ? insert (op =) (i, j)) Xs);
 
-        val add_missing_nodes = fold (AList.default (op =) o rpair []) (0 upto nn - 1);
+        val add_missing_nodes = fold_range (AList.default (op =) o rpair []) nn;
 
         val deps = fold_index (uncurry (fold o add_deps)) ctrXs_Tsss []
           |> AList.group (op =)

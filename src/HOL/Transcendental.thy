@@ -1564,7 +1564,7 @@ class ln = real_normed_algebra_1 + banach +
   fixes ln :: "'a \<Rightarrow> 'a"
   assumes ln_one [simp]: "ln 1 = 0"
 
-definition powr :: "'a \<Rightarrow> 'a \<Rightarrow> 'a::ln"  (infixr "powr" 80)
+definition powr :: "'a \<Rightarrow> 'a \<Rightarrow> 'a::ln"  (infixr \<open>powr\<close> 80)
   \<comment> \<open>exponentation via ln and exp\<close>
   where "x powr a \<equiv> if x = 0 then 0 else exp (a * ln x)"
 
@@ -1985,6 +1985,9 @@ next
   finally show ?thesis .
 qed
 
+lemma exp_gt_self: "x < exp (x::real)"
+  using exp_gt_zero ln_less_self by fastforce
+
 lemma ln_one_plus_pos_lower_bound:
   fixes x :: real
   assumes a: "0 \<le> x" and b: "x \<le> 1"
@@ -2130,11 +2133,16 @@ qed
 
 lemma ln_le_minus_one: "0 < x \<Longrightarrow> ln x \<le> x - 1"
   for x :: real
-  using exp_ge_add_one_self[of "ln x"] by simp
+using exp_ge_add_one_self[of "ln x"] by simp
 
 corollary ln_diff_le: "0 < x \<Longrightarrow> 0 < y \<Longrightarrow> ln x - ln y \<le> (x - y) / y"
   for x :: real
 by (metis diff_divide_distrib divide_pos_pos divide_self ln_divide_pos ln_le_minus_one order_less_irrefl)
+
+lemma ln_add1_ge:
+  fixes t::real
+  shows "t\<ge>0 \<Longrightarrow> ln (t+1) \<ge> t / (1+t)"
+using ln_diff_le [of 1 "t+1"] by (simp add: add.commute)
 
 lemma ln_eq_minus_one:
   fixes x :: real
@@ -2179,6 +2187,15 @@ proof -
     then show ?thesis by simp
   qed
 qed
+
+corollary ln_diff_less: "0 < x \<Longrightarrow> 0 < y \<Longrightarrow> x \<noteq> y \<Longrightarrow> ln x - ln y < (x - y) / y" for x :: real
+using ln_eq_minus_one[of "x/y"] ln_diff_le[of x y]
+by (fastforce simp: diff_divide_distrib ln_divide_pos)
+
+lemma ln_add1_gt:
+  fixes t::real
+  shows "t>0 \<Longrightarrow> ln (t+1) > t / (1+t)"
+using ln_diff_less [of 1 "t+1"] ln_one by(simp add: diff_divide_distrib add.commute)
 
 lemma ln_add_one_self_less_self:
   fixes x :: real
@@ -2381,6 +2398,9 @@ lemma powr_one_eq_one [simp]: "1 powr a = 1"
 
 lemma powr_zero_eq_one [simp]: "x powr 0 = (if x = 0 then 0 else 1)"
   by (simp add: powr_def)
+
+lemma powr_eq_one_iff_gen[simp]: "a powr x = 1 \<longleftrightarrow> x = 0" if "a > 0" "a \<noteq> 1" for a x :: real
+  using that by (simp add: powr_def)
 
 lemma powr_one_gt_zero_iff [simp]: "x powr 1 = x \<longleftrightarrow> 0 \<le> x"
   for x :: real
@@ -2923,6 +2943,10 @@ lemma powr_less_mono2_neg: "a < 0 \<Longrightarrow> 0 < x \<Longrightarrow> x < 
 lemma powr_mono2: "x powr a \<le> y powr a" if "0 \<le> a" "0 \<le> x" "x \<le> y"
   for x :: real
   using less_eq_real_def powr_less_mono2 that by auto
+
+lemma powr_less_cancel2: "0 < a \<Longrightarrow> 0 < x \<Longrightarrow> 0 < y \<Longrightarrow> x powr a < y powr a \<Longrightarrow> x < y"
+  for a x y ::real
+  by (metis less_le not_less_iff_gr_or_eq powr_less_mono2)
 
 lemma powr01_less_one: 
   fixes x::real 
@@ -3523,8 +3547,9 @@ proof -
         using \<open>n \<le> p\<close> neq0_conv that(1) by blast
       then have \<section>: "(- 1::real) ^ (p div 2 - Suc 0) = - ((- 1) ^ (p div 2))"
         using \<open>even p\<close> by (auto simp add: dvd_def power_eq_if)
-      from \<open>n \<le> p\<close> np have *: "n - Suc 0 + (p - Suc n) = p - Suc (Suc 0)" "Suc (Suc 0) \<le> p"
-        by arith+
+      from \<open>n \<le> p\<close> np have *: "n - Suc 0 + (p - Suc n) = p - Suc (Suc 0)"
+        by (force simp: le_Suc_eq split: nat_diff_split)
+        (* by arith somehow takes forever when exporting proofs *)
       have "(p - Suc (Suc 0)) div 2 = p div 2 - Suc 0"
         by simp
       with \<open>n \<le> p\<close> np  \<section> * show ?thesis
@@ -3975,11 +4000,23 @@ lemma sin_npi_numeral [simp]: "sin(Num.numeral n * pi) = 0"
 lemma sin_npi2_numeral [simp]: "sin (pi * Num.numeral n) = 0"
   by (metis of_nat_numeral sin_npi2)
 
+lemma sin_npi_complex' [simp]: "sin (of_nat n * of_real pi) = 0"
+  by (metis of_real_0 of_real_mult of_real_of_nat_eq sin_npi sin_of_real)
+
 lemma cos_npi_numeral [simp]: "cos (Num.numeral n * pi) = (- 1) ^ Num.numeral n"
   by (metis cos_npi of_nat_numeral)
 
 lemma cos_npi2_numeral [simp]: "cos (pi * Num.numeral n) = (- 1) ^ Num.numeral n"
   by (metis cos_npi2 of_nat_numeral)
+
+lemma cos_npi_complex' [simp]: "cos (of_nat n * of_real pi) = (-1) ^ n" for n
+proof -
+  have "cos (of_nat n * of_real pi :: 'a) = of_real (cos (real n * pi))"
+    by (subst cos_of_real [symmetric]) simp
+  also have "cos (real n * pi) = (-1) ^ n"
+    by simp
+  finally show ?thesis by simp
+qed
 
 lemma cos_two_pi [simp]: "cos (2 * pi) = 1"
   by (simp add: cos_double)
@@ -4257,15 +4294,14 @@ qed auto
 
 lemma cos_zero_iff_int: "cos x = 0 \<longleftrightarrow> (\<exists>i. odd i \<and> x = of_int i * (pi/2))"
 proof -
-  have 1: "\<And>n. odd n \<Longrightarrow> \<exists>i. odd i \<and> real n = real_of_int i"
-    by (metis even_of_nat_iff of_int_of_nat_eq)
+  have 1: "\<And>n. odd n \<Longrightarrow> \<exists>i. odd i \<and> int n = i"
+    by (metis even_of_nat_iff)
   have 2: "\<And>n. odd n \<Longrightarrow> \<exists>i. odd i \<and> - (real n * pi) = real_of_int i * pi"
     by (metis even_minus even_of_nat_iff mult.commute mult_minus_right of_int_minus of_int_of_nat_eq)
-  have 3: "\<lbrakk>odd i;  \<forall>n. even n \<or> real_of_int i \<noteq> - (real n)\<rbrakk>
-         \<Longrightarrow> \<exists>n. odd n \<and> real_of_int i = real n" for i
+  have 3: "\<lbrakk>odd i;  \<forall>n. even n \<or> i \<noteq> - (int n)\<rbrakk> \<Longrightarrow> \<exists>n. odd n \<and> i = int n" for i
     by (cases i rule: int_cases2) auto
   show ?thesis
-    by (force simp: cos_zero_iff intro!: 1 2 3)
+    by (force simp: of_nat_of_int_iff cos_zero_iff intro!: 1 2 3)
 qed
 
 lemma sin_zero_iff_int: "sin x = 0 \<longleftrightarrow> (\<exists>i. even i \<and> x = of_int i * (pi/2))" (is "?lhs = ?rhs")
@@ -4324,7 +4360,8 @@ proof -
     using sin_gt_zero by auto
   then have "cos x - cos y < 0"
     unfolding cos_diff minus_mult_commute[symmetric]
-    using \<open>- (x - y) < 0\<close> by (rule mult_pos_neg2)
+    using \<open>- (x - y) < 0\<close>
+    using mult_neg_pos by blast
   then show ?thesis by auto
 qed
 
@@ -4409,7 +4446,7 @@ lemma abs_sin_x_le_abs_x: "\<bar>sin x\<bar> \<le> \<bar>x\<bar>"
 
 subsection \<open>More Corollaries about Sine and Cosine\<close>
 
-lemma sin_cos_npi [simp]: "sin (real (Suc (2 * n)) * pi/2) = (-1) ^ n"
+lemma sin_cos_npi: "sin (real (Suc (2 * n)) * pi/2) = (-1) ^ n"
 proof -
   have "sin ((real n + 1/2) * pi) = cos (real n * pi)"
     by (auto simp: algebra_simps sin_add)
@@ -4443,8 +4480,8 @@ proof -
   finally show ?thesis .
 qed
 
-lemma cos_pi_eq_zero [simp]: "cos (pi * real (Suc (2 * m)) / 2) = 0"
-  by (simp only: cos_add sin_add of_nat_Suc distrib_right distrib_left add_divide_distrib, auto)
+lemma cos_pi_eq_zero: "cos (pi * real (Suc (2 * m)) / 2) = 0"
+  by (simp add: cos_add sin_add distrib_right distrib_left add_divide_distrib)
 
 lemma DERIV_cos_add [simp]: "DERIV (\<lambda>x. cos (x + k)) xa :> - sin (xa + k)"
   by (auto intro!: derivative_eq_intros)
@@ -4510,8 +4547,11 @@ proof
     by (metis cos_one_2pi mult.commute mult_minus_right of_int_minus of_int_of_nat_eq)
 next
   assume ?rhs
+  then obtain i where "x = real_of_int i * 2 * pi"
+    by blast
   then show "cos x = 1"
-    by (clarsimp simp add: cos_one_2pi) (metis mult_minus_right of_int_of_nat)
+    using int_cases2 [of i]
+    unfolding cos_one_2pi by fastforce
 qed
 
 lemma cos_npi_int [simp]:

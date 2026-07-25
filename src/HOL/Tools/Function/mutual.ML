@@ -176,7 +176,7 @@ fun recover_mutual_psimp all_orig_fdefs parts ctxt (fname, _, _, args, rhs)
 
     val psimp = import sum_psimp_eq
     val (simp, restore_cond) =
-      case cprems_of psimp of
+      case Thm.cprems_of psimp of
         [] => (psimp, I)
       | [cond] => (Thm.implies_elim psimp (Thm.assume cond), Thm.implies_intr cond)
       | _ => raise General.Fail "Too many conditions"
@@ -184,7 +184,7 @@ fun recover_mutual_psimp all_orig_fdefs parts ctxt (fname, _, _, args, rhs)
     val simp_ctxt = fold Thm.declare_hyps (Thm.chyps_of simp) ctxt
   in
     Goal.prove simp_ctxt [] []
-      (HOLogic.Trueprop $ HOLogic.mk_eq (list_comb (f, args), rhs))
+      (HOLogic.mk_Trueprop (HOLogic.mk_eq (list_comb (f, args), rhs)))
       (fn _ =>
         Local_Defs.unfold0_tac ctxt all_orig_fdefs
           THEN EqSubst.eqsubst_tac ctxt [0] [simp] 1
@@ -227,7 +227,7 @@ fun mutual_induct_rules ctxt induct all_f_defs (Mutual {n, ST, parts, ...}) =
     val induct_inst =
       Thm.forall_elim (Thm.cterm_of ctxt case_exp) induct
       |> full_simplify (put_simpset Sum_Tree.sumcase_split_ss ctxt)
-      |> full_simplify (put_simpset HOL_basic_ss ctxt addsimps all_f_defs)
+      |> full_simplify (put_simpset HOL_basic_ss ctxt |> Simplifier.add_simps all_f_defs)
 
     fun project rule (MutualPart {cargTs, i, ...}) k =
       let
@@ -247,7 +247,7 @@ fun mutual_induct_rules ctxt induct all_f_defs (Mutual {n, ST, parts, ...}) =
 fun mutual_cases_rule ctxt cases_rule n ST (MutualPart {i, cargTs = Ts, ...}) =
   let
     val [P, x] =
-      Variable.variant_frees ctxt [] [("P", \<^typ>\<open>bool\<close>), ("x", HOLogic.mk_tupleT Ts)]
+      Variable.variant_names ctxt [("P", \<^typ>\<open>bool\<close>), ("x", HOLogic.mk_tupleT Ts)]
       |> map (Thm.cterm_of ctxt o Free);
     val sumtree_inj = Thm.cterm_of ctxt (Sum_Tree.mk_inj ST n i (Thm.term_of x));
 
@@ -285,7 +285,7 @@ fun mk_partial_rules_mutual lthy inner_cont (m as Mutual {parts, fqgars, n, ST, 
     fun mk_mpsimp fqgar sum_psimp =
       in_context lthy fqgar (recover_mutual_psimp all_orig_fdefs parts) sum_psimp
 
-    val rew_simpset = put_simpset HOL_basic_ss lthy addsimps all_f_defs
+    val rew_simpset = put_simpset HOL_basic_ss lthy |> Simplifier.add_simps all_f_defs
     val mpsimps = map2 mk_mpsimp fqgars psimps
     val minducts = mutual_induct_rules lthy simple_pinduct all_f_defs m
     val mcases = map (mutual_cases_rule lthy cases_rule n ST) parts

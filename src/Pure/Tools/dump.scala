@@ -6,8 +6,6 @@ Dump cumulative PIDE session database.
 
 package isabelle
 
-import java.io.{BufferedWriter, FileOutputStream, OutputStreamWriter}
-
 
 object Dump {
   /* aspects */
@@ -136,10 +134,7 @@ object Dump {
         dirs = session_dirs, strict = true)
     }
 
-    def sessions(
-      logic: String = default_logic,
-      log: Logger = new Logger
-    ): List[Session] = {
+    def sessions(log: Logger, logic: String = default_logic): List[Session] = {
       /* partitions */
 
       def session_info(session_name: String): Sessions.Info =
@@ -225,7 +220,7 @@ object Dump {
     private def progress = context.progress
 
     val resources: Headless.Resources =
-      Headless.Resources.make(options, logic, progress = progress, log = log,
+      Headless.Resources.make(options, logic, log, progress = progress,
         session_dirs = context.session_dirs,
         include_sessions = deps.sessions_structure.imports_topological_order)
 
@@ -233,17 +228,17 @@ object Dump {
       for {
         session_name <-
           deps.sessions_structure.build_graph.restrict(selected_sessions.toSet).topological_order
-        (name, theory_options) <- deps(session_name).used_theories
-        if !resources.session_base.loaded_theory(name.theory)
+        (name, theory_opts) <- deps(session_name).used_theories
+        if !resources.loaded_theory(name)
         if {
           def warn(msg: String): Unit =
             progress.echo_warning("Skipping theory " + name + "  (" + msg + ")")
 
-          val conditions =
-            space_explode(',', theory_options.string("condition")).
-              filter(cond => Isabelle_System.getenv(cond) == "")
-          if (conditions.nonEmpty) {
-            warn("undefined " + conditions.mkString(", "))
+          val theory_options = options ++ theory_opts
+
+          val bad_conditions = Sessions.Conditions(theory_options).bad
+          if (bad_conditions.nonEmpty) {
+            warn("undefined " + bad_conditions.mkString(", "))
             false
           }
           else if (options.bool("skip_proofs") && !theory_options.bool("skip_proofs")) {
@@ -273,7 +268,7 @@ object Dump {
         private val consumer_bad_theories = Synchronized(List.empty[Bad_Theory])
 
         private val consumer =
-          Consumer_Thread.fork(name = "dump")(consume =
+          Consumer_Thread.fork("dump",
             { (args: (Document.Snapshot, Document_Status.Node_Status)) =>
               val (snapshot, status) = args
               val name = snapshot.node_name
@@ -327,7 +322,7 @@ object Dump {
         val bad_theories = Consumer.shutdown()
         val bad_msgs =
           bad_theories.map(bad =>
-            Output.clean_yxml(
+            Protocol_Message.clean_output(
               "FAILED theory " + bad.name +
                 (if (bad.status.consolidated) "" else ": " + bad.status.percentage + "% finished") +
                 if_proper(bad.errors, bad.errors.mkString("\n", "\n", ""))))
@@ -352,32 +347,34 @@ object Dump {
 
   def dump(
     options: Options,
+    log: Logger,
     logic: String,
     aspects: List[Aspect] = Nil,
     progress: Progress = new Progress,
-    log: Logger = new Logger,
     dirs: List[Path] = Nil,
     select_dirs: List[Path] = Nil,
     output_dir: Path = default_output_dir,
     selection: Sessions.Selection = Sessions.Selection.empty
   ): Unit = {
-    val context =
-      Context(options, aspects = aspects, progress = progress, dirs = dirs,
-        select_dirs = select_dirs, selection = selection)
+    progress.interrupt_handler {
+      val context =
+        Context(options, aspects = aspects, progress = progress, dirs = dirs,
+          select_dirs = select_dirs, selection = selection)
 
-    context.build_logic(logic)
+      context.build_logic(logic)
 
-    for (session <- context.sessions(logic = logic, log = log)) {
-      session.process({ (args: Args) =>
-        progress.echo("Processing theory " + args.print_node + " ...")
-        val aspect_args =
-          Aspect_Args(session.options, context.deps, progress, output_dir,
-            args.snapshot, args.status)
-        aspects.foreach(_.operation(aspect_args))
-      })
+      for (session <- context.sessions(log, logic = logic)) {
+        session.process({ (args: Args) =>
+          progress.echo("Processing theory " + args.print_node + " ...")
+          val aspect_args =
+            Aspect_Args(session.options, context.deps, progress, output_dir,
+              args.snapshot, args.status)
+          aspects.foreach(_.operation(aspect_args))
+        })
+      }
+
+      context.check_errors
     }
-
-    context.check_errors
   }
 
 
@@ -438,27 +435,26 @@ Usage: isabelle dump [OPTIONS] [SESSIONS ...]
         val sessions = getopts(args)
 
         val progress = new Console_Progress(verbose = verbose)
+        val log = Logger.make_system_log(progress, options)
 
         val start_date = Date.now()
 
         progress.echo("Started at " + Build_Log.print_date(start_date), verbose = true)
 
-        progress.interrupt_handler {
-          dump(options, logic,
-            aspects = aspects,
-            progress = progress,
-            dirs = dirs,
-            select_dirs = select_dirs,
-            output_dir = output_dir,
-            selection = Sessions.Selection(
-              requirements = requirements,
-              all_sessions = all_sessions,
-              base_sessions = base_sessions,
-              exclude_session_groups = exclude_session_groups,
-              exclude_sessions = exclude_sessions,
-              session_groups = session_groups,
-              sessions = sessions))
-        }
+        dump(options, log, logic,
+          aspects = aspects,
+          progress = progress,
+          dirs = dirs,
+          select_dirs = select_dirs,
+          output_dir = output_dir,
+          selection = Sessions.Selection(
+            requirements = requirements,
+            all_sessions = all_sessions,
+            base_sessions = base_sessions,
+            exclude_session_groups = exclude_session_groups,
+            exclude_sessions = exclude_sessions,
+            session_groups = session_groups,
+            sessions = sessions))
 
         val end_date = Date.now()
         val timing = end_date - start_date

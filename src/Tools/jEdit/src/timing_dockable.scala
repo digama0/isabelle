@@ -6,17 +6,17 @@ Dockable window for timing information.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
 import scala.swing.{Label, ListView, Alignment, ScrollPane, Component, TextField}
-import scala.swing.event.{MouseClicked, ValueChanged}
+import scala.swing.event.{MousePressed, ValueChanged}
 
-import java.awt.{BorderLayout, Graphics2D, Insets, Color}
+import java.awt.BorderLayout
 import javax.swing.{JList, BorderFactory}
-import javax.swing.border.{BevelBorder, SoftBevelBorder}
 
-import org.gjt.sp.jedit.{View, jEdit}
+import org.gjt.sp.jedit.View
 
 
 class Timing_Dockable(view: View, position: String) extends Dockable(view, position) {
@@ -28,70 +28,68 @@ class Timing_Dockable(view: View, position: String) extends Dockable(view, posit
         entry2.timing compare entry1.timing
     }
 
-    object Renderer_Component extends Label {
-      opaque = false
-      xAlignment = Alignment.Leading
-      border = BorderFactory.createEmptyBorder(2, 2, 2, 2)
-
-      var entry: Entry = null
-      override def paintComponent(gfx: Graphics2D): Unit = {
-        def paint_rectangle(color: Color): Unit = {
-          val size = peer.getSize()
-          val insets = border.getBorderInsets(peer)
-          val x = insets.left
-          val y = insets.top
-          val w = size.width - x - insets.right
-          val h = size.height - y - insets.bottom
-          gfx.setColor(color)
-          gfx.fillRect(x, y, w, h)
-        }
-
-        entry match {
-          case theory_entry: Theory_Entry if theory_entry.current =>
-            paint_rectangle(view.getTextArea.getPainter.getSelectionColor)
-          case _: Command_Entry =>
-            paint_rectangle(view.getTextArea.getPainter.getMultipleSelectionColor)
-          case _ =>
-        }
-        super.paintComponent(gfx)
-      }
-    }
+    def make_gui_style(command: Boolean = false): String =
+      HTML.background_property(
+        if (command) view.getTextArea.getPainter.getMultipleSelectionColor
+        else view.getTextArea.getPainter.getSelectionColor)
 
     class Renderer extends ListView.Renderer[Entry] {
+      private object component extends Label {
+        opaque = false
+        xAlignment = Alignment.Leading
+        border = BorderFactory.createEmptyBorder(2, 2, 2, 2)
+      }
+
       def componentFor(
         list: ListView[_ <: Timing_Dockable.this.Entry],
         isSelected: Boolean,
         focused: Boolean,
-        entry: Entry, index: Int
+        entry: Entry,
+        index: Int
       ): Component = {
-        val component = Renderer_Component
-        component.entry = entry
-        component.text = entry.print
+        component.text = entry.gui_text
         component
       }
     }
   }
 
   private abstract class Entry {
+    def depth: Int = 0
     def timing: Double
-    def print: String
+    def gui_style: String = ""
+    def gui_name: GUI.Name
+    def gui_text: String = {
+      val style = GUI.Style_HTML
+      val bullet = if (depth == 0) style.triangular_bullet else style.regular_bullet
+      style.enclose_style(gui_style,
+        style.spaces(4 * depth) + bullet + " " +
+        style.make_text(Time.print_seconds(timing) + "s ") +
+        gui_name.set_style(style).toString)
+    }
     def follow(snapshot: Document.Snapshot): Unit
   }
 
-  private case class Theory_Entry(name: Document.Node.Name, timing: Double, current: Boolean)
+  private case class Theory_Entry(name: Document.Node.Name, timing: Double)
   extends Entry {
-    def print: String =
-      Time.print_seconds(timing) + "s theory " + quote(name.theory)
+    def make_current: Theory_Entry =
+      new Theory_Entry(name, timing) { override val gui_style: String = Entry.make_gui_style() }
+    def gui_name: GUI.Name = GUI.Name(name.theory, kind = "theory")
     def follow(snapshot: Document.Snapshot): Unit =
-      PIDE.editor.goto_file(true, view, name.node)
+      JEdit_Editor.navigator_recording(editor_context) {
+        JEdit_Editor.goto_file(editor_context, name.node, focus = true)
+      }
   }
 
-  private case class Command_Entry(command: Command, timing: Double)
-  extends Entry {
-    def print: String =
-      "  " + Time.print_seconds(timing) + "s command " + quote(command.span.name)
+  private case class Command_Entry(command: Command, timing: Double) extends Entry {
+    override def depth: Int = 1
+    override val gui_style: String = Entry.make_gui_style(command = true)
+    def gui_name: GUI.Name = GUI.Name(command.span.name, kind = "command")
     def follow(snapshot: Document.Snapshot): Unit =
-      PIDE.editor.hyperlink_command(true, snapshot, command.id).foreach(_.follow(view))
+      for (link <- JEdit_Editor.hyperlink_command(snapshot, command.id, focus = true)) {
+        JEdit_Editor.navigator_recording(editor_context) {
+          link.follow(editor_context)
+        }
+      }
   }
 
 
@@ -100,8 +98,8 @@ class Timing_Dockable(view: View, position: String) extends Dockable(view, posit
   private val timing_view = new ListView(List.empty[Entry]) {
     listenTo(mouse.clicks)
     reactions += {
-      case MouseClicked(_, point, _, clicks, _) if clicks == 2 =>
-        val index = peer.locationToIndex(point)
+      case mouse: MousePressed if mouse.clicks == 2 =>
+        val index = peer.locationToIndex(mouse.point)
         if (index >= 0) listData(index).follow(PIDE.session.snapshot())
     }
   }
@@ -115,14 +113,9 @@ class Timing_Dockable(view: View, position: String) extends Dockable(view, posit
 
   /* timing threshold */
 
-  private var timing_threshold = PIDE.options.real("jedit_timing_threshold")
+  private var timing_threshold: Double = PIDE.session.editor_timing_threshold.seconds
 
   private val threshold_tooltip = "Threshold for timing display (seconds)"
-
-  private val threshold_label = new Label("Threshold: ") {
-    tooltip = threshold_tooltip
-  }
-
   private val threshold_value = new TextField(Time.print_seconds(timing_threshold)) {
     reactions += {
       case _: ValueChanged =>
@@ -133,9 +126,10 @@ class Timing_Dockable(view: View, position: String) extends Dockable(view, posit
         handle_update()
     }
     tooltip = threshold_tooltip
-    verifier = ((s: String) =>
-      s match { case Value.Double(x) => x >= 0.0 case _ => false })
+    verifier = { case Value.Double(x) => x >= 0.0 case _ => false }
   }
+  private val threshold_label =
+    new GUI.Label("Threshold: ", threshold_value) { tooltip = threshold_tooltip }
 
   private val controls = Wrap_Panel(List(threshold_label, threshold_value))
 
@@ -144,27 +138,36 @@ class Timing_Dockable(view: View, position: String) extends Dockable(view, posit
 
   /* component state -- owned by GUI thread */
 
-  private var nodes_timing = Map.empty[Document.Node.Name, Document_Status.Overall_Timing]
+  private var nodes_status = Document_Status.Nodes_Status.empty
 
-  private def make_entries(): List[Entry] = {
+  private def make_entries(snapshot: Document.Snapshot): List[Entry] = {
     GUI_Thread.require {}
 
     val name =
-      Document_View.get(view.getTextArea) match {
+      Document_View.get(editor_context.text_area) match {
         case None => Document.Node.Name.empty
         case Some(doc_view) => doc_view.model.node_name
       }
-    val timing = nodes_timing.getOrElse(name, Document_Status.Overall_Timing.empty)
+
+    val now = Date.now()
+    val limit = Time.seconds(timing_threshold)
 
     val theories =
-      (for ((node_name, node_timing) <- nodes_timing.toList if node_timing.command_timings.nonEmpty)
-        yield Theory_Entry(node_name, node_timing.total, false)).sorted(Entry.Ordering)
+      List.from(
+        for {
+          (a, st) <- nodes_status.iterator
+          if st.command_timings.valuesIterator.exists(timings => timings.sum(now).is_notable(limit))
+        } yield Theory_Entry(a, st.cumulated_time.seconds)).sorted(Entry.Ordering)
     val commands =
-      (for ((command, command_timing) <- timing.command_timings.toList)
-        yield Command_Entry(command, command_timing)).sorted(Entry.Ordering)
+      List.from(
+        for {
+          (command_id, timings) <- nodes_status(name).command_timings.iterator
+          command <- snapshot.get_command(command_id)
+          t = timings.sum(now) if t.is_notable(limit)
+        } yield Command_Entry(command, t.seconds)).sorted(Entry.Ordering)
 
     theories.flatMap(entry =>
-      if (entry.name == name) entry.copy(current = true) :: commands
+      if (entry.name == name) entry.make_current :: commands
       else List(entry))
   }
 
@@ -173,23 +176,17 @@ class Timing_Dockable(view: View, position: String) extends Dockable(view, posit
 
     val snapshot = PIDE.session.snapshot()
 
-    val nodes_timing1 =
-      (restriction match {
-        case Some(names) => names.iterator.map(name => (name, snapshot.get_node(name)))
-        case None => snapshot.version.nodes.iterator
-      }).foldLeft(nodes_timing) {
-          case (timing1, (name, node)) =>
-            if (PIDE.resources.session_base.loaded_theory(name)) timing1
-            else {
-              val node_timing =
-                Document_Status.Overall_Timing.make(
-                  snapshot.state, snapshot.version, node.commands, threshold = timing_threshold)
-              timing1 + (name -> node_timing)
-            }
-        }
-    nodes_timing = nodes_timing1
+    val domain =
+      restriction.getOrElse(
+        snapshot.version.nodes.names_iterator
+          .filterNot(PIDE.resources.loaded_theory).toSet)
 
-    val entries = make_entries()
+    nodes_status =
+      nodes_status.update_nodes(Date.now(), PIDE.resources, snapshot.state, snapshot.version,
+        threshold = Time.zero,
+        domain = Some(domain))
+
+    val entries = make_entries(snapshot)
     if (timing_view.listData.toList != entries) timing_view.listData = entries
   }
 
@@ -197,7 +194,7 @@ class Timing_Dockable(view: View, position: String) extends Dockable(view, posit
   /* main */
 
   private val main =
-    Session.Consumer[Session.Commands_Changed](getClass.getName) {
+    Session.Consumer[Session.Commands_Changed](this.class_name) {
       case changed =>
         GUI_Thread.later { handle_update(Some(changed.nodes)) }
     }

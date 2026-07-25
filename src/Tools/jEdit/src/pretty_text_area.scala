@@ -7,59 +7,152 @@ text area.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
-import java.awt.{Color, Font, Toolkit, Window}
-import java.awt.event.{InputEvent, KeyEvent}
+import java.awt.{Color, Font}
+import java.awt.event.KeyEvent
 import java.awt.im.InputMethodRequests
 import javax.swing.JTextField
 import javax.swing.event.{DocumentListener, DocumentEvent}
 
-import scala.swing.{Label, Component}
+import scala.swing.Component
 import scala.util.matching.Regex
 
 import org.gjt.sp.jedit.{jEdit, View, Registers, JEditBeanShellAction}
+import org.gjt.sp.jedit.buffer.JEditBuffer
 import org.gjt.sp.jedit.input.{DefaultInputHandlerProvider, TextAreaInputHandler}
-import org.gjt.sp.jedit.textarea.{AntiAlias, JEditEmbeddedTextArea}
+import org.gjt.sp.jedit.search.HyperSearchResults
 import org.gjt.sp.jedit.syntax.SyntaxStyle
 import org.gjt.sp.jedit.gui.KeyEventTranslator
-import org.gjt.sp.util.{SyntaxUtilities, Log}
+import org.gjt.sp.util.{SyntaxUtilities, Log, HtmlUtilities}
 
+object Pretty_Text_Area {
+  def make_highlight_style(): String =
+    HtmlUtilities.style2html(jEdit.getProperty(HyperSearchResults.HIGHLIGHT_PROP),
+      Font_Metric.default_font)
+
+  sealed case class Search_Result(
+    buffer: JEditBuffer,
+    highlight_style: String,
+    regex: Regex,
+    line: Int,
+    line_range: Text.Range
+  ) {
+    lazy val line_text: String =
+      Library.trim_line(JEdit_Lib.get_text(buffer, line_range).getOrElse(""))
+        .replacing("\t" -> " ")
+
+    lazy val gui_text: String = Library.string_builder(line_range.length * 2) { s =>
+      val style = GUI.Style_HTML
+
+      // see also HyperSearchResults.highlightString
+      s ++= "<html><b>"
+      s ++= line.toString
+      s ++= ":</b> "
+
+      val line_start = line_range.start
+      val plain_start = line_text.length - line_text.stripLeading.length
+      val plain_stop = line_text.stripTrailing.length
+
+      val search_range = Text.Range(line_start + plain_start, line_start + plain_stop)
+      var last = plain_start
+      for (range <- JEdit_Lib.search_text(buffer, search_range, regex)) {
+        val next = range.start - line_start
+        if (last < next) s ++= style.make_text(line_text.slice(last, next))
+        s ++= "<span style=\""
+        s ++= highlight_style
+        s ++= "\">"
+        s ++= style.make_text(line_text.slice(next, next + range.length))
+        s ++= "</span>"
+        last = range.stop - line_start
+      }
+      if (last < plain_stop) s ++= style.make_text(line_text.drop(last))
+      s ++= "</html>"
+    }
+    override def toString: String = gui_text
+  }
+
+  def search_title(lines: Int = 0): String =
+    "Search result" + (if (lines <= 1) "" else " (" + lines + " lines)")
+
+  sealed case class Search_Results(
+    buffer: JEditBuffer,
+    highlight_style: String,
+    pattern: Option[Regex] = None,
+    results: List[Search_Result] = Nil
+  ) {
+    val length: Int = results.length
+
+    def update(start_offset: Int): (Int, Search_Results) =
+    pattern match {
+      case None => (length, this)
+      case Some(regex) =>
+        val start_line = buffer.getLineOfOffset(start_offset)
+        val results1 = results.takeWhile(result => result.line < start_line)
+        val results2 =
+          List.from(
+            for {
+              line <- (start_line until buffer.getLineCount).iterator
+              line_range = JEdit_Lib.trim_line_range(buffer, line)
+              if JEdit_Lib.can_search_text(buffer, line_range, regex)
+            } yield Search_Result(buffer, highlight_style, regex, line, line_range))
+        (results1.length, copy(results = results1 ::: results2))
+    }
+
+    def update_pattern(new_pattern: Option[Regex]): Option[Search_Results] =
+      if (pattern == new_pattern) None
+      else Some(copy(pattern = new_pattern, results = Nil).update(0)._2)
+  }
+}
 
 class Pretty_Text_Area(
   view: View,
   close_action: () => Unit = () => (),
-  propagate_keys: Boolean = false
-) extends JEditEmbeddedTextArea {
-  text_area =>
+  propagate_keys: Boolean = false,
+  caret_visible: Boolean = false,
+  unicode_symbols: Boolean = Isabelle_Encoding.is_active()
+) extends JEdit_Accessible.EmbeddedTextArea(view) {
+  pretty_text_area =>
 
   GUI_Thread.require {}
 
   private var current_font_info: Font_Info = Font_Info.main()
-  private var current_body: XML.Body = Nil
+  private var current_output: List[XML.Elem] = Nil
   private var current_base_snapshot = Document.Snapshot.init
   private var current_base_results = Command.Results.empty
-  private var current_rendering: JEdit_Rendering =
-    JEdit_Rendering.text(current_base_snapshot, Nil)._2
-  private var future_refresh: Option[Future[Unit]] = None
+  private var current_rendering: JEdit_Rendering = JEdit_Rendering.make(current_base_snapshot)
+
+  private val future_refresh = Synchronized[Option[Future[Unit]]](None)
+  private def fork_refresh(body: => Unit): Future[Unit] =
+    future_refresh.change_result({ old =>
+      old.foreach(_.cancel())
+      val future = Future.fork(body)
+      (future, Some(future))
+    })
+
+  val editor_context: JEdit_Editor.Static_Context =
+    JEdit_Editor.Context(view, pretty_text_area)
 
   private val rich_text_area =
-    new Rich_Text_Area(view, text_area, () => current_rendering, close_action,
-      get_search_pattern _, () => (), caret_visible = false, enable_hovering = true)
+    new Rich_Text_Area(editor_context, () => current_rendering, close_action = close_action,
+      get_search_pattern = get_search_pattern, caret_visible = caret_visible,
+      enable_hovering = true)
 
-  private var current_search_pattern: Option[Regex] = None
-  def get_search_pattern(): Option[Regex] = GUI_Thread.require { current_search_pattern }
+  private var current_search_results =
+    Pretty_Text_Area.Search_Results(getBuffer, Pretty_Text_Area.make_highlight_style())
+
+  def get_search_pattern(): Option[Regex] = GUI_Thread.require { current_search_results.pattern }
+  def handle_search(search: Pretty_Text_Area.Search_Results): Unit = ()
 
   def get_background(): Option[Color] = None
 
   def refresh(): Unit = {
     GUI_Thread.require {}
 
-    val font = current_font_info.font
-    getPainter.setFont(font)
-    getPainter.setAntiAlias(new AntiAlias(jEdit.getProperty("view.antiAlias")))
-    getPainter.setFractionalFontMetricsEnabled(jEdit.getBooleanProperty("view.fracFontMetrics"))
+    getPainter.setFont(current_font_info.font)
+    JEdit_Lib.init_font_context(view, getPainter)
     getPainter.setStyles(
       SyntaxUtilities.loadStyles(current_font_info.family, current_font_info.size.round))
     getPainter.setLineExtraSpacing(jEdit.getIntegerProperty("options.textarea.lineSpacing", 0))
@@ -68,7 +161,7 @@ class Pretty_Text_Area(
     for (i <- 0 to 3) {
       fold_line_style(i) =
         SyntaxUtilities.parseStyle(
-          jEdit.getProperty("view.style.foldLine." + i),
+          jEdit.getThemeProperty("view.style.foldLine." + i),
           current_font_info.family, current_font_info.size.round, true)
     }
     getPainter.setFoldLineStyle(fold_line_style)
@@ -87,90 +180,124 @@ class Pretty_Text_Area(
     getGutter.setGutterEnabled(jEdit.getBooleanProperty("view.gutter.enabled"))
 
     if (getWidth > 0) {
-      val metric = JEdit_Lib.pretty_metric(getPainter)
-      val margin = ((getPainter.getWidth.toDouble / metric.unit) max 20.0).floor
-
+      val metric = JEdit_Lib.font_metric(getPainter)
+      val margin = Rich_Text.component_margin(metric, getPainter)
+      val output = current_output
       val snapshot = current_base_snapshot
       val results = current_base_results
-      val formatted_body = Pretty.formatted(current_body, margin = margin, metric = metric)
 
-      future_refresh.foreach(_.cancel())
-      future_refresh =
-        Some(Future.fork {
-          val (text, rendering) =
-            try { JEdit_Rendering.text(snapshot, formatted_body, results = results) }
-            catch { case exn: Throwable => Log.log(Log.ERROR, this, exn); throw exn }
-          Exn.Interrupt.expose()
+      lazy val current_refresh: Future[Unit] = fork_refresh(
+        {
+          val (rich_texts, rendering) =
+            try {
+              val rich_texts =
+                Rich_Text.format(output, margin, metric, unicode_symbols, cache = PIDE.session.cache)
+              val rendering =
+                JEdit_Rendering.make(snapshot, rich_texts = rich_texts, results = results)
+              (rich_texts, rendering)
+            }
+            catch {
+              case exn: Throwable if !Exn.is_interrupt(exn) =>
+                Log.log(Log.ERROR, this, exn)
+                throw exn
+            }
 
           GUI_Thread.later {
-            current_rendering = rendering
-            JEdit_Lib.buffer_edit(getBuffer) {
-              rich_text_area.active_reset()
-              getBuffer.setFoldHandler(new Fold_Handling.Document_Fold_Handler(rendering))
-              JEdit_Lib.buffer_undo_in_progress(getBuffer, setText(text))
-              setCaretPosition(0)
+            if (future_refresh.value.contains(current_refresh)) {
+              current_rendering = rendering
+
+              val horizontal_offset = pretty_text_area.getHorizontalOffset
+
+              def scroll_to(offset: Int, x: Int = horizontal_offset): Unit = {
+                setCaretPosition(offset)
+                JEdit_Lib.scroll_to_caret(pretty_text_area)
+                pretty_text_area.setHorizontalOffset(x)
+              }
+
+              val scroll_bottom = JEdit_Lib.scrollbar_bottom(pretty_text_area)
+              val scroll_start = JEdit_Lib.scrollbar_start(pretty_text_area)
+              val update_start =
+                JEdit_Lib.buffer_edit(getBuffer) {
+                  rich_text_area.active_reset()
+                  getBuffer.setFoldHandler(new Fold_Handling.Document_Fold_Handler(rendering))
+                  JEdit_Lib.set_text(getBuffer, rich_texts.map(_.text))
+                }
+
+              if (update_start > 0 && scroll_bottom) {
+                scroll_to(JEdit_Lib.bottom_line_offset(getBuffer))
+              }
+              else if (update_start > scroll_start) scroll_to(scroll_start)
+              else scroll_to(0, x = 0)
+
+              val (search_update_start, search_results) =
+                current_search_results.update(update_start)
+              if (current_search_results != search_results) {
+                current_search_results = search_results
+                handle_search(search_results)
+                pretty_text_area.getPainter.repaint()
+              }
             }
           }
         })
+      current_refresh
     }
   }
 
-  def resize(font_info: Font_Info): Unit = {
-    GUI_Thread.require {}
-
+  def resize(font_info: Font_Info): Unit = GUI_Thread.require {
     current_font_info = font_info
     refresh()
   }
 
-  def zoom(zoom: GUI.Zoom): Unit = {
-    val factor = if (zoom == null) 100 else zoom.factor
-    resize(Font_Info.main(PIDE.options.real("jedit_font_scale") * factor / 100))
-  }
+  def update_output(output: Editor.Output): Unit =
+    if (output.defined) update(output.snapshot, output.results, output.messages)
 
   def update(
     base_snapshot: Document.Snapshot,
     base_results: Command.Results,
-    body: XML.Body
+    output: List[XML.Elem]
   ): Unit = {
     GUI_Thread.require {}
     require(!base_snapshot.is_outdated, "document snapshot outdated")
 
     current_base_snapshot = base_snapshot
     current_base_results = base_results
-    current_body = body
+    current_output = output.map(Protocol_Message.provide_serial)
     refresh()
   }
 
   def detach(): Unit = {
     GUI_Thread.require {}
-    Info_Dockable(view, current_base_snapshot, current_base_results, current_body)
+    Info_Dockable(view, current_base_snapshot, current_base_results, current_output)
   }
 
   def detach_operation: Option[() => Unit] =
-    if (current_body.isEmpty) None else Some(() => detach())
+    if (current_output.isEmpty) None else Some(() => detach())
 
 
-  /* common GUI components */
+  /* search */
 
-  val search_label: Component = new Label("Search:") {
-    tooltip = "Search and highlight output via regular expression"
-  }
+  private val search_tooltip = "Search and highlight output via regular expression"
 
-  val search_field: Component =
+  private val search_field: Component =
     Component.wrap(new Completion_Popup.History_Text_Field("isabelle-search") {
       private val input_delay =
-        Delay.last(PIDE.session.input_delay, gui = true) { search_action(this) }
+        GUI.Delay.last(PIDE.session.input_delay) { search_action(this) }
       getDocument.addDocumentListener(new DocumentListener {
         def changedUpdate(e: DocumentEvent): Unit = input_delay.invoke()
         def insertUpdate(e: DocumentEvent): Unit = input_delay.invoke()
         def removeUpdate(e: DocumentEvent): Unit = input_delay.invoke()
       })
       setColumns(20)
-      setToolTipText(search_label.tooltip)
+      setToolTipText(search_tooltip)
       setFont(GUI.imitate_font(getFont, scale = 1.2))
     })
 
   private val search_field_foreground = search_field.foreground
+
+  private val search_label: Component =
+    new GUI.Label(jEdit.getProperty("view.search.find"), label_for = search_field) {
+      tooltip = search_tooltip
+    }
 
   private def search_action(text_field: JTextField): Unit = {
     val (pattern, ok) =
@@ -180,14 +307,31 @@ class Pretty_Text_Area(
           val re = Library.make_regex(s)
           (re, re.isDefined)
       }
-    if (current_search_pattern != pattern) {
-      current_search_pattern = pattern
-      text_area.getPainter.repaint()
-    }
     text_field.setForeground(
       if (ok) search_field_foreground
       else current_rendering.color(Rendering.Color.error))
+    for (search_results <- current_search_results.update_pattern(pattern)) {
+      current_search_results = search_results
+      handle_search(search_results)
+      refresh()
+    }
   }
+
+
+  /* zoom */
+
+  val zoom_component: Font_Info.Zoom =
+    new Font_Info.Zoom { override def changed(): Unit = zoom() }
+
+  def zoom(zoom: Font_Info.Zoom = zoom_component): Unit =
+    resize(Font_Info.main(scale = PIDE.options.real("jedit_font_scale"), zoom = zoom))
+
+
+  /* common GUI components */
+
+  def search_components: List[Component] = List(search_label, search_field)
+
+  def search_zoom_components: List[Component] = List(search_label, search_field, zoom_component)
 
 
   /* key handling */
@@ -195,38 +339,58 @@ class Pretty_Text_Area(
   override def getInputMethodRequests: InputMethodRequests = null
 
   inputHandlerProvider =
-    new DefaultInputHandlerProvider(new TextAreaInputHandler(text_area) {
+    new DefaultInputHandlerProvider(new TextAreaInputHandler(pretty_text_area) {
       override def getAction(action: String): JEditBeanShellAction =
-        text_area.getActionContext.getAction(action)
+        pretty_text_area.getActionContext.getAction(action)
       override def processKeyEvent(evt: KeyEvent, from: Int, global: Boolean): Unit = {}
       override def handleKey(key: KeyEventTranslator.Key, dry_run: Boolean): Boolean = false
     })
 
   addKeyListener(JEdit_Lib.key_listener(
     key_pressed = { (evt: KeyEvent) =>
-      val strict_control =
-        JEdit_Lib.command_modifier(evt) && !JEdit_Lib.shift_modifier(evt)
-
       evt.getKeyCode match {
         case KeyEvent.VK_C | KeyEvent.VK_INSERT
-        if strict_control && text_area.getSelectionCount != 0 =>
-          Registers.copy(text_area, '$')
+        if GUI.command_modifier(evt, only = true) && pretty_text_area.getSelectionCount != 0 =>
+          Registers.copy(pretty_text_area, '$')
           evt.consume()
 
         case KeyEvent.VK_A
-        if strict_control =>
-          text_area.selectAll
+        if GUI.command_modifier(evt, only = true) =>
+          pretty_text_area.selectAll()
           evt.consume()
 
-        case KeyEvent.VK_ESCAPE =>
+        case KeyEvent.VK_ESCAPE
+        if GUI.no_modifier(evt) =>
           if (Isabelle.dismissed_popups(view)) evt.consume()
+          else if (getSelectionCount != 0) { selectNone(); evt.consume() }
+
+        case KeyEvent.VK_LEFT if !propagate_keys =>
+          pretty_text_area.goToPrevCharacter(GUI.shift_modifier(evt, only = true))
+          evt.consume()
+        case KeyEvent.VK_RIGHT if !propagate_keys =>
+          pretty_text_area.goToNextCharacter(GUI.shift_modifier(evt, only = true))
+          evt.consume()
+        case KeyEvent.VK_UP if !propagate_keys =>
+          pretty_text_area.goToPrevLine(GUI.shift_modifier(evt, only = true))
+          evt.consume()
+        case KeyEvent.VK_DOWN if !propagate_keys =>
+          pretty_text_area.goToNextLine(GUI.shift_modifier(evt, only = true))
+          evt.consume()
+        case KeyEvent.VK_HOME if !propagate_keys =>
+          pretty_text_area.goToStartOfLine(GUI.shift_modifier(evt, only = true))
+          evt.consume()
+        case KeyEvent.VK_END if !propagate_keys =>
+          pretty_text_area.goToEndOfLine(GUI.shift_modifier(evt, only = true))
+          evt.consume()
 
         case _ =>
       }
       if (propagate_keys) JEdit_Lib.propagate_key(view, evt)
+      else evt.consume()
     },
     key_typed = { (evt: KeyEvent) =>
       if (propagate_keys) JEdit_Lib.propagate_key(view, evt)
+      else evt.consume()
     })
   )
 
@@ -237,7 +401,7 @@ class Pretty_Text_Area(
   getPainter.setLineHighlightEnabled(false)
 
   getBuffer.setTokenMarker(Isabelle.mode_token_marker("isabelle-output").get)
-  getBuffer.setStringProperty("noWordSep", "_'?⇩")
+  getBuffer.setStringProperty("noWordSep", Symbol.decode("""_'?\<^sub>"""))
 
   rich_text_area.activate()
 }

@@ -7,12 +7,12 @@ Drawable shapes.
 
 package isabelle.graphview
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
 import java.awt.{BasicStroke, Graphics2D, Shape}
-import java.awt.geom.{AffineTransform, GeneralPath, Path2D, Rectangle2D,
-  RoundRectangle2D, PathIterator}
+import java.awt.geom.{AffineTransform, GeneralPath, Path2D, Rectangle2D, PathIterator}
 
 
 object Shapes {
@@ -24,7 +24,7 @@ object Shapes {
 
   def highlight_node(gfx: Graphics2D, graphview: Graphview, node: Graph_Display.Node): Unit = {
     val metrics = graphview.metrics
-    val extra = metrics.char_width
+    val extra = metrics.average_width
     val info = graphview.layout.get_node(node)
 
     gfx.setColor(graphview.highlight_color)
@@ -178,7 +178,7 @@ object Shapes {
           val (dx, dy) = (fx - tx, fy - ty)
           if ((dx * dx + dy * dy) < 1.0) {
             val at = AffineTransform.getTranslateInstance(fx, fy)
-            at.rotate(- (math.atan2(dx, dy) + math.Pi / 2))
+            at.rotate(- (scala.math.atan2(dx, dy) + scala.math.Pi / 2))
             Some(at)
           }
           else {

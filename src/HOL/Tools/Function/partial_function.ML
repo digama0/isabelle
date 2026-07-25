@@ -129,7 +129,7 @@ fun apply_inst ctxt t u =
   end;
 
 fun head_conv cv ct =
-  if can Thm.dest_comb ct then Conv.fun_conv (head_conv cv) ct else cv ct;
+  if can Thm.dest_fun ct then Conv.fun_conv (head_conv cv) ct else cv ct;
 
 
 (*** currying transformation ***)
@@ -150,16 +150,20 @@ fun curry_n arity = funpow (arity - 1) mk_curry;
 fun uncurry_n arity = funpow (arity - 1) HOLogic.mk_case_prod;
 
 val curry_uncurry_ss =
-  simpset_of (put_simpset HOL_basic_ss \<^context>
-    addsimps [@{thm Product_Type.curry_case_prod}, @{thm Product_Type.case_prod_curry}])
+  HOL_basic_ss
+  |> Simplifier.simpset_map \<^context>
+    (Simplifier.add_simps @{thms Product_Type.curry_case_prod Product_Type.case_prod_curry})
 
 val split_conv_ss =
-  simpset_of (put_simpset HOL_basic_ss \<^context>
-    addsimps [@{thm Product_Type.split_conv}]);
+  HOL_basic_ss
+  |> Simplifier.simpset_map \<^context>
+    (Simplifier.add_simps @{thms Product_Type.split_conv})
 
 val curry_K_ss =
-  simpset_of (put_simpset HOL_basic_ss \<^context>
-    addsimps [@{thm Product_Type.curry_K}]);
+  HOL_basic_ss
+  |> Simplifier.simpset_map \<^context>
+    (Simplifier.add_simps @{thms Product_Type.curry_K})
+
 
 (* instantiate generic fixpoint induction and eliminate the canonical assumptions;
   curry induction predicate *)
@@ -178,7 +182,7 @@ fun specialize_fixp_induct ctxt fT fT_uc curry uncurry mono_thm f_def rule =
        THEN Simplifier.full_simp_tac (put_simpset curry_uncurry_ss ctxt) 5) (* simplify induction step *)
     |> (fn thm => thm OF [mono_thm, f_def])
     |> Conv.fconv_rule (Conv.concl_conv ~1    (* simplify conclusion *)
-         (Raw_Simplifier.rewrite ctxt false [mk_meta_eq @{thm Product_Type.curry_case_prod}]))
+         (Simplifier.rewrite_wrt ctxt false [mk_meta_eq @{thm Product_Type.curry_case_prod}]))
     |> singleton (Variable.export ctxt' ctxt)
   end
 

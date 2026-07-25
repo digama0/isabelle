@@ -8,9 +8,7 @@ optional presentation.
 package isabelle
 
 
-import scala.collection.immutable.SortedMap
 import scala.math.Ordering
-import scala.annotation.tailrec
 
 
 object Build_Process {
@@ -74,7 +72,7 @@ object Build_Process {
     node_info: Host.Node_Info,
     start_date: Date,
     process_result: Process_Result,
-    output_shasum: SHA1.Shasum,
+    output_shasum: Shasum,
     current: Boolean
   ) extends Name.T {
     def ok: Boolean = process_result.ok
@@ -151,12 +149,9 @@ object Build_Process {
               if (ancestors0 != ancestors) {
                 err("ancestors disagree", commas_quote(ancestors0), commas_quote(ancestors))
               }
-              if (sources_shasum0 != sources_shasum) {
-                val a = sources_shasum0 - sources_shasum
-                val b = sources_shasum - sources_shasum0
-                err("sources disagree",
-                  Library.trim_line(a.toString),
-                  Library.trim_line(b.toString))
+              sources_shasum0 diff sources_shasum match {
+                case Some((a, b)) => err("sources disagree", a.print(), b.print())
+                case None =>
               }
 
               graph0
@@ -269,7 +264,7 @@ object Build_Process {
     def make_result(
       result_name: (String, String, String),
       process_result: Process_Result,
-      output_shasum: SHA1.Shasum,
+      output_shasum: Shasum,
       start_date: Date,
       node_info: Host.Node_Info = Host.Node_Info.none,
       current: Boolean = false
@@ -462,7 +457,7 @@ object Build_Process {
             val build_id = res.long(Base.build_id)
             val ml_platform = res.string(Base.ml_platform)
             val options = res.string(Base.options)
-            val start = res.date(Base.start)
+            val start = res.the_date(Base.start)
             val stop = res.get_date(Base.stop)
             Build(build_uuid, build_id, ml_platform, options, start, stop, Nil)
           })
@@ -554,7 +549,7 @@ object Build_Process {
             val deps = split_lines(res.string(Sessions.deps))
             val ancestors = split_lines(res.string(Sessions.ancestors))
             val options = res.string(Sessions.options)
-            val sources_shasum = SHA1.fake_shasum(res.string(Sessions.sources))
+            val sources_shasum = Shasum.fake(res.string(Sessions.sources))
             val timeout = Time.ms(res.long(Sessions.timeout))
             val old_time = Time.ms(res.long(Sessions.old_time))
             val old_command_timings_blob = res.bytes(Sessions.old_command_timings)
@@ -631,8 +626,8 @@ object Build_Process {
             Worker(
               worker_uuid = res.string(Workers.worker_uuid),
               build_uuid = res.string(Workers.build_uuid),
-              start = res.date(Workers.start),
-              stamp = res.date(Workers.stamp),
+              start = res.the_date(Workers.start),
+              stamp = res.the_date(Workers.stamp),
               stop = res.get_date(Workers.stop),
               serial = res.long(Workers.serial))
           })
@@ -771,7 +766,7 @@ object Build_Process {
             val hostname = res.string(Running.hostname)
             val numa_node = res.get_int(Running.numa_node)
             val rel_cpus = res.string(Running.rel_cpus)
-            val start_date = res.date(Running.start_date)
+            val start_date = res.the_date(Running.start_date)
             val node_info = Host.Node_Info(hostname, numa_node, Host.Range.from(rel_cpus))
 
             Job(name, worker_uuid, build_uuid, node_info, start_date, None)
@@ -848,7 +843,7 @@ object Build_Process {
             val rel_cpus = res.string(Results.rel_cpus)
             val node_info = Host.Node_Info(hostname, numa_node, Host.Range.from(rel_cpus))
 
-            val start_date = res.date(Results.start_date)
+            val start_date = res.the_date(Results.start_date)
 
             val rc = res.int(Results.rc)
             val out = res.string(Results.out)
@@ -864,7 +859,7 @@ object Build_Process {
                 err_lines = split_lines(err),
                 timing = timing)
 
-            val output_shasum = SHA1.fake_shasum(res.string(Results.output_shasum))
+            val output_shasum = Shasum.fake(res.string(Results.output_shasum))
             val current = res.bool(Results.current)
 
             Result(name, worker_uuid, build_uuid, node_info, start_date, process_result,
@@ -1103,11 +1098,11 @@ extends AutoCloseable {
     catch { case exn: Throwable => close(); throw exn }
 
   def close(): Unit = synchronized {
-    Option(_database_server).flatten.foreach(_.close())
-    Option(_heaps_database).flatten.foreach(_.close())
-    Option(_build_database).flatten.foreach(_.close())
-    Option(_host_database).foreach(_.close())
-    Option(_build_cluster).foreach(_.close())
+    proper_value(_database_server).flatten.foreach(_.close())
+    proper_value(_heaps_database).flatten.foreach(_.close())
+    proper_value(_build_database).flatten.foreach(_.close())
+    proper_value(_host_database).foreach(_.close())
+    proper_value(_build_cluster).foreach(_.close())
     progress match {
       case db_progress: Database_Progress => db_progress.close()
       case _ =>
@@ -1163,15 +1158,23 @@ extends AutoCloseable {
     ancestor_results: List[Build_Process.Result]
   ): Build_Process.State = {
     val sources_shasum = state.sessions(session_name).sources_shasum
-    val input_shasum = ML_Process.make_shasum(ancestor_results.map(_.output_shasum))
+    val input_shasum = store.make_shasum(ancestor_results.map(_.output_shasum))
     val store_heap = build_context.store_heap || state.sessions.store_heap(session_name)
-    val (current, output_shasum) =
-      store.check_output(_database_server, session_name,
+
+    val build_output =
+      store.check_output(session_name,
+        opened_db = _database_server,
         sources_shasum = sources_shasum,
-        input_shasum = input_shasum,
+        input_shasum = input_shasum)
+
+    val current =
+      build_output.current(
         build_thorough = build_context.sessions_structure(session_name).build_thorough,
         fresh_build = build_context.fresh_build,
-        store_heap = store_heap)
+        store_heap = store_heap,
+        build_debug = store.options.bool("build_debug"),
+        progress = progress)
+    val output_shasum = build_output.output_shasum
 
     val finished = current && ancestor_results.forall(_.current)
     val skipped = build_context.no_build
@@ -1282,7 +1285,7 @@ extends AutoCloseable {
   private var _build_tick: Long = 0L
 
   protected def build_action(): Boolean =
-    Isabelle_Thread.interrupt_handler(_ => progress.stop()) {
+    Isabelle_Thread.interrupt_handle(progress.stop()) {
       val received = build_receive(n => n.channel == Build_Process.private_data.channel)
       val ready = received.contains(Build_Process.private_data.channel_ready)
       val reactive = ready && synchronized { !_state.busy_running(build_context.jobs) }

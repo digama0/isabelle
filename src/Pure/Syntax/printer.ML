@@ -1,15 +1,16 @@
 (*  Title:      Pure/Syntax/printer.ML
-    Author:     Tobias Nipkow and Markus Wenzel, TU Muenchen
+    Author:     Tobias Nipkow, TU Muenchen
+    Author:     Makarius
 
 Pretty printing of asts, terms, types and print (ast) translation.
 *)
 
 signature BASIC_PRINTER =
 sig
-  val show_brackets: bool Config.T
   val show_types: bool Config.T
   val show_sorts: bool Config.T
   val show_markup: bool Config.T
+  val show_consts_markup: bool Config.T
   val show_structs: bool Config.T
   val show_question_marks: bool Config.T
   val pretty_priority: int Config.T
@@ -18,10 +19,11 @@ end;
 signature PRINTER =
 sig
   include BASIC_PRINTER
-  val show_markup_default: bool Unsynchronized.ref
   val show_type_emphasis: bool Config.T
   val type_emphasis: Proof.context -> typ -> bool
+  type prtab
   type prtabs
+  val print_mode_tabs: prtabs -> prtab list
   datatype assoc = No_Assoc | Left_Assoc | Right_Assoc
   val get_prefix: prtabs -> Symtab.key -> string option
   val get_binder: prtabs -> Symtab.key -> string option
@@ -29,17 +31,17 @@ sig
   val empty_prtabs: prtabs
   val update_prtabs: string -> Syntax_Ext.xprod list -> prtabs -> prtabs
   val remove_prtabs: string -> Syntax_Ext.xprod list -> prtabs -> prtabs
-  val merge_prtabs: prtabs -> prtabs -> prtabs
-  val pretty_term_ast: bool -> Proof.context -> prtabs ->
-    (string -> Proof.context -> Ast.ast list -> Ast.ast) ->
-    (string -> Ast.ast list -> Pretty.T option) ->
-    ((string -> Markup.T list) * (string -> string)) ->
-    Ast.ast -> Pretty.T list
-  val pretty_typ_ast: Proof.context -> prtabs ->
-    (string -> Proof.context -> Ast.ast list -> Ast.ast) ->
-    (string -> Ast.ast list -> Pretty.T option) ->
-    ((string -> Markup.T list) * (string -> string)) ->
-    Ast.ast -> Pretty.T list
+  val merge_prtabs: prtabs * prtabs -> prtabs
+  type pretty_ops =
+   {trf: string -> Proof.context -> Ast.ast list -> Ast.ast,
+    constrain_block: Ast.ast -> Markup.output Pretty.block,
+    constrain_trans: Ast.ast -> Ast.ast -> Pretty.T option,
+    markup_trans: string -> Ast.ast list -> Pretty.T option,
+    markup_syntax: string -> Markup.T list,
+    pretty_entity: string -> Pretty.T}
+  val pretty: {type_mode: bool, curried: bool} -> Proof.context -> prtab list ->
+    pretty_ops -> Ast.ast -> Pretty.T list
+  val type_mode_flags: {type_mode: bool, curried: bool}
 end;
 
 structure Printer: PRINTER =
@@ -47,11 +49,10 @@ struct
 
 (** options for printing **)
 
-val show_brackets = Config.declare_option_bool ("show_brackets", \<^here>);
 val show_types = Config.declare_option_bool ("show_types", \<^here>);
 val show_sorts = Config.declare_option_bool ("show_sorts", \<^here>);
-val show_markup_default = Unsynchronized.ref false;
-val show_markup = Config.declare_bool ("show_markup", \<^here>) (fn _ => ! show_markup_default);
+val show_markup = Config.declare_bool ("show_markup", \<^here>) (fn _ => Interactive.enabled ());
+val show_consts_markup = Config.declare_bool ("show_consts_markup", \<^here>) (K true);
 val show_structs = Config.declare_bool ("show_structs", \<^here>) (K false);
 val show_question_marks = Config.declare_option_bool ("show_question_marks", \<^here>);
 val show_type_emphasis = Config.declare_bool ("show_type_emphasis", \<^here>) (K true);
@@ -67,17 +68,26 @@ fun type_emphasis ctxt T =
 
 datatype symb =
   Arg of int |
-  TypArg of int |
-  String of bool * string |
+  Arg_Type of int |
+  String of Markup.T list * string |
   Break of int |
-  Block of Syntax_Ext.block_info * symb list;
+  Block of Syntax_Ext.block * symb list;
 
-type prtabs = (string * ((symb list * int * int) list) Symtab.table) list;
+datatype prtab = Prtab of ((symb list * int * int) list) Symtab.table;
 
-fun mode_tab (prtabs: prtabs) mode = the_default Symtab.empty (AList.lookup (op =) prtabs mode);
-fun mode_tabs (prtabs: prtabs) modes = map_filter (AList.lookup (op =) prtabs) (modes @ [""]);
+val empty_prtab = Prtab Symtab.empty;
+fun lookup_prtab (Prtab tab) = Symtab.lookup_list tab;
+fun update_prtab arg (Prtab tab) = Prtab (Symtab.update_list (op =) arg tab);
+fun remove_prtab arg (Prtab tab) = Prtab (Symtab.remove_list (op =) arg tab);
+fun merge_prtab (Prtab tab1, Prtab tab2) = Prtab (Symtab.merge_list (op =) (tab1, tab2));
 
-fun lookup_default prtabs = Symtab.lookup_list (mode_tab prtabs "");
+datatype prtabs = Prtabs of prtab Symtab.table;
+
+fun mode_tab (Prtabs prtabs) mode = the_default empty_prtab (Symtab.lookup prtabs mode);
+fun mode_tabs (Prtabs prtabs) modes = map_filter (Symtab.lookup prtabs) (modes @ [""]);
+fun print_mode_tabs prtabs = mode_tabs prtabs (print_mode_value ());
+
+fun lookup_default prtabs = lookup_prtab (mode_tab prtabs "");
 
 
 (* approximative syntax *)
@@ -87,7 +97,7 @@ datatype assoc = No_Assoc | Left_Assoc | Right_Assoc;
 local
 
 fun is_arg (Arg _) = true
-  | is_arg (TypArg _) = true
+  | is_arg (Arg_Type _) = true
   | is_arg _ = false;
 
 fun is_space str = forall_string (fn s => s = " ") str;
@@ -118,7 +128,7 @@ fun get_infix prtabs c =
   |> map_filter (fn (symbs, _, p) =>
       (case clean symbs of
         [Arg p1, String (_, d), Arg p2] => SOME (p1, p2, d, p)
-      | [TypArg p1, String (_, d), TypArg p2] => SOME (p1, p2, d, p)
+      | [Arg_Type p1, String (_, d), Arg_Type p2] => SOME (p1, p2, d, p)
       | _ => NONE))
   |> get_first (fn (p1, p2, d, p) =>
       if p1 = p + 1 andalso p2 = p + 1 then SOME {assoc = No_Assoc, delim = d, pri = p}
@@ -131,69 +141,62 @@ end;
 
 (* xprod_to_fmt *)
 
+fun make_string s = String ([], s);
+fun make_literal s = String (Lexicon.literal_markup s, s);
+
+fun make_arg (s, p) =
+  (if s = "type" then Arg_Type else Arg)
+  (if Lexicon.is_terminal s then 1000 else p);
+
 fun xprod_to_fmt (Syntax_Ext.XProd (_, _, "", _)) = NONE
   | xprod_to_fmt (Syntax_Ext.XProd (_, xsymbs, const, pri)) =
       let
-        fun arg (s, p) =
-          (if s = "type" then TypArg else Arg)
-          (if Lexicon.is_terminal s then 1000 else p);
-
-        fun xsyms_to_syms (Syntax_Ext.Delim s :: xsyms) =
-              apfst (cons (String (not (Lexicon.suppress_literal_markup s), s)))
-                (xsyms_to_syms xsyms)
-          | xsyms_to_syms (Syntax_Ext.Argument s_p :: xsyms) =
-              apfst (cons (arg s_p)) (xsyms_to_syms xsyms)
-          | xsyms_to_syms (Syntax_Ext.Space s :: xsyms) =
-              apfst (cons (String (false, s))) (xsyms_to_syms xsyms)
-          | xsyms_to_syms (Syntax_Ext.Bg info :: xsyms) =
+        fun make_symbs (Syntax_Ext.Delim s :: xsyms) = make_symbs xsyms |>> cons (make_literal s)
+          | make_symbs (Syntax_Ext.Argument a :: xsyms) = make_symbs xsyms |>> cons (make_arg a)
+          | make_symbs (Syntax_Ext.Space s :: xsyms) = make_symbs xsyms |>> cons (make_string s)
+          | make_symbs (Syntax_Ext.Bg block :: xsyms) =
               let
-                val (bsyms, xsyms') = xsyms_to_syms xsyms;
-                val (syms, xsyms'') = xsyms_to_syms xsyms';
-              in
-                (Block (info, bsyms) :: syms, xsyms'')
-              end
-          | xsyms_to_syms (Syntax_Ext.Brk i :: xsyms) =
-              apfst (cons (Break i)) (xsyms_to_syms xsyms)
-          | xsyms_to_syms (Syntax_Ext.En :: xsyms) = ([], xsyms)
-          | xsyms_to_syms [] = ([], []);
+                val (bsyms, xsyms') = make_symbs xsyms;
+                val (syms, xsyms'') = make_symbs xsyms';
+              in (Block (block, bsyms) :: syms, xsyms'') end
+          | make_symbs (Syntax_Ext.Brk i :: xsyms) = make_symbs xsyms |>> cons (Break i)
+          | make_symbs (Syntax_Ext.En :: xsyms) = ([], xsyms)
+          | make_symbs [] = ([], []);
 
-        fun nargs (Arg _ :: syms) = nargs syms + 1
-          | nargs (TypArg _ :: syms) = nargs syms + 1
-          | nargs (String _ :: syms) = nargs syms
-          | nargs (Break _ :: syms) = nargs syms
-          | nargs (Block (_, bsyms) :: syms) = nargs syms + nargs bsyms
-          | nargs [] = 0;
+        fun count_args (Arg _ :: syms) = Integer.add 1 #> count_args syms
+          | count_args (Arg_Type _ :: syms) = Integer.add 1 #> count_args syms
+          | count_args (String _ :: syms) = count_args syms
+          | count_args (Break _ :: syms) = count_args syms
+          | count_args (Block (_, bsyms) :: syms) = count_args syms #> count_args bsyms
+          | count_args [] = I;
       in
-        (case xsyms_to_syms xsymbs of
-          (symbs, []) => SOME (const, (symbs, nargs symbs, pri))
+        (case make_symbs xsymbs of
+          (symbs, []) => SOME (const, (symbs, count_args symbs 0, pri))
         | _ => raise Fail "Unbalanced pretty-printing blocks")
       end;
 
 
 (* empty, extend, merge prtabs *)
 
-val empty_prtabs = [];
+val empty_prtabs = Prtabs Symtab.empty;
 
-fun update_prtabs mode xprods prtabs =
+fun update_prtabs mode xprods (prtabs as Prtabs tabs) =
   let
     val fmts = map_filter xprod_to_fmt xprods;
-    val tab' = fold (Symtab.update_list (op =)) fmts (mode_tab prtabs mode);
-  in AList.update (op =) (mode, tab') prtabs end;
+    val prtab' = fold update_prtab fmts (mode_tab prtabs mode);
+  in Prtabs (Symtab.update (mode, prtab') tabs) end;
 
-fun remove_prtabs mode xprods prtabs =
+fun remove_prtabs mode xprods (prtabs as Prtabs tabs) =
   let
-    val tab = mode_tab prtabs mode;
+    val prtab = mode_tab prtabs mode;
     val fmts = map_filter (fn xprod as Syntax_Ext.XProd (_, _, c, _) =>
-      if null (Symtab.lookup_list tab c) then NONE
+      if null (lookup_prtab prtab c) then NONE
       else xprod_to_fmt xprod) xprods;
-    val tab' = fold (Symtab.remove_list (op =)) fmts tab;
-  in AList.update (op =) (mode, tab') prtabs end;
+    val prtab' = fold remove_prtab fmts prtab;
+  in Prtabs (Symtab.update (mode, prtab') tabs) end;
 
-fun merge_prtabs prtabs1 prtabs2 =
-  let
-    val modes = distinct (op =) (map fst (prtabs1 @ prtabs2));
-    fun merge m = (m, Symtab.merge_list (op =) (mode_tab prtabs1 m, mode_tab prtabs2 m));
-  in map merge modes end;
+fun merge_prtabs (Prtabs tabs1, Prtabs tabs2) =
+  Prtabs (Symtab.join (K merge_prtab) (tabs1, tabs2));
 
 
 
@@ -203,118 +206,127 @@ fun is_chain [Block (_, pr)] = is_chain pr
   | is_chain [Arg _] = true
   | is_chain _  = false;
 
-val pretty_type_mode = Config.declare_bool ("Syntax.pretty_type_mode", \<^here>) (K false);
-val pretty_curried = Config.declare_bool ("Syntax.pretty_curried", \<^here>) (K false);
 val pretty_priority = Config.declare_int ("Syntax.pretty_priority", \<^here>) (K 0);
 
-fun pretty ctxt tabs trf markup_trans markup_extern ast0 =
-  let
-    val type_mode = Config.get ctxt pretty_type_mode;
-    val curried = Config.get ctxt pretty_curried;
-    val show_brackets = Config.get ctxt show_brackets;
+local
 
-    (*default applications: prefix / postfix*)
-    val appT =
+fun split_args 0 [x] ys = (x, ys)
+  | split_args 0 rev_xs ys = (Ast.Appl (rev rev_xs), ys)
+  | split_args n rev_xs (y :: ys) = split_args (n - 1) (y :: rev_xs) ys;
+
+val par_block = Syntax_Ext.block_indent 1;
+val par_bg = make_literal "(";
+val par_en = make_literal ")";
+
+in
+
+val type_mode_flags = {type_mode = true, curried = false};
+
+type pretty_ops =
+ {trf: string -> Proof.context -> Ast.ast list -> Ast.ast,
+  constrain_block: Ast.ast -> Markup.output Pretty.block,
+  constrain_trans: Ast.ast -> Ast.ast -> Pretty.T option,
+  markup_trans: string -> Ast.ast list -> Pretty.T option,
+  markup_syntax: string -> Markup.T list,
+  pretty_entity: string -> Pretty.T};
+
+fun pretty {type_mode, curried} ctxt prtabs (ops: pretty_ops) =
+  let
+    val application =
       if type_mode then Syntax_Trans.tappl_ast_tr'
       else if curried then Syntax_Trans.applC_ast_tr'
       else Syntax_Trans.appl_ast_tr';
 
-    fun synT _ ([], args) = ([], args)
-      | synT m (Arg p :: symbs, t :: args) =
-          let val (Ts, args') = synT m (symbs, args);
-          in (astT (t, p) @ Ts, args') end
-      | synT m (TypArg p :: symbs, t :: args) =
+    fun constrain_trans (Ast.Appl [Ast.Constant "_constrain", ast, ty]) =
+          #constrain_trans ops ast ty
+      | constrain_trans _ = NONE;
+
+    fun main _ (Ast.Variable x) = [Ast.pretty_var x]
+      | main p (cc as Ast.Appl [Ast.Constant "_constrain", c as Ast.Constant a, _]) =
+          combination p c a [] (SOME cc)
+      | main p (c as Ast.Constant a) =
+          combination p c a [] NONE
+      | main p
+          (Ast.Appl ((cc as Ast.Appl [Ast.Constant "_constrain", c as Ast.Constant a, _]) ::
+            (args as _ :: _))) =
+          combination p c a args (SOME cc)
+      | main p (Ast.Appl ((c as Ast.Constant a) :: (args as _ :: _))) =
+          combination p c a args NONE
+      | main p (Ast.Appl (f :: (args as _ :: _))) = main p (application (f, args))
+      | main _ (ast as Ast.Appl _) = raise Ast.AST ("pretty: malformed ast", [ast])
+
+    and main_type p ast =
+      if type_mode then main p ast
+      else pretty type_mode_flags (Config.put pretty_priority p ctxt) prtabs ops ast
+
+    and combination p c a args constraint =
+      (case translation p a args of
+        SOME prts => prts
+      | NONE =>
+          (*find matching table entry, or print as prefix / postfix*)
           let
-            val (Ts, args') = synT m (symbs, args);
+            val cc = the_default c constraint;
+            val nargs = length args;
+            val entry =
+              prtabs |> get_first (fn prtab =>
+                lookup_prtab prtab a |> find_first (fn (_, n, _) =>
+                  nargs = n orelse nargs > n andalso not type_mode));
           in
-            if type_mode then (astT (t, p) @ Ts, args')
-            else
-              let val ctxt' = ctxt
-                |> Config.put pretty_type_mode true
-                |> Config.put pretty_priority p
-              in (pretty ctxt' tabs trf markup_trans markup_extern t @ Ts, args') end
-          end
-      | synT m (String (do_mark, s) :: symbs, args) =
-          let
-            val (Ts, args') = synT m (symbs, args);
-            val T =
-              if do_mark
-              then Pretty.marks_str (m @ Lexicon.literal_markup s, s)
-              else Pretty.str s;
-          in (T :: Ts, args') end
-      | synT m (Block ({markup, consistent, unbreakable, indent}, bsymbs) :: symbs, args) =
-          let
-            val (bTs, args') = synT m (bsymbs, args);
-            val (Ts, args'') = synT m (symbs, args');
-            val T =
-              Pretty.markup_block {markup = markup, consistent = consistent, indent = indent} bTs
-              |> unbreakable ? Pretty.unbreakable;
-          in (T :: Ts, args'') end
-      | synT m (Break i :: symbs, args) =
-          let
-            val (Ts, args') = synT m (symbs, args);
-            val T = if i < 0 then Pretty.fbrk else Pretty.brk i;
-          in (T :: Ts, args') end
+            (case entry of
+              NONE =>
+                if nargs = 0 then
+                  (case Option.mapPartial constrain_trans constraint of
+                    SOME prt => [prt]
+                  | NONE => [#pretty_entity ops a])
+                else main p (application (cc, args))
+            | SOME (symbs, n, q) =>
+                if nargs = n then parens p q a (symbs, args) constraint
+                else main p (application (split_args n [cc] args)))
+          end)
 
-    and parT m (pr, args, p, p': int) = #1 (synT m
-          (if p > p' orelse (show_brackets andalso p' <> 1000 andalso not (is_chain pr)) then
-            [Block (Syntax_Ext.block_indent 1, String (false, "(") :: pr @ [String (false, ")")])]
-           else pr, args))
+    and translation p a args =
+      (case #markup_trans ops a args of
+        SOME prt => SOME [prt]
+      | NONE => Option.map (main p) (SOME (#trf ops a ctxt args) handle Match => NONE))
 
-    and atomT a = Pretty.marks_str (#1 markup_extern a, #2 markup_extern a)
-
-    and prefixT (_, a, [], _) = [atomT a]
-      | prefixT (c, _, args, p) = astT (appT (c, args), p)
-
-    and splitT 0 ([x], ys) = (x, ys)
-      | splitT 0 (rev_xs, ys) = (Ast.Appl (rev rev_xs), ys)
-      | splitT n (rev_xs, y :: ys) = splitT (n - 1) (y :: rev_xs, ys)
-
-    and combT (tup as (c, a, args, p)) =
+    and parens p q a (symbs, args) constraint =
       let
-        val nargs = length args;
+        val symbs' = if p > q then [Block (par_block, par_bg :: symbs @ [par_en])] else symbs;
+        val output =
+          (case constraint of
+            SOME (Ast.Appl [Ast.Constant "_constrain", _, ty]) =>
+              Pretty.make_block (#constrain_block ops ty) o single
+          | _ => I);
+      in #1 (syntax (#markup_syntax ops a, output) (symbs', args)) end
 
-        (*find matching table entry, or print as prefix / postfix*)
-        fun prnt ([], []) = prefixT tup
-          | prnt ([], tb :: tbs) = prnt (Symtab.lookup_list tb a, tbs)
-          | prnt ((pr, n, p') :: prnps, tbs) =
-              if nargs = n then parT (#1 markup_extern a) (pr, args, p, p')
-              else if nargs > n andalso not type_mode then
-                astT (appT (splitT n ([c], args)), p)
-              else prnt (prnps, tbs);
-      in
-        (case markup_trans a args of
-          SOME prt => [prt]
-        | NONE => astT (trf a ctxt args, p) handle Match => prnt ([], tabs))
-      end
+    and syntax _ ([], args) = ([], args)
+      | syntax m (Arg p :: symbs, arg :: args) =
+          let val (prts, args') = syntax m (symbs, args);
+          in (main p arg @ prts, args') end
+      | syntax m (Arg_Type p :: symbs, arg :: args) =
+          let val (prts, args') = syntax m (symbs, args);
+          in (main_type p arg @ prts, args') end
+      | syntax (m as (ms, output)) (String (literal_markup, s) :: symbs, args) =
+          let
+            val (prts, args') = syntax m (symbs, args);
+            val prt =
+              if null literal_markup then Pretty.str s
+              else output (Pretty.marks_str (ms @ literal_markup, s));
+          in (prt :: prts, args') end
+      | syntax m (Block (block, bsymbs) :: symbs, args) =
+          let
+            val (body, args') = syntax m (bsymbs, args);
+            val (prts, args'') = syntax m (symbs, args');
+          in (Syntax_Ext.pretty_block block body :: prts, args'') end
+      | syntax m (Break i :: symbs, args) =
+          let val (prts, args') = syntax m (symbs, args)
+          in ((if i < 0 then Pretty.fbrk else Pretty.brk i) :: prts, args') end;
 
-    and astT (c as Ast.Constant a, p) = combT (c, a, [], p)
-      | astT (ast as Ast.Variable _, _) = [Ast.pretty_ast ast]
-      | astT (Ast.Appl ((c as Ast.Constant a) :: (args as _ :: _)), p) = combT (c, a, args, p)
-      | astT (Ast.Appl (f :: (args as _ :: _)), p) = astT (appT (f, args), p)
-      | astT (ast as Ast.Appl _, _) = raise Ast.AST ("pretty: malformed ast", [ast]);
-  in astT (ast0, Config.get ctxt pretty_priority) end;
+  in main (Config.get ctxt pretty_priority) end;
 
-
-(* pretty_term_ast *)
-
-fun pretty_term_ast curried ctxt prtabs trf markup_trans markup_extern ast =
-  let val ctxt' = ctxt
-    |> Config.put pretty_type_mode false
-    |> Config.put pretty_curried curried
-  in pretty ctxt' (mode_tabs prtabs (print_mode_value ())) trf markup_trans markup_extern ast end;
-
-
-(* pretty_typ_ast *)
-
-fun pretty_typ_ast ctxt prtabs trf markup_trans markup_extern ast =
-  let val ctxt' = ctxt
-    |> Config.put pretty_type_mode true
-    |> Config.put pretty_curried false
-  in pretty ctxt' (mode_tabs prtabs (print_mode_value ())) trf markup_trans markup_extern ast end;
+end;
 
 end;
 
 structure Basic_Printer: BASIC_PRINTER = Printer;
 open Basic_Printer;
-

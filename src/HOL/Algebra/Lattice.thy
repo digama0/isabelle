@@ -15,11 +15,11 @@ section \<open>Lattices\<close>
 subsection \<open>Supremum and infimum\<close>
 
 definition
-  sup :: "[_, 'a set] => 'a" ("\<Squnion>\<index>_" [90] 90)
+  sup :: "[_, 'a set] => 'a" (\<open>(\<open>open_block notation=\<open>prefix \<Squnion>\<close>\<close>\<Squnion>\<index>_)\<close> [90] 90)
   where "\<Squnion>\<^bsub>L\<^esub>A = (SOME x. least L x (Upper L A))"
 
 definition
-  inf :: "[_, 'a set] => 'a" ("\<Sqinter>\<index>_" [90] 90)
+  inf :: "[_, 'a set] => 'a" (\<open>(\<open>open_block notation=\<open>prefix \<Sqinter>\<close>\<close>\<Sqinter>\<index>_)\<close> [90] 90)
   where "\<Sqinter>\<^bsub>L\<^esub>A = (SOME x. greatest L x (Lower L A))"
 
 definition supr :: 
@@ -31,15 +31,17 @@ definition infi ::
   where "infi L A f = \<Sqinter>\<^bsub>L\<^esub>(f ` A)"
 
 syntax
-  "_inf1"     :: "('a, 'b) gorder_scheme \<Rightarrow> pttrns \<Rightarrow> 'a \<Rightarrow> 'a" ("(3IINF\<index> _./ _)" [0, 10] 10)
-  "_inf"      :: "('a, 'b) gorder_scheme \<Rightarrow> pttrn \<Rightarrow> 'c set \<Rightarrow> 'a \<Rightarrow> 'a"  ("(3IINF\<index> _:_./ _)" [0, 0, 10] 10)
-  "_sup1"     :: "('a, 'b) gorder_scheme \<Rightarrow> pttrns \<Rightarrow> 'a \<Rightarrow> 'a" ("(3SSUP\<index> _./ _)" [0, 10] 10)
-  "_sup"      :: "('a, 'b) gorder_scheme \<Rightarrow> pttrn \<Rightarrow> 'c set \<Rightarrow> 'a \<Rightarrow> 'a"  ("(3SSUP\<index> _:_./ _)" [0, 0, 10] 10)
-
+  "_inf1"     :: "('a, 'b) gorder_scheme \<Rightarrow> pttrns \<Rightarrow> 'a \<Rightarrow> 'a"
+    (\<open>(\<open>indent=3 notation=\<open>binder IINF\<close>\<close>IINF\<index> _./ _)\<close> [0, 10] 10)
+  "_inf"      :: "('a, 'b) gorder_scheme \<Rightarrow> pttrn \<Rightarrow> 'c set \<Rightarrow> 'a \<Rightarrow> 'a"
+    (\<open>(\<open>indent=3 notation=\<open>binder IINF\<close>\<close>IINF\<index> _:_./ _)\<close> [0, 0, 10] 10)
+  "_sup1"     :: "('a, 'b) gorder_scheme \<Rightarrow> pttrns \<Rightarrow> 'a \<Rightarrow> 'a"
+    (\<open>(\<open>indent=3 notation=\<open>binder SSUP\<close>\<close>SSUP\<index> _./ _)\<close> [0, 10] 10)
+  "_sup"      :: "('a, 'b) gorder_scheme \<Rightarrow> pttrn \<Rightarrow> 'c set \<Rightarrow> 'a \<Rightarrow> 'a"
+    (\<open>(\<open>indent=3 notation=\<open>binder SSUP\<close>\<close>SSUP\<index> _:_./ _)\<close> [0, 0, 10] 10)
 syntax_consts
   "_inf1" "_inf" == infi and
   "_sup1" "_sup" == supr
-
 translations
   "IINF\<^bsub>L\<^esub> x. B"     == "CONST infi L CONST UNIV (%x. B)"
   "IINF\<^bsub>L\<^esub> x:A. B"   == "CONST infi L A (%x. B)"
@@ -47,19 +49,19 @@ translations
   "SSUP\<^bsub>L\<^esub> x:A. B"   == "CONST supr L A (%x. B)"
 
 definition
-  join :: "[_, 'a, 'a] => 'a" (infixl "\<squnion>\<index>" 65)
+  join :: "[_, 'a, 'a] => 'a" (infixl \<open>\<squnion>\<index>\<close> 65)
   where "x \<squnion>\<^bsub>L\<^esub> y = \<Squnion>\<^bsub>L\<^esub>{x, y}"
 
 definition
-  meet :: "[_, 'a, 'a] => 'a" (infixl "\<sqinter>\<index>" 70)
+  meet :: "[_, 'a, 'a] => 'a" (infixl \<open>\<sqinter>\<index>\<close> 70)
   where "x \<sqinter>\<^bsub>L\<^esub> y = \<Sqinter>\<^bsub>L\<^esub>{x, y}"
 
 definition
-  LEAST_FP :: "('a, 'b) gorder_scheme \<Rightarrow> ('a \<Rightarrow> 'a) \<Rightarrow> 'a" ("LFP\<index>") where
+  LEAST_FP :: "('a, 'b) gorder_scheme \<Rightarrow> ('a \<Rightarrow> 'a) \<Rightarrow> 'a" (\<open>LFP\<index>\<close>) where
   "LEAST_FP L f = \<Sqinter>\<^bsub>L\<^esub> {u \<in> carrier L. f u \<sqsubseteq>\<^bsub>L\<^esub> u}"    \<comment> \<open>least fixed point\<close>
 
 definition
-  GREATEST_FP:: "('a, 'b) gorder_scheme \<Rightarrow> ('a \<Rightarrow> 'a) \<Rightarrow> 'a" ("GFP\<index>") where
+  GREATEST_FP:: "('a, 'b) gorder_scheme \<Rightarrow> ('a \<Rightarrow> 'a) \<Rightarrow> 'a" (\<open>GFP\<index>\<close>) where
   "GREATEST_FP L f = \<Squnion>\<^bsub>L\<^esub> {u \<in> carrier L. u \<sqsubseteq>\<^bsub>L\<^esub> f u}"    \<comment> \<open>greatest fixed point\<close>
 
 

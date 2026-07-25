@@ -10,10 +10,10 @@ theory Order_Union
   imports Main
 begin
 
-definition Osum :: "'a rel \<Rightarrow> 'a rel \<Rightarrow> 'a rel"  (infix "Osum" 60) where
+definition Osum :: "'a rel \<Rightarrow> 'a rel \<Rightarrow> 'a rel"  (infix \<open>Osum\<close> 60) where
   "r Osum r' = r \<union> r' \<union> {(a, a'). a \<in> Field r \<and> a' \<in> Field r'}"
 
-notation Osum  (infix "\<union>o" 60)
+notation Osum  (infix \<open>\<union>o\<close> 60)
 
 lemma Field_Osum: "Field (r \<union>o r') = Field r \<union> Field r'"
   unfolding Osum_def Field_def by blast
@@ -89,7 +89,7 @@ lemma Osum_trans:
 
 lemma Osum_Preorder:
   "\<lbrakk>Field r Int Field r' = {}; Preorder r; Preorder r'\<rbrakk> \<Longrightarrow> Preorder (r Osum r')"
-  unfolding preorder_on_def using Osum_Refl Osum_trans by blast
+  unfolding preorder_on_def using Osum_Refl Osum_trans Restr_Field by blast
 
 lemma Osum_antisym:
   assumes FLD: "Field r Int Field r' = {}" and

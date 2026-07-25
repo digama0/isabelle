@@ -143,6 +143,7 @@ sig
   val quote: string -> string
   val cartouche: string -> string
   val space_implode: string -> string list -> string
+  val implode_space: string list -> string
   val commas: string list -> string
   val commas_quote: string list -> string
   val cat_lines: string list -> string
@@ -165,6 +166,7 @@ sig
   val match_string: string -> string -> bool
 
   (*reals*)
+  val eq_real: real * real -> bool
   val string_of_real: real -> string
   val signed_string_of_real: real -> string
 
@@ -217,7 +219,8 @@ sig
   val sort_strings: string list -> string list
   val sort_by: ('a -> string) -> 'a list -> 'a list
   val tag_list: int -> 'a list -> (int * 'a) list
-  val untag_list: (int * 'a) list -> 'a list
+  val untag_list: (''tag * 'a) list -> 'a list
+  val make_order_list: ''tag ord -> ('a -> bool) option -> (''tag * 'a) list -> 'a list
   val order_list: (int * 'a) list -> 'a list
 
   (*misc*)
@@ -505,13 +508,9 @@ fun surround s (x :: xs) = s :: x :: surround s xs
   | surround s [] = [s];
 
 (*make the list [x, x, ..., x] of length n*)
-fun replicate (n: int) x =
-  let fun rep (0, xs) = xs
-        | rep (n, xs) = rep (n - 1, x :: xs)
-  in
-    if n < 0 then raise Subscript
-    else rep (n, [])
-  end;
+fun replicate n x =
+  if n < 0 then raise Subscript
+  else build (funpow n (cons x));
 
 
 (* direct product *)
@@ -628,11 +627,11 @@ fun suffixes xs = [] :: suffixes1 xs;
 
 (* lists of integers *)
 
-(*make the list [from, from + 1, ..., to]*)
+(*make the list [i, i + 1, ..., j]*)
 fun ((i: int) upto j) =
   if i > j then [] else i :: (i + 1 upto j);
 
-(*make the list [from, from - 1, ..., to]*)
+(*make the list [i, i - 1, ..., j]*)
 fun ((i: int) downto j) =
   if i < j then [] else i :: (i - 1 downto j);
 
@@ -743,6 +742,7 @@ val quote = enclose "\"" "\"";
 val cartouche = enclose "\<open>" "\<close>";
 
 val space_implode = String.concatWith;
+val implode_space = space_implode " ";
 
 val commas = space_implode ", ";
 val commas_quote = commas o map quote;
@@ -755,7 +755,7 @@ fun space_explode _ "" = []
 
 val split_lines = space_explode "\n";
 
-fun plain_words s = space_explode "_" s |> space_implode " ";
+val plain_words = implode_space o space_explode "_";
 
 fun prefix_lines "" txt = txt
   | prefix_lines prfx txt = txt |> split_lines |> map (fn s => prfx ^ s) |> cat_lines;
@@ -817,7 +817,9 @@ fun match_string pat str =
 
 (** reals **)
 
-val string_of_real = Real.fmt (StringCvt.GEN NONE);
+fun eq_real (a, b) = Real.isNan a andalso Real.isNan b orelse Real.== (a, b);
+
+val string_of_real = Real.fmt (StringCvt.GEN (SOME 13));
 
 fun signed_string_of_real x =
   if x < 0.0 then "-" ^ string_of_real (~ x) else string_of_real x;
@@ -1046,13 +1048,18 @@ fun tag_list k [] = []
 
 (*remove tags and suppress duplicates -- list is assumed sorted!*)
 fun untag_list [] = []
-  | untag_list [(k: int, x)] = [x]
-  | untag_list ((k, x) :: (rest as (k', x') :: _)) =
-      if k = k' then untag_list rest
+  | untag_list [(_, x)] = [x]
+  | untag_list ((tag, x) :: (rest as (tag', _) :: _)) =
+      if tag = tag' then untag_list rest
       else x :: untag_list rest;
 
-(*return list elements in original order*)
-fun order_list list = untag_list (sort (int_ord o apply2 fst) list);
+fun make_order_list ord pred list =
+  list
+  |> (case pred of NONE => I | SOME p => filter (p o snd))
+  |> sort (ord o apply2 fst)
+  |> untag_list;
+
+fun order_list list = make_order_list int_ord NONE list;
 
 
 

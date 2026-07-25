@@ -74,7 +74,7 @@ fun mk_new ([],[]) = \<^Const>\<open>True\<close>
       Balanced_Tree.make FOLogic.mk_conj
                  (map FOLogic.mk_eq (ListPair.zip (largs,rargs)));
 
-val datatype_ss = simpset_of \<^context>;
+val datatype_ss = Simplifier.simpset_of \<^context>;
 
 fun proc ctxt ct =
   let
@@ -104,8 +104,8 @@ fun proc ctxt ct =
      val goal = Logic.mk_equals (old, new);
      val thm = Goal.prove ctxt [] [] goal
        (fn _ => resolve_tac ctxt @{thms iff_reflection} 1 THEN
-         simp_tac (put_simpset datatype_ss ctxt addsimps
-          (map (Thm.transfer thy) (#free_iffs lcon_info))) 1)
+         simp_tac (put_simpset datatype_ss ctxt
+          |> Simplifier.add_simps (map (Thm.transfer thy) (#free_iffs lcon_info))) 1)
        handle ERROR msg =>
        (warning (msg ^ "\ndata_free simproc:\nfailed to prove " ^ Syntax.string_of_term ctxt goal);
         raise Match)

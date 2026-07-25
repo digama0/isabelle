@@ -20,11 +20,7 @@ struct
 
 (* helpers *)
 
-fun serial_commas _ [] = ["??"]
-  | serial_commas _ [s] = [s]
-  | serial_commas conj [s1, s2] = [s1, conj, s2]
-  | serial_commas conj [s1, s2, s3] = [s1 ^ ",", s2 ^ ",", conj, s3]
-  | serial_commas conj (s :: ss) = s ^ "," :: serial_commas conj ss;
+val serial_commas = Try0.serial_commas
 
 
 (* configuration *)
@@ -55,7 +51,7 @@ fun try_tools state =
   else
     get_tools (Proof.theory_of state)
     |> tap (fn tools =>
-               "Trying " ^ space_implode " "
+               "Trying " ^ implode_space
                     (serial_commas "and" (map (quote o #name) tools)) ^ "..."
                |> writeln)
     |> Par_List.get_some

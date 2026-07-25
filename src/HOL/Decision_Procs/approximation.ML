@@ -76,7 +76,7 @@ fun rewrite_interpret_form_tac ctxt prec splitting taylor i st = let
             lemma (schematic)
               \<open>n = length xs \<Longrightarrow> approx_form prec f (replicate n None) ss \<Longrightarrow> interpret_form f xs\<close>
               by (rule approx_form)\<close>] i
-        THEN simp_tac (put_simpset (simpset_of \<^context>) ctxt) i) st
+        THEN simp_tac (put_simpset (Simplifier.simpset_of \<^context>) ctxt) i) st
      end
 
    | SOME t =>
@@ -187,8 +187,8 @@ fun apply_tactic ctxt term tactic =
 
 fun preproc_form_conv ctxt =
   Simplifier.rewrite
-   (put_simpset HOL_basic_ss ctxt addsimps
-     (Named_Theorems.get ctxt \<^named_theorems>\<open>approximation_preproc\<close>))
+   (put_simpset HOL_basic_ss ctxt
+     |> Simplifier.add_simps (Named_Theorems.get ctxt \<^named_theorems>\<open>approximation_preproc\<close>))
 
 fun reify_form_conv ctxt ct =
   let

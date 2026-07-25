@@ -277,12 +277,7 @@ fun DETERM_TIMEOUT delay tac st =
 
 val indent_size = 2
 
-fun pretty_maybe_quote ctxt pretty =
-  let val s = Pretty.unformatted_string_of pretty in
-    if ATP_Util.maybe_quote ctxt s = s then pretty
-    else if Config.get ctxt ATP_Util.proof_cartouches then Pretty.cartouche pretty
-    else Pretty.quote pretty
-  end
+val pretty_maybe_quote = ATP_Util.pretty_maybe_quote
 
 val hashw = ATP_Util.hashw
 val hashw_string = ATP_Util.hashw_string
@@ -304,7 +299,7 @@ fun spying false _ = ()
       val (state, i, message) = f ()
       val ctxt = Proof.context_of state
       val goal = Logic.get_goal (Thm.prop_of (#goal (Proof.goal state))) i
-      val hash = String.substring (SHA1.rep (SHA1.digest (hackish_string_of_term ctxt goal)), 0, 12)
+      val hash = Message_Digest.rep_short (SHA1.digest (hackish_string_of_term ctxt goal))
     in
       File.append (Path.explode "$ISABELLE_HOME_USER/spy_nitpick")
         (spying_version ^ " " ^ timestamp () ^ ": " ^ hash ^ ": " ^ message ^ "\n")

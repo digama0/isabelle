@@ -37,7 +37,7 @@ begin
 subsection \<open>Abstract bounded quasi semilattices as common foundation\<close>
 
 locale bounded_quasi_semilattice = abel_semigroup +
-  fixes top :: 'a  ("\<^bold>\<top>") and bot :: 'a  ("\<^bold>\<bottom>")
+  fixes top :: 'a  (\<open>\<^bold>\<top>\<close>) and bot :: 'a  (\<open>\<^bold>\<bottom>\<close>)
     and normalize :: "'a \<Rightarrow> 'a"
   assumes idem_normalize [simp]: "a \<^bold>* a = normalize a"
     and normalize_left_idem [simp]: "normalize a \<^bold>* b = a \<^bold>* b"
@@ -148,10 +148,10 @@ class Gcd = gcd +
     and Lcm :: "'a set \<Rightarrow> 'a"
 
 syntax
-  "_GCD1"     :: "pttrns \<Rightarrow> 'b \<Rightarrow> 'b"           ("(3GCD _./ _)" [0, 10] 10)
-  "_GCD"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b \<Rightarrow> 'b"  ("(3GCD _\<in>_./ _)" [0, 0, 10] 10)
-  "_LCM1"     :: "pttrns \<Rightarrow> 'b \<Rightarrow> 'b"           ("(3LCM _./ _)" [0, 10] 10)
-  "_LCM"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b \<Rightarrow> 'b"  ("(3LCM _\<in>_./ _)" [0, 0, 10] 10)
+  "_GCD1"     :: "pttrns \<Rightarrow> 'b \<Rightarrow> 'b"           (\<open>(\<open>indent=3 notation=\<open>binder GCD\<close>\<close>GCD _./ _)\<close> [0, 10] 10)
+  "_GCD"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b \<Rightarrow> 'b"  (\<open>(\<open>indent=3 notation=\<open>binder GCD\<close>\<close>GCD _\<in>_./ _)\<close> [0, 0, 10] 10)
+  "_LCM1"     :: "pttrns \<Rightarrow> 'b \<Rightarrow> 'b"           (\<open>(\<open>indent=3 notation=\<open>binder LCM\<close>\<close>LCM _./ _)\<close> [0, 10] 10)
+  "_LCM"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b \<Rightarrow> 'b"  (\<open>(\<open>indent=3 notation=\<open>binder LCM\<close>\<close>LCM _\<in>_./ _)\<close> [0, 0, 10] 10)
 
 syntax_consts
   "_GCD1" "_GCD" \<rightleftharpoons> Gcd and
@@ -1067,14 +1067,14 @@ begin
 
 sublocale Gcd_fin: bounded_quasi_semilattice_set gcd 0 1 normalize
 defines
-  Gcd_fin ("Gcd\<^sub>f\<^sub>i\<^sub>n") = "Gcd_fin.F :: 'a set \<Rightarrow> 'a" ..
+  Gcd_fin (\<open>Gcd\<^sub>f\<^sub>i\<^sub>n\<close>) = "Gcd_fin.F :: 'a set \<Rightarrow> 'a" ..
 
 abbreviation gcd_list :: "'a list \<Rightarrow> 'a"
   where "gcd_list xs \<equiv> Gcd\<^sub>f\<^sub>i\<^sub>n (set xs)"
 
 sublocale Lcm_fin: bounded_quasi_semilattice_set lcm 1 0 normalize
 defines
-  Lcm_fin ("Lcm\<^sub>f\<^sub>i\<^sub>n") = Lcm_fin.F ..
+  Lcm_fin (\<open>Lcm\<^sub>f\<^sub>i\<^sub>n\<close>) = Lcm_fin.F ..
 
 abbreviation lcm_list :: "'a list \<Rightarrow> 'a"
   where "lcm_list xs \<equiv> Lcm\<^sub>f\<^sub>i\<^sub>n (set xs)"
@@ -1187,17 +1187,25 @@ lemma Gcd_fin_eq_Gcd [simp]:
   "Gcd\<^sub>f\<^sub>i\<^sub>n A = Gcd A" if "finite A" for A :: "'a set"
   using that by induct simp_all
 
-lemma Gcd_set_eq_fold [code_unfold]:
+lemma Gcd_set_eq_fold:
   "Gcd (set xs) = fold gcd xs 0"
-  by (simp add: Gcd_fin.set_eq_fold [symmetric])
+  by (simp flip: Gcd_fin.set_eq_fold)
+
+lemma [code]:
+  "Gcd (set xs) = Gcd\<^sub>f\<^sub>i\<^sub>n (set xs)"
+  by simp
 
 lemma Lcm_fin_eq_Lcm [simp]:
   "Lcm\<^sub>f\<^sub>i\<^sub>n A = Lcm A" if "finite A" for A :: "'a set"
   using that by induct simp_all
 
-lemma Lcm_set_eq_fold [code_unfold]:
+lemma Lcm_set_eq_fold:
   "Lcm (set xs) = fold lcm xs 1"
-  by (simp add: Lcm_fin.set_eq_fold [symmetric])
+  by (simp flip: Lcm_fin.set_eq_fold)
+
+lemma [code]:
+  "Lcm (set xs) = Lcm\<^sub>f\<^sub>i\<^sub>n (set xs)"
+  by simp
 
 end
 
@@ -2583,13 +2591,14 @@ proof (rule antisym)
   qed
 qed
 
-lemma Gcd_remove0_nat: "finite M \<Longrightarrow> Gcd M = Gcd (M - {0})"
+lemma Gcd_remove0_nat: "Gcd M = Gcd (M - {0})"
   for M :: "nat set"
-proof (induct pred: finite)
-  case (insert x M)
-  then show ?case
-    by (simp add: insert_Diff_if)
-qed auto
+proof-
+  have "(\<forall> m \<in> M. b dvd m) \<longleftrightarrow> (\<forall> m \<in> (M - {0}). b dvd m)" for b
+    by blast+
+  thus ?thesis
+    unfolding Gcd_Lcm by presburger
+qed
 
 lemma Lcm_in_lcm_closed_set_nat:
   fixes M :: "nat set" 
@@ -2648,6 +2657,11 @@ lemma Gcd_nat_abs_eq [simp]:
 lemma abs_Gcd_eq [simp]:
   "\<bar>Gcd K\<bar> = Gcd K" for K :: "int set"
   by (simp only: Gcd_int_def)
+
+lemma uminus_Gcd_eq [simp]: 
+  fixes K::"int set"
+  shows "Gcd (uminus ` K) = Gcd K"
+  unfolding Gcd_int_def o_def by (simp add: image_image)
 
 lemma Gcd_int_greater_eq_0 [simp]:
   "Gcd K \<ge> 0"
@@ -2851,7 +2865,7 @@ subsection \<open>Characteristic of a semiring\<close>
 definition (in semiring_1) semiring_char :: "'a itself \<Rightarrow> nat" 
   where "semiring_char _ = Gcd {n. of_nat n = (0 :: 'a)}"
 
-syntax "_type_char" :: "type => nat" ("(1CHAR/(1'(_')))")
+syntax "_type_char" :: "type => nat" (\<open>(\<open>indent=1 notation=\<open>mixfix CHAR\<close>\<close>CHAR/(1'(_')))\<close>)
 syntax_consts "_type_char" \<rightleftharpoons> semiring_char
 translations "CHAR('t)" \<rightharpoonup> "CONST semiring_char (CONST Pure.type :: 't itself)"
 print_translation \<open>

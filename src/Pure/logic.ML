@@ -23,9 +23,11 @@ sig
   val list_implies: term list * term -> term
   val strip_imp_prems: term -> term list
   val strip_imp_concl: term -> term
+  val take_imp_prems: int -> term -> term list
   val strip_prems: int * term list * term -> term list * term
   val count_prems: term -> int
   val no_prems: term -> bool
+  val one_prem: term -> bool
   val nth_prem: int * term -> term
   val close_term: (string * term) list -> term -> term
   val close_prop: (string * term) list -> term list -> term -> term
@@ -200,6 +202,11 @@ fun strip_imp_prems (Const("Pure.imp", _) $ A $ B) = A :: strip_imp_prems B
 fun strip_imp_concl (Const("Pure.imp", _) $ A $ B) = strip_imp_concl B
   | strip_imp_concl A = A : term;
 
+(* take at most n prems, where n < 0 means infinity *)
+fun take_imp_prems 0 _ = []
+  | take_imp_prems n (Const ("Pure.imp", _) $ A $ B) = A :: take_imp_prems (n - 1) B
+  | take_imp_prems _ _ = [];
+
 (*Strip and return premises: (i, [], A1\<Longrightarrow>...Ai\<Longrightarrow>B)
     goes to   ([Ai, A(i-1),...,A1] , B)         (REVERSED)
   if  i<0 or else i too big then raises  TERM*)
@@ -214,6 +221,9 @@ fun count_prems (Const ("Pure.imp", _) $ _ $ B) = 1 + count_prems B
 
 fun no_prems (Const ("Pure.imp", _) $ _ $ _) = false
   | no_prems _ = true;
+
+fun one_prem (Const ("Pure.imp", _) $ _ $ B) = no_prems B
+  | one_prem _ = false;
 
 (*Select Ai from A1\<Longrightarrow>...Ai\<Longrightarrow>B*)
 fun nth_prem (1, Const ("Pure.imp", _) $ A $ _) = A
@@ -335,7 +345,7 @@ fun name_arities (t, _, S) =
 fun name_arity (t, dom, c) = hd (name_arities (t, dom, [c]));
 
 fun mk_arities (t, Ss, S) =
-  let val T = Type (t, ListPair.map TFree (Name.invent Name.context Name.aT (length Ss), Ss))
+  let val T = Type (t, map TFree (Name.invent_types_global Ss))
   in map (fn c => mk_of_class (T, c)) S end;
 
 fun mk_arity (t, Ss, c) = the_single (mk_arities (t, Ss, [c]));
@@ -375,7 +385,7 @@ fun unconstrain_context shyps present_set =
     val {present, extra} = present_sorts shyps present_set;
 
     val n = Types.size present_set;
-    val (names1, names2) = Name.invent Name.context Name.aT (n + length extra) |> chop n;
+    val (names1, names2) = Name.invent_global_types (n + length extra) |> chop n;
 
     val present_map =
       map2 (fn (T, S) => fn a => (T, TVar ((a, 0), S))) present names1;
@@ -667,7 +677,7 @@ fun get_goal st i =
 (*reverses parameters for substitution*)
 fun goal_params st i =
   let val gi = get_goal st i
-      val rfrees = map Free (Term.rename_wrt_term gi (strip_params gi))
+      val rfrees = map Free (rev (Term.variant_bounds gi (strip_params gi)))
   in (gi, rfrees) end;
 
 fun concl_of_goal st i =

@@ -40,7 +40,7 @@ definition eventually :: "('a \<Rightarrow> bool) \<Rightarrow> 'a filter \<Righ
   where "eventually P F \<longleftrightarrow> Rep_filter F P"
 
 syntax
-  "_eventually" :: "pttrn => 'a filter => bool => bool"  ("(3\<forall>\<^sub>F _ in _./ _)" [0, 0, 10] 10)
+  "_eventually" :: "pttrn => 'a filter => bool => bool"  (\<open>(\<open>indent=3 notation=\<open>binder \<forall>\<^sub>F\<close>\<close>\<forall>\<^sub>F _ in _./ _)\<close> [0, 0, 10] 10)
 syntax_consts
   "_eventually" == eventually
 translations
@@ -160,7 +160,7 @@ definition frequently :: "('a \<Rightarrow> bool) \<Rightarrow> 'a filter \<Righ
   where "frequently P F \<longleftrightarrow> \<not> eventually (\<lambda>x. \<not> P x) F"
 
 syntax
-  "_frequently" :: "pttrn \<Rightarrow> 'a filter \<Rightarrow> bool \<Rightarrow> bool"  ("(3\<exists>\<^sub>F _ in _./ _)" [0, 0, 10] 10)
+  "_frequently" :: "pttrn \<Rightarrow> 'a filter \<Rightarrow> bool \<Rightarrow> bool"  (\<open>(\<open>indent=3 notation=\<open>binder \<exists>\<^sub>F\<close>\<close>\<exists>\<^sub>F _ in _./ _)\<close> [0, 0, 10] 10)
 syntax_consts
   "_frequently" == frequently
 translations
@@ -407,13 +407,16 @@ proof
 qed
 
 
+lemma filter_leI:
+  "(\<And>P. eventually P F' \<Longrightarrow> eventually P F) \<Longrightarrow> F \<le> F'"
+  unfolding le_filter_def by simp
+
 lemma filter_leD:
   "F \<le> F' \<Longrightarrow> eventually P F' \<Longrightarrow> eventually P F"
   unfolding le_filter_def by simp
 
-lemma filter_leI:
-  "(\<And>P. eventually P F' \<Longrightarrow> eventually P F) \<Longrightarrow> F \<le> F'"
-  unfolding le_filter_def by simp
+lemma frequently_mono_filter: "frequently P F \<Longrightarrow> F \<le> F' \<Longrightarrow> frequently P F'"
+  using filter_leD[of F F' "\<lambda>x. \<not>P x"] by (auto simp: frequently_def)
 
 lemma eventually_False:
   "eventually (\<lambda>x. False) F \<longleftrightarrow> F = bot"
@@ -884,6 +887,12 @@ lemma eventually_at_bot_linorder:
   unfolding at_bot_def
   by (subst eventually_INF_base) (auto simp: eventually_principal intro: min.cobounded1 min.cobounded2)
 
+lemma eventually_at_bot_linorderI:
+  fixes c::"'a::linorder"
+  assumes "\<And>x. x \<le> c \<Longrightarrow> P x"
+  shows "eventually P at_bot"
+  using assms by (auto simp: eventually_at_bot_linorder)     
+
 lemma eventually_filtercomap_at_bot_linorder: 
   "eventually P (filtercomap f at_bot) \<longleftrightarrow> (\<exists>N::'a::linorder. \<forall>x. f x \<le> N \<longrightarrow> P x)"
   by (auto simp: eventually_filtercomap eventually_at_bot_linorder)
@@ -966,6 +975,8 @@ subsection \<open>Increasing finite subsets\<close>
 definition finite_subsets_at_top where
   "finite_subsets_at_top A = (\<Sqinter> X\<in>{X. finite X \<and> X \<subseteq> A}. principal {Y. finite Y \<and> X \<subseteq> Y \<and> Y \<subseteq> A})"
 
+abbreviation "finite_sets_at_top \<equiv> finite_subsets_at_top UNIV"
+
 lemma eventually_finite_subsets_at_top:
   "eventually P (finite_subsets_at_top A) \<longleftrightarrow>
      (\<exists>X. finite X \<and> X \<subseteq> A \<and> (\<forall>Y. finite Y \<and> X \<subseteq> Y \<and> Y \<subseteq> A \<longrightarrow> P Y))"
@@ -1033,15 +1044,15 @@ subsection \<open>The cofinite filter\<close>
 
 definition "cofinite = Abs_filter (\<lambda>P. finite {x. \<not> P x})"
 
-abbreviation Inf_many :: "('a \<Rightarrow> bool) \<Rightarrow> bool"  (binder "\<exists>\<^sub>\<infinity>" 10)
+abbreviation Inf_many :: "('a \<Rightarrow> bool) \<Rightarrow> bool"  (binder \<open>\<exists>\<^sub>\<infinity>\<close> 10)
   where "Inf_many P \<equiv> frequently P cofinite"
 
-abbreviation Alm_all :: "('a \<Rightarrow> bool) \<Rightarrow> bool"  (binder "\<forall>\<^sub>\<infinity>" 10)
+abbreviation Alm_all :: "('a \<Rightarrow> bool) \<Rightarrow> bool"  (binder \<open>\<forall>\<^sub>\<infinity>\<close> 10)
   where "Alm_all P \<equiv> eventually P cofinite"
 
 notation (ASCII)
-  Inf_many  (binder "INFM " 10) and
-  Alm_all  (binder "MOST " 10)
+  Inf_many  (binder \<open>INFM \<close> 10) and
+  Alm_all  (binder \<open>MOST \<close> 10)
 
 lemma eventually_cofinite: "eventually P cofinite \<longleftrightarrow> finite {x. \<not> P x}"
   unfolding cofinite_def
@@ -1080,7 +1091,7 @@ qed
 
 subsubsection \<open>Product of filters\<close>
 
-definition prod_filter :: "'a filter \<Rightarrow> 'b filter \<Rightarrow> ('a \<times> 'b) filter" (infixr "\<times>\<^sub>F" 80) where
+definition prod_filter :: "'a filter \<Rightarrow> 'b filter \<Rightarrow> ('a \<times> 'b) filter" (infixr \<open>\<times>\<^sub>F\<close> 80) where
   "prod_filter F G =
     (\<Sqinter>(P, Q)\<in>{(P, Q). eventually P F \<and> eventually Q G}. principal {(x, y). P x \<and> Q y})"
 
@@ -1128,6 +1139,38 @@ next
   assume "eventually P B"
   then show "\<exists>Pf Pg. eventually Pf A \<and> eventually Pg B \<and> (\<forall>x y. Pf x \<longrightarrow> Pg y \<longrightarrow> P y)"
     by (intro exI[of _ P] exI[of _ "\<lambda>x. True"]) auto
+qed
+
+lemma eventually_eventually_prod_filter1:
+  assumes "eventually P (F \<times>\<^sub>F G)"
+  shows   "eventually (\<lambda>x. eventually (\<lambda>y. P (x, y)) G) F"
+proof -
+  from assms obtain Pf Pg where
+    *: "eventually Pf F" "eventually Pg G" "\<And>x y. Pf x \<Longrightarrow> Pg y \<Longrightarrow> P (x, y)"
+    unfolding eventually_prod_filter by auto
+  show ?thesis
+    using *(1)
+  proof eventually_elim
+    case x: (elim x)
+    show ?case
+      using *(2) by eventually_elim (use x *(3) in auto)
+  qed
+qed
+
+lemma eventually_eventually_prod_filter2:
+  assumes "eventually P (F \<times>\<^sub>F G)"
+  shows   "eventually (\<lambda>y. eventually (\<lambda>x. P (x, y)) F) G"
+proof -
+  from assms obtain Pf Pg where
+    *: "eventually Pf F" "eventually Pg G" "\<And>x y. Pf x \<Longrightarrow> Pg y \<Longrightarrow> P (x, y)"
+    unfolding eventually_prod_filter by auto
+  show ?thesis
+    using *(2)
+  proof eventually_elim
+    case y: (elim y)
+    show ?case
+      using *(1) by eventually_elim (use y *(3) in auto)
+  qed
 qed
 
 lemma INF_filter_bot_base:
@@ -1307,11 +1350,9 @@ definition filterlim :: "('a \<Rightarrow> 'b) \<Rightarrow> 'b filter \<Rightar
   "filterlim f F2 F1 \<longleftrightarrow> filtermap f F1 \<le> F2"
 
 syntax
-  "_LIM" :: "pttrns \<Rightarrow> 'a \<Rightarrow> 'b \<Rightarrow> 'a \<Rightarrow> bool" ("(3LIM (_)/ (_)./ (_) :> (_))" [1000, 10, 0, 10] 10)
-
+  "_LIM" :: "pttrns \<Rightarrow> 'a \<Rightarrow> 'b \<Rightarrow> 'a \<Rightarrow> bool" (\<open>(\<open>indent=3 notation=\<open>binder LIM\<close>\<close>LIM (_)/ (_)./ (_) :> (_))\<close> [1000, 10, 0, 10] 10)
 syntax_consts
   "_LIM" == filterlim
-
 translations
   "LIM x F1. f :> F2" == "CONST filterlim (\<lambda>x. f) F2 F1"
 
@@ -1873,7 +1914,8 @@ by(simp add: bi_unique_alt_def left_unique_rel_filter right_unique_rel_filter)
 
 lemma eventually_parametric [transfer_rule]:
   "((A ===> (=)) ===> rel_filter A ===> (=)) eventually eventually"
-by(auto 4 4 intro!: rel_funI elim!: rel_filter.cases simp add: eventually_map_filter_on dest: rel_funD intro: always_eventually elim!: eventually_rev_mp)
+  unfolding rel_fun_def
+  by(force elim!: rel_filter.cases eventually_rev_mp simp add: eventually_map_filter_on intro: always_eventually)
 
 lemma frequently_parametric [transfer_rule]: "((A ===> (=)) ===> rel_filter A ===> (=)) frequently frequently"
   unfolding frequently_def[abs_def] by transfer_prover
@@ -2049,10 +2091,6 @@ definition abstract_filter :: "(unit \<Rightarrow> 'a filter) \<Rightarrow> 'a f
 code_datatype principal abstract_filter
 
 hide_const (open) abstract_filter
-
-declare [[code drop: filterlim prod_filter filtermap eventually
-  "inf :: _ filter \<Rightarrow> _" "sup :: _ filter \<Rightarrow> _" "less_eq :: _ filter \<Rightarrow> _"
-  Abs_filter]]
 
 declare filterlim_principal [code]
 declare principal_prod_principal [code]

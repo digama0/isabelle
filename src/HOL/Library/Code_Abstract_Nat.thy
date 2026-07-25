@@ -59,8 +59,8 @@ fun remove_suc ctxt thms =
     val vname = singleton (Name.variant_list (map fst
       (fold (Term.add_var_names o Thm.full_prop_of) thms []))) "n";
     val cv = Thm.cterm_of ctxt (Var ((vname, 0), HOLogic.natT));
-    val lhs_of = snd o Thm.dest_comb o fst o Thm.dest_comb o Thm.cprop_of;
-    val rhs_of = snd o Thm.dest_comb o Thm.cprop_of;
+    val lhs_of = Thm.dest_arg1 o Thm.cprop_of;
+    val rhs_of = Thm.dest_arg o Thm.cprop_of;
     fun find_vars ct = (case Thm.term_of ct of
         (Const (\<^const_name>\<open>Suc\<close>, _) $ Var _) => [(cv, snd (Thm.dest_comb ct))]
       | _ $ _ =>
@@ -127,7 +127,6 @@ lemma take_bit_num_code [code]:
     (case n of 0 \<Rightarrow> None | Suc n \<Rightarrow> (case take_bit_num n m of None \<Rightarrow> None | Some q \<Rightarrow> Some (Num.Bit0 q)))\<close>
   \<open>take_bit_num n (Num.Bit1 m) =
     (case n of 0 \<Rightarrow> None | Suc n \<Rightarrow> Some (case take_bit_num n m of None \<Rightarrow> Num.One | Some q \<Rightarrow> Num.Bit1 q))\<close>
-    apply (cases n; simp)+
-  done
+  by (cases n; simp)+
 
 end

@@ -6,9 +6,7 @@ section \<open>Rings\<close>
 
 theory Ring imports Group begin
 
-no_notation
-  cadd  (infixl \<open>\<oplus>\<close> 65) and
-  cmult  (infixl \<open>\<otimes>\<close> 70)
+no_notation cadd  (infixl \<open>\<oplus>\<close> 65) and cmult  (infixl \<open>\<otimes>\<close> 70)
 
 (*First, we must simulate a record declaration:
 record ring = monoid +
@@ -46,7 +44,7 @@ definition
   "a_inv(R) \<equiv> m_inv (<carrier(R), add_field(R), zero(R), 0>)"
 
 definition
-  minus :: "[i,i,i] \<Rightarrow> i" (\<open>(_ \<ominus>\<index> _)\<close> [65,66] 65) where
+  minus :: "[i,i,i] \<Rightarrow> i" (\<open>(\<open>notation=\<open>infix \<ominus>\<close>\<close>_ \<ominus>\<index> _)\<close> [65,66] 65) where
   "\<lbrakk>x \<in> carrier(R); y \<in> carrier(R)\<rbrakk> \<Longrightarrow> x \<ominus>\<^bsub>R\<^esub> y = x \<oplus>\<^bsub>R\<^esub> (\<ominus>\<^bsub>R\<^esub> y)"
 
 locale abelian_monoid = fixes G (structure)

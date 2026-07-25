@@ -42,6 +42,9 @@ sig
   val class_space: Proof.context -> Name_Space.T
   val type_space: Proof.context -> Name_Space.T
   val const_space: Proof.context -> Name_Space.T
+  val lookup_free: Proof.context -> string -> string option
+  val printable_const: Proof.context -> string -> bool
+  val exclude_consts: Symset.T -> Proof.context -> Proof.context
   val defs_context: Proof.context -> Defs.context
   val intern_class: Proof.context -> xstring -> string
   val intern_type: Proof.context -> xstring -> string
@@ -53,6 +56,8 @@ sig
   val markup_type: Proof.context -> string -> string
   val pretty_type: Proof.context -> string -> Pretty.T
   val extern_const: Proof.context -> string -> xstring
+  val extern_fixed: Proof.context -> string -> string
+  val extern_entity: Proof.context -> string -> string
   val markup_const: Proof.context -> string -> string
   val pretty_const: Proof.context -> string -> Pretty.T
   val transfer: theory -> Proof.context -> Proof.context
@@ -95,6 +100,7 @@ sig
   val read_term_schematic: Proof.context -> string -> term
   val read_term_abbrev: Proof.context -> string -> term
   val show_abbrevs: bool Config.T
+  val contract_abbrevs: Proof.context -> term -> term
   val expand_abbrevs: Proof.context -> term -> term
   val cert_term: Proof.context -> term -> term
   val cert_prop: Proof.context -> term -> term
@@ -161,6 +167,9 @@ sig
     Proof.context -> Proof.context
   val generic_syntax: bool -> Syntax.mode -> (string * typ * mixfix) list ->
     Context.generic -> Context.generic
+  val generic_syntax_deps: (string * string list) list -> Context.generic -> Context.generic
+  val translations: bool -> Ast.ast Syntax.trrule list -> Proof.context -> Proof.context
+  val generic_translations: bool -> Ast.ast Syntax.trrule list -> Context.generic -> Context.generic
   val type_notation: bool -> Syntax.mode -> (typ * mixfix) list -> Proof.context -> Proof.context
   val notation: bool -> Syntax.mode -> (term * mixfix) list -> Proof.context -> Proof.context
   val generic_type_notation: bool -> Syntax.mode -> (typ * mixfix) list -> morphism ->
@@ -247,7 +256,8 @@ datatype data =
    {mode: mode,                  (*inner syntax mode*)
     syntax: Local_Syntax.T,      (*local syntax*)
     tsig: Type.tsig * Type.tsig, (*local/global type signature -- local name space / defsort only*)
-    consts: Consts.T * Consts.T, (*local/global consts -- local name space / abbrevs only*)
+    consts: Symset.T * Consts.T * Consts.T,
+      (*exclude consts, local/global consts -- local name space / abbrevs only*)
     facts: Facts.T,              (*local facts, based on initial global facts*)
     cases: cases};               (*named case contexts*)
 
@@ -261,7 +271,7 @@ structure Data = Proof_Data
     make_data (mode_default,
       Local_Syntax.init thy,
       (Type.change_ignore (Sign.tsig_of thy), Sign.tsig_of thy),
-      (Consts.change_ignore (Sign.consts_of thy), Sign.consts_of thy),
+      (Symset.empty, Consts.change_ignore (Sign.consts_of thy), Sign.consts_of thy),
       Global_Theory.facts_of thy,
       empty_cases);
 );
@@ -298,6 +308,8 @@ fun map_consts f =
   map_data (fn (mode, syntax, tsig, consts, facts, cases) =>
     (mode, syntax, tsig, f consts, facts, cases));
 
+fun map_local_consts f = map_consts (fn (a, b, c) => (a, f b, c));
+
 fun map_facts_result f =
   map_data_result (fn (mode, syntax, tsig, consts, facts, cases) =>
     let val (res, facts') = f facts
@@ -322,7 +334,8 @@ val set_defsort = map_tsig o apfst o Type.set_defsort;
 fun default_sort ctxt = the_default (Type.defaultS (tsig_of ctxt)) o Variable.def_sort ctxt;
 fun arity_sorts ctxt = Type.arity_sorts (Context.Proof ctxt) (tsig_of ctxt);
 
-val consts_of = #1 o #consts o rep_data;
+val exclude_consts_of = #1 o #consts o rep_data;
+val consts_of = #2 o #consts o rep_data;
 val cases_of = #cases o rep_data;
 
 
@@ -350,11 +363,37 @@ val qualified = map_naming o Name_Space.qualified;
 val concealed = map_naming Name_Space.concealed;
 
 
+(* const vs. free *)
+
+val const_space = Consts.space_of o consts_of;
+
+fun is_const_declared ctxt x =
+  let val space = const_space ctxt
+  in Name_Space.declared space (Name_Space.intern space x) end;
+
+fun lookup_free ctxt x =
+  if Variable.is_const ctxt x then NONE
+  else
+    (case Variable.lookup_fixed ctxt x of
+      NONE =>
+        let
+          val is_const = Long_Name.is_qualified x orelse is_const_declared ctxt x;
+          val is_free_declared = is_some (Variable.default_type ctxt x);
+        in if not is_const orelse is_free_declared then SOME x else NONE end
+    | fixed => fixed);
+
+fun printable_const ctxt x =
+  is_none (lookup_free ctxt x) andalso
+    not (Symset.member (exclude_consts_of ctxt) x);
+
+fun exclude_consts names2 =
+  map_consts (fn (names1, consts, thy_consts) => (Symset.union names1 names2, consts, thy_consts));
+
+
 (* name spaces *)
 
 val class_space = Type.class_space o tsig_of;
 val type_space = Type.type_space o tsig_of;
-val const_space = Consts.space_of o consts_of;
 
 fun defs_context ctxt = (ctxt, (const_space ctxt, type_space ctxt));
 
@@ -364,31 +403,47 @@ val intern_const = Name_Space.intern o const_space;
 
 fun extern_class ctxt = Name_Space.extern ctxt (class_space ctxt);
 fun extern_type ctxt = Name_Space.extern ctxt (type_space ctxt);
-fun extern_const ctxt = Name_Space.extern ctxt (const_space ctxt);
+fun extern_const ctxt = Name_Space.extern_if (printable_const ctxt) ctxt (const_space ctxt);
+fun extern_fixed ctxt x = if Name.is_skolem x then Variable.revert_fixed ctxt x else x;
 
-fun markup_class ctxt c = Name_Space.markup_extern ctxt (class_space ctxt) c |-> Markup.markup;
-fun markup_type ctxt c = Name_Space.markup_extern ctxt (type_space ctxt) c |-> Markup.markup;
-fun markup_const ctxt c = Name_Space.markup_extern ctxt (const_space ctxt) c |-> Markup.markup;
+fun extern_entity ctxt =
+  Lexicon.unmark_entity
+   {case_class = extern_class ctxt,
+    case_type = extern_type ctxt,
+    case_const = extern_const ctxt,
+    case_fixed = extern_fixed ctxt,
+    case_default = I};
 
-fun pretty_class ctxt c = Name_Space.markup_extern ctxt (class_space ctxt) c |> Pretty.mark_str;
-fun pretty_type ctxt c = Name_Space.markup_extern ctxt (type_space ctxt) c |> Pretty.mark_str;
-fun pretty_const ctxt c = Name_Space.markup_extern ctxt (const_space ctxt) c |> Pretty.mark_str;
+fun markup_class ctxt c = Name_Space.markups_extern ctxt (class_space ctxt) c |-> Markup.markups;
+fun markup_type ctxt c = Name_Space.markups_extern ctxt (type_space ctxt) c |-> Markup.markups;
+fun markup_const ctxt c = Name_Space.markups_extern ctxt (const_space ctxt) c |-> Markup.markups;
+
+fun pretty_class ctxt c = Name_Space.markups_extern ctxt (class_space ctxt) c |> Pretty.marks_str;
+fun pretty_type ctxt c = Name_Space.markups_extern ctxt (type_space ctxt) c |> Pretty.marks_str;
+fun pretty_const ctxt c = Name_Space.markups_extern ctxt (const_space ctxt) c |> Pretty.marks_str;
 
 
 (* theory transfer *)
 
-fun transfer_syntax thy ctxt = ctxt |>
-  map_syntax (Local_Syntax.rebuild thy) |>
-  map_tsig (fn tsig as (local_tsig, global_tsig) =>
-    let val thy_tsig = Sign.tsig_of thy in
-      if Type.eq_tsig (thy_tsig, global_tsig) then tsig
-      else (Type.merge_tsig (Context.Proof ctxt) (local_tsig, thy_tsig), thy_tsig)  (*historic merge order*)
-    end) |>
-  map_consts (fn consts as (local_consts, global_consts) =>
-    let val thy_consts = Sign.consts_of thy in
-      if Consts.eq_consts (thy_consts, global_consts) then consts
-      else (Consts.merge (local_consts, thy_consts), thy_consts)  (*historic merge order*)
-    end);
+fun transfer_syntax thy ctxt =
+  let
+    val thy_ctxt =
+      Proof_Context.init_global thy
+      |> Context_Position.restore_visible ctxt;
+  in
+    ctxt |>
+    map_syntax (Local_Syntax.rebuild thy_ctxt) |>
+    map_tsig (fn tsig as (local_tsig, global_tsig) =>
+      let val thy_tsig = Sign.tsig_of thy in
+        if Type.eq_tsig (thy_tsig, global_tsig) then tsig
+        else (Type.merge_tsig (Context.Proof ctxt) (local_tsig, thy_tsig), thy_tsig)  (*historic merge order*)
+      end) |>
+    map_consts (fn consts as (exclude_consts, local_consts, global_consts) =>
+      let val thy_consts = Sign.consts_of thy in
+        if Consts.eq_consts (thy_consts, global_consts) then consts
+        else (exclude_consts, Consts.merge (local_consts, thy_consts), thy_consts)  (*historic merge order*)
+      end)
+  end;
 
 fun transfer thy = Context.raw_transfer thy #> transfer_syntax thy;
 
@@ -419,14 +474,14 @@ fun markup_extern_fact _ "" = ([], "")
   | markup_extern_fact ctxt name =
       let
         val facts = facts_of_fact ctxt name;
-        val (markup, xname) = Facts.markup_extern ctxt facts name;
-        val markups =
-          if Facts.is_dynamic facts name then [markup, Markup.dynamic_fact name]
-          else [markup];
-      in (markups, xname) end;
+        val (markups, xname) = Facts.markups_extern ctxt facts name;
+        val markups' =
+          if Facts.is_dynamic facts name then markups @ [Markup.dynamic_fact name]
+          else markups;
+      in (markups', xname) end;
 
 fun pretty_thm_name ctxt (name, i) =
-  Facts.pretty_thm_name (Context.Proof ctxt) (facts_of_fact ctxt name) (name, i);
+  Facts.pretty_thm_name ctxt (facts_of_fact ctxt name) (name, i);
 
 val print_thm_name = Pretty.string_of oo pretty_thm_name;
 
@@ -456,7 +511,7 @@ fun pretty_fact ctxt =
      | (a, [th]) =>
         Pretty.block [pretty_fact_name ctxt a, Pretty.str ":", Pretty.brk 1, pretty_thm th]
      | (a, ths) =>
-        Pretty.block (Pretty.fbreaks (pretty_fact_name ctxt a :: Pretty.str ":" :: pretty_thms ths))
+        Pretty.block (pretty_fact_name ctxt a :: Pretty.fbreaks (Pretty.str ":" :: pretty_thms ths))
   end;
 
 
@@ -477,7 +532,7 @@ fun check_class ctxt (xname, pos) =
             [Name_Space.completion (Context.Proof ctxt) class_space (K true) (xname, pos)]);
     val reports =
       if Context_Position.is_reported ctxt pos
-      then [(pos, Name_Space.markup class_space name)] else [];
+      then map (pair pos) (Name_Space.markups class_space name) @ [(pos, Markup.tclass)] else [];
   in (name, reports) end;
 
 fun read_class ctxt text =
@@ -537,10 +592,13 @@ fun check_type_name {proper, strict} ctxt (c, pos) =
   else
     let
       val ((d, reports), decl) = Type.check_decl (Context.Proof ctxt) (tsig_of ctxt) (c, pos);
+      val reports' =
+        if Context_Position.is_reported ctxt pos
+        then reports @ [(pos, Markup.tconst)] else reports;
       val _ =
         if strict andalso not (Type.decl_logical decl)
         then error ("Bad type name: " ^ quote d ^ Position.here pos) else ();
-    in (Type (d, replicate (Type.decl_args decl) dummyT), reports) end;
+    in (Type (d, replicate (Type.decl_args decl) dummyT), reports') end;
 
 fun read_type_name flags ctxt text =
   let
@@ -563,24 +621,38 @@ fun check_const {proper, strict} ctxt (c, ps) =
       Name.reject_internal (c, ps) handle ERROR msg =>
         error (msg ^ consts_completion_message ctxt (c, ps));
     fun err msg = error (msg ^ Position.here_list ps);
-    val consts = consts_of ctxt;
+
     val fixed = if proper then NONE else Variable.lookup_fixed ctxt c;
+    val const = Variable.lookup_const ctxt c;
+    val consts = consts_of ctxt;
+
+    val is_reported = Context_Position.is_reported ctxt;
     val (t, reports) =
-      (case (fixed, Variable.lookup_const ctxt c) of
-        (SOME x, NONE) =>
-          let
-            val reports = ps
-              |> filter (Context_Position.is_reported ctxt)
-              |> map (fn pos => (pos, Markup.name x (Variable.markup ctxt x)));
-          in (Free (x, infer_type ctxt (x, dummyT)), reports) end
-      | (_, SOME d) =>
-          let
-            val T = Consts.type_scheme consts d handle TYPE (msg, _, _) => err msg;
-            val reports = ps
-              |> filter (Context_Position.is_reported ctxt)
-              |> map (fn pos => (pos, Name_Space.markup (Consts.space_of consts) d));
-          in (Const (d, T), reports) end
-      | _ => Consts.check_const (Context.Proof ctxt) consts (c, ps));
+      if is_some fixed andalso is_none const then
+        let
+          val x = the fixed;
+          val reports =
+            ps |> maps (fn pos =>
+              if is_reported pos then [(pos, Markup.name x (Variable.markup ctxt x))]
+              else []);
+        in (Free (x, infer_type ctxt (x, dummyT)), reports) end
+      else if is_some const then
+        let
+          val d = the const;
+          val T = Consts.type_scheme consts d handle TYPE (msg, _, _) => err msg;
+          val reports =
+            ps |> maps (fn pos =>
+              if is_reported pos then
+                map (pair pos) (Name_Space.markups (Consts.space_of consts) d) @
+                  [(pos, Markup.const)]
+              else []);
+        in (Const (d, T), reports) end
+      else
+        let
+          val (d, reports1) = Consts.check_const (Context.Proof ctxt) consts (c, ps);
+          val reports2 =
+            ps |> maps (fn pos => if is_reported pos then [(pos, Markup.const)] else []);
+        in (d, reports1 @ reports2) end;
     val _ =
       (case (strict, t) of
         (true, Const (d, _)) =>
@@ -654,16 +726,24 @@ end;
 
 val show_abbrevs = Config.declare_bool ("show_abbrevs", \<^here>) (K true);
 
-fun contract_abbrevs ctxt t =
+fun contract_abbrevs ctxt tm =
   let
     val thy = theory_of ctxt;
     val consts = consts_of ctxt;
     val Mode {abbrev, ...} = get_mode ctxt;
-    val retrieve = Consts.retrieve_abbrevs consts (print_mode_value () @ [""]);
-    fun match_abbrev u = Option.map #1 (get_first (Pattern.match_rew thy u) (retrieve u));
   in
-    if abbrev orelse not (Config.get ctxt show_abbrevs) orelse not (can Term.type_of t) then t
-    else Pattern.rewrite_term_top thy [] [match_abbrev] t
+    if abbrev orelse not (Config.get ctxt show_abbrevs) orelse not (can Term.type_of tm) then tm
+    else
+      let
+        val inst = #1 (Variable.import_inst true [tm] (Variable.declare_names tm ctxt));
+        val nets = Consts.revert_abbrevs consts (print_mode_value () @ [""]);
+        val rew = Option.map #1 oo Pattern.match_rew thy;
+        fun match_abbrev t = get_first (fn net => get_first (rew t) (Item_Net.retrieve net t)) nets;
+      in
+        Term_Subst.instantiate inst tm
+        |> Pattern.rewrite_term_yoyo thy [] [match_abbrev]
+        |> Term_Subst.instantiate_frees (Variable.import_inst_revert inst)
+      end
   end;
 
 
@@ -726,7 +806,7 @@ fun prepare_sorts_env ctxt tys =
           Vartab.insert (op =) (xi, Type.minimize_sort tsig S) env
             handle Vartab.DUP _ =>
               error ("Inconsistent sort constraints for type variable " ^
-                quote (Term.string_of_vname' xi) ^ Position.here_list ps)
+                quote (Term.string_of_vname' xi) ^ Position.here_list (map #pos ps))
       end;
 
     val env =
@@ -757,14 +837,14 @@ fun prepare_sorts_env ctxt tys =
 
     fun get_sort_reports xi raw_S =
       let
-        val ps = #1 (Term_Position.decode_positionS raw_S);
+        val ps = map #pos (#1 (Term_Position.decode_positionS raw_S));
         val S = get_sort xi raw_S handle ERROR msg => error (msg ^ Position.here_list ps);
       in fold (add_report S) ps end;
 
     val reports =
       (fold o fold_atyps)
         (fn T =>
-          if Term_Position.is_positionT T then I
+          if Term_Position.detect_positionT T then I
           else
             (case T of
               TFree (x, raw_S) => get_sort_reports (x, ~1) raw_S
@@ -776,7 +856,7 @@ fun prepare_sorts_env ctxt tys =
 fun replace_sortsT_same get_sort =
   Term.map_atyps_same
     (fn T =>
-      if Term_Position.is_positionT T then raise Same.SAME
+      if Term_Position.detect_positionT T then raise Same.SAME
       else
         (case T of
           TFree (x, raw_S) => TFree (x, Same.function_eq (op =) (get_sort (x, ~1)) raw_S)
@@ -1081,7 +1161,7 @@ fun alias_fact b c ctxt = map_facts (Facts.alias (naming_of ctxt) b c) ctxt;
 (* variables *)
 
 fun declare_var (x, opt_T, mx) ctxt =
-  let val T = (case opt_T of SOME T => T | NONE => Mixfix.default_constraint mx)
+  let val T = (case opt_T of SOME T => T | NONE => Mixfix.default_constraint ctxt mx)
   in (T, ctxt |> Variable.declare_constraints (Free (x, T))) end;
 
 fun add_syntax vars ctxt =
@@ -1133,11 +1213,29 @@ fun check_syntax_const ctxt (c, pos) =
   else error ("Unknown syntax const: " ^ quote c ^ Position.here pos);
 
 fun syntax add mode args ctxt =
-  let val args' = map (pair Local_Syntax.Const) args
-  in ctxt |> map_syntax (#2 o Local_Syntax.update_modesyntax ctxt add mode args') end;
+  let
+    val add' = Syntax.effective_polarity ctxt add;
+    val args' = map (pair Local_Syntax.Const) args;
+  in ctxt |> map_syntax (#2 o Local_Syntax.update_modesyntax ctxt add' mode args') end;
 
 fun generic_syntax add mode args =
-  Context.mapping (Sign.syntax add mode args) (syntax add mode args);
+  Context.mapping (Sign.syntax_global add mode args) (syntax add mode args);
+
+fun generic_syntax_deps args =
+  Context.mapping (Sign.syntax_deps args)
+    (fn ctxt => map_syntax (Local_Syntax.syntax_deps ctxt args) ctxt);
+
+
+(* translations *)
+
+fun translations add args ctxt =
+  let
+    val add' = Syntax.effective_polarity ctxt add;
+    val _ = Sign.check_translations ctxt args;
+  in ctxt |> map_syntax (Local_Syntax.translations ctxt add' args) end;
+
+fun generic_translations add args =
+  Context.mapping (Sign.translations_global add args) (translations add args);
 
 
 (* notation *)
@@ -1156,8 +1254,10 @@ fun const_syntax _ (Free (x, T), mx) = SOME (Local_Syntax.Fixed, (x, T, mx))
   | const_syntax _ _ = NONE;
 
 fun gen_notation make_syntax add mode args ctxt =
-  ctxt |> map_syntax_idents
-    (Local_Syntax.update_modesyntax ctxt add mode (map_filter (make_syntax ctxt) args));
+  let
+    val add' = Syntax.effective_polarity ctxt add;
+    val args' = map_filter (make_syntax ctxt) args;
+  in ctxt |> map_syntax_idents (Local_Syntax.update_modesyntax ctxt add' mode args') end;
 
 in
 
@@ -1171,14 +1271,14 @@ fun generic_type_notation add mode args phi =
         val T' = Morphism.typ phi T;
         val similar = (case (T, T') of (Type (c, _), Type (c', _)) => c = c' | _ => false);
       in if similar then SOME (T', mx) else NONE end);
-  in Context.mapping (Sign.type_notation add mode args') (type_notation add mode args') end;
+  in Context.mapping (Sign.type_notation_global add mode args') (type_notation add mode args') end;
 
 fun generic_notation add mode args phi =
   let
     val args' = args |> map_filter (fn (t, mx) =>
       let val t' = Morphism.term phi t
       in if Term.aconv_untyped (t, t') then SOME (t', mx) else NONE end);
-  in Context.mapping (Sign.notation add mode args') (notation add mode args') end;
+  in Context.mapping (Sign.notation_global add mode args') (notation add mode args') end;
 
 end;
 
@@ -1186,7 +1286,7 @@ end;
 (* aliases *)
 
 fun type_alias b c ctxt = (map_tsig o apfst) (Type.type_alias (naming_of ctxt) b c) ctxt;
-fun const_alias b c ctxt = (map_consts o apfst) (Consts.alias (naming_of ctxt) b c) ctxt;
+fun const_alias b c ctxt = map_local_consts (Consts.alias (naming_of ctxt) b c) ctxt;
 
 
 (* local constants *)
@@ -1196,7 +1296,7 @@ fun add_const_constraint (c, opt_T) ctxt =
     fun prepT raw_T =
       let val T = cert_typ ctxt raw_T
       in cert_term ctxt (Const (c, T)); T end;
-  in ctxt |> (map_consts o apfst) (Consts.constrain (c, Option.map prepT opt_T)) end;
+  in ctxt |> map_local_consts (Consts.constrain (c, Option.map prepT opt_T)) end;
 
 fun add_abbrev mode (b, raw_t) ctxt =
   let
@@ -1207,12 +1307,12 @@ fun add_abbrev mode (b, raw_t) ctxt =
       |> Consts.abbreviate (Context.Proof ctxt) (tsig_of ctxt) mode (b, t);
   in
     ctxt
-    |> (map_consts o apfst) (K consts')
+    |> map_local_consts (K consts')
     |> Variable.declare_term rhs
     |> pair (lhs, rhs)
   end;
 
-fun revert_abbrev mode c = (map_consts o apfst) (Consts.revert_abbrev mode c);
+fun revert_abbrev mode c = map_local_consts (Consts.revert_abbrev mode c);
 
 fun generic_add_abbrev mode arg =
   Context.mapping_result (Sign.add_abbrev mode arg) (add_abbrev mode arg);
@@ -1232,7 +1332,7 @@ fun gen_fixes prep_var raw_vars ctxt =
     val _ =
       Context_Position.reports ctxt'
         (flat (map2 (fn x => fn pos =>
-          [(pos, Variable.markup ctxt' x), (pos, Variable.markup_entity_def ctxt' x)])
+          (pos, Variable.markup ctxt' x) :: map (pair pos) (Variable.markups_entity_def ctxt' x))
             xs (map (Binding.pos_of o #1) vars)));
     val vars' = map2 (fn x => fn (_, opt_T, mx) => (x, opt_T, mx)) xs vars;
     val (Ts, ctxt'') = fold_map declare_var vars' ctxt';
@@ -1451,20 +1551,20 @@ val print_syntax = Syntax.print_syntax o syntax_of;
 fun pretty_abbrevs verbose show_globals ctxt =
   let
     val space = const_space ctxt;
-    val (constants, global_constants) =
-      apply2 (#constants o Consts.dest) (#consts (rep_data ctxt));
-    val globals = Symtab.make global_constants;
+    val (_, consts, global_consts) = #consts (rep_data ctxt);
+    val constants = #constants (Consts.dest consts);
+    val globals = Symtab.make (#constants (Consts.dest global_consts));
     fun add_abbr (_, (_, NONE)) = I
       | add_abbr (c, (T, SOME t)) =
           if not show_globals andalso Symtab.defined globals c then I
           else cons (c, Logic.mk_equals (Const (c, T), t));
-    val abbrevs = Name_Space.markup_entries verbose ctxt space (fold add_abbr constants []);
+    val abbrevs = Name_Space.markups_entries verbose ctxt space (fold add_abbr constants []);
   in
     if null abbrevs then []
     else [Pretty.big_list "abbreviations:" (map (pretty_term_abbrev ctxt o #2) abbrevs)]
   end;
 
-fun print_abbrevs verbose = Pretty.writeln_chunks o pretty_abbrevs verbose true;
+fun print_abbrevs verbose = Pretty.writeln o Pretty.chunks o pretty_abbrevs verbose true;
 
 
 (* term bindings *)
@@ -1496,7 +1596,7 @@ fun pretty_local_facts verbose ctxt =
   end;
 
 fun print_local_facts verbose ctxt =
-  Pretty.writeln_chunks (pretty_local_facts verbose ctxt);
+  Pretty.writeln (Pretty.chunks (pretty_local_facts verbose ctxt));
 
 
 (* named local contexts *)
@@ -1557,7 +1657,7 @@ fun print_cases_proof ctxt0 ctxt =
     fun print_case name xs =
       (case trim_names xs of
         [] => print_name name
-      | xs' => enclose "(" ")" (space_implode " " (map print_name (name :: xs'))));
+      | xs' => enclose "(" ")" (implode_space (map print_name (name :: xs'))));
 
     fun is_case x t =
       x = Rule_Cases.case_conclN andalso not (Term.exists_subterm Term.is_Var t);

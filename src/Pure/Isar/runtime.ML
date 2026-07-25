@@ -41,9 +41,7 @@ exception TOPLEVEL_ERROR;
 (* pretty *)
 
 fun pretty_exn (exn: exn) =
-  Pretty.from_ML
-    (ML_Pretty.from_polyml
-      (ML_system_pretty (exn, FixedInt.fromInt (ML_Print_Depth.get_print_depth ()))));
+  Pretty.from_ML (ML_system_pretty (exn, FixedInt.fromInt (ML_Print_Depth.get_print_depth ())));
 
 
 (* exn_context *)
@@ -108,11 +106,14 @@ fun exn_messages e =
         EXCURSION_FAIL (exn, loc) =>
           map (fn ((i, msg), id) => ((i, msg ^ Markup.markup Markup.no_report ("\n" ^ loc)), id))
             (sorted_msgs context exn)
+      | Morphism.MORPHISM (name, exn) =>
+          map (fn ((i, msg), id) => ((i, "MORPHISM " ^ quote name ^ "\n" ^ msg), id))
+            (sorted_msgs context exn)
       | _ =>
         let
           val msg =
             (case exn of
-              Timeout.TIMEOUT t => Timeout.print t
+              Timeout.TIMEOUT t => Timeout.message t
             | TOPLEVEL_ERROR => "Error"
             | ERROR "" => "Error"
             | ERROR msg => msg

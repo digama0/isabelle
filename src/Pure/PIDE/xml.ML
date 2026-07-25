@@ -15,8 +15,8 @@ sig
   val int_atom: int A
   val bool_atom: bool A
   val unit_atom: unit A
-  val self: Output_Primitives.XML.body T
-  val tree: Output_Primitives.XML.tree T
+  val self: XML.body T
+  val tree: XML.tree T
   val properties: Properties.T T
   val string: string T
   val int: int T
@@ -31,24 +31,14 @@ end;
 
 signature XML =
 sig
-  type attributes = (string * string) list
-  datatype tree =
-      Elem of (string * attributes) * tree list
-    | Text of string
-  type body = tree list
+  include XML
   val blob: string list -> body
   val is_empty: tree -> bool
   val is_empty_body: body -> bool
   val string: string -> body
   val enclose: string -> string -> body -> body
-  val xml_elemN: string
-  val xml_nameN: string
-  val xml_bodyN: string
-  val wrap_elem: ((string * attributes) * tree list) * tree list -> tree
-  val unwrap_elem: tree -> (((string * attributes) * tree list) * tree list) option
-  val add_content: tree -> Buffer.T -> Buffer.T
-  val content_of: body -> string
   val trim_blanks: body -> body
+  val filter_elements: {remove: string -> bool, expose: string -> bool} -> body -> body
   val header: string
   val text: string -> string
   val element: string -> attributes -> string list -> string
@@ -71,7 +61,7 @@ struct
 
 (** XML trees **)
 
-open Output_Primitives.XML;
+open XML;
 
 val blob = map Text;
 
@@ -86,34 +76,6 @@ fun string "" = []
 fun enclose bg en body = string bg @ body @ string en;
 
 
-(* wrapped elements *)
-
-val xml_elemN = "xml_elem";
-val xml_nameN = "xml_name";
-val xml_bodyN = "xml_body";
-
-fun wrap_elem (((a, atts), body1), body2) =
-  Elem ((xml_elemN, (xml_nameN, a) :: atts), Elem ((xml_bodyN, []), body1) :: body2);
-
-fun unwrap_elem (Elem ((name, (n, a) :: atts), Elem ((name', atts'), body1) :: body2)) =
-      if name = xml_elemN andalso n = xml_nameN andalso name' = xml_bodyN andalso null atts'
-      then SOME (((a, atts), body1), body2) else NONE
-  | unwrap_elem _ = NONE;
-
-
-(* text content *)
-
-fun add_content tree =
-  (case unwrap_elem tree of
-    SOME (_, ts) => fold add_content ts
-  | NONE =>
-      (case tree of
-        Elem (_, ts) => fold add_content ts
-      | Text s => Buffer.add s));
-
-val content_of = Buffer.build_content o fold add_content;
-
-
 (* trim blanks *)
 
 fun trim_blanks trees =
@@ -121,6 +83,26 @@ fun trim_blanks trees =
     (fn Elem (markup, body) => [Elem (markup, trim_blanks body)]
       | Text s => s |> raw_explode |> trim Symbol.is_blank |> implode |> string);
 
+
+(* filter markup elements *)
+
+fun filter_elements {remove, expose} =
+  let
+    fun filter ts =
+      ts |> maps (fn t =>
+        (case XML.unwrap_elem t of
+          SOME ((markup, body1), body2) =>
+            if remove (#1 markup) then []
+            else if expose (#1 markup) then filter body2
+            else [XML.wrap_elem ((markup, body1), filter body2)]
+        | NONE =>
+            (case t of
+              XML.Elem (markup, body) =>
+                if remove (#1 markup) then []
+                else if expose (#1 markup) then filter body
+                else [XML.Elem (markup, filter body)]
+            | _ => [t])));
+  in filter end;
 
 
 (** string representation **)
@@ -150,7 +132,7 @@ val text = translate_string encode;
 (* elements *)
 
 fun elem name atts =
-  space_implode " " (name :: map (fn (a, x) => a ^ "=\"" ^ text x ^ "\"") atts);
+  implode_space (name :: map (fn (a, x) => a ^ "=\"" ^ text x ^ "\"") atts);
 
 fun element name atts body =
   let val b = implode body in
@@ -182,7 +164,7 @@ val string_of = content_depth ~1;
 
 fun pretty depth tree = Pretty.str (content_depth (Int.max (0, depth)) tree);
 
-val _ = ML_system_pp (fn depth => fn _ => Pretty.to_polyml o pretty (FixedInt.toInt depth));
+val _ = ML_system_pp (fn depth => fn _ => Pretty.to_ML o pretty (FixedInt.toInt depth));
 
 
 

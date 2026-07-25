@@ -177,13 +177,13 @@ fun add_podef typ set opt_bindings tac thy =
       Abs ("x", newT, Abs ("y", newT, below_const oldT $ (RepC $ Bound 1) $ (RepC $ Bound 0))))
     val ((_, (_, below_ldef)), lthy) = thy
       |> Class.instantiation ([full_tname], lhs_tfrees, \<^sort>\<open>po\<close>)
-      |> Specification.definition NONE [] []
+      |> Specification.definition {verbose = false} NONE [] []
           ((Binding.prefix_name "below_" (Thm.def_binding name), []), below_eqn)
     val ctxt_thy = Proof_Context.init_global (Proof_Context.theory_of lthy)
     val below_def = singleton (Proof_Context.export lthy ctxt_thy) below_ldef
     val thy = lthy
       |> Class.prove_instantiation_exit
-          (fn ctxt => resolve_tac ctxt [@{thm typedef_po} OF [type_definition, below_def]] 1)
+          (fn ctxt => resolve_tac ctxt [@{thm typedef_po_class} OF [type_definition, below_def]] 1)
   in ((info, below_def), thy) end
 
 fun prepare_cpodef

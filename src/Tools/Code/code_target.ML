@@ -9,9 +9,6 @@ sig
   val cert_tyco: Proof.context -> string -> string
   val read_tyco: Proof.context -> string -> string
 
-  datatype pretty_modules = Singleton of string * Pretty.T | Hierarchy of (string list * Pretty.T) list;
-  val next_export: theory -> string * theory
-
   val export_code_for: ({physical: bool} * (Path.T * Position.T)) option -> string -> string
     -> int option -> Token.T list  -> Code_Thingol.program -> bool -> Code_Symbol.T list
     -> local_theory -> local_theory
@@ -47,14 +44,18 @@ sig
     -> Code_Symbol.T list -> bool -> ((string * class list) list * Code_Thingol.itype) * Code_Thingol.iterm
     -> ((string list * Bytes.T) list * string) * (Code_Symbol.T -> string option)
 
+  datatype pretty_modules = Singleton of string * Pretty.T | Hierarchy of (string list * Pretty.T) list;
   type serializer
-  type literals = Code_Printer.literals
+  type run_command = {module_name: string, cwd: Path.T} -> string * Process_Result.T
+  val run_command_bash: (string -> string) -> run_command
   type language
   type ancestry
   val assert_target: theory -> string -> string
   val add_language: string * language -> theory -> theory
   val add_derived_target: string * ancestry -> theory -> theory
-  val the_literals: Proof.context -> string -> literals
+  val language_of_target: theory -> string -> string
+  val the_literals: Proof.context -> string -> Code_Printer.literals
+
   val parse_args: 'a parser -> Token.T list -> 'a
   val default_code_width: int Config.T
 
@@ -72,7 +73,6 @@ struct
 open Basic_Code_Symbol;
 open Basic_Code_Thingol;
 
-type literals = Code_Printer.literals;
 type ('a, 'b, 'c, 'd, 'e, 'f) symbol_attr_decl =
   (string * (string * 'a option) list, string * (string * 'b option) list,
     class * (string * 'c option) list, (class * class) * (string * 'd option) list,
@@ -90,8 +90,6 @@ fun cert_const ctxt const =
     val _ = if Sign.declared_const (Proof_Context.theory_of ctxt) const then ()
       else error ("No such constant: " ^ quote const);
   in const end;
-
-fun read_const ctxt = Code.read_const (Proof_Context.theory_of ctxt);
 
 fun cert_tyco ctxt tyco =
   let
@@ -122,7 +120,7 @@ fun cert_syms ctxt =
     (cert_class ctxt) (apply2 (cert_class ctxt)) (cert_inst ctxt) I;
 
 fun read_syms ctxt =
-  Code_Symbol.map_attr (read_const ctxt) (read_tyco ctxt)
+  Code_Symbol.map_attr (Code.read_const ctxt) (read_tyco ctxt)
     (Proof_Context.read_class ctxt) (apply2 (Proof_Context.read_class ctxt)) (read_inst ctxt) I;
 
 fun cert_syms' ctxt =
@@ -130,7 +128,7 @@ fun cert_syms' ctxt =
     (apfst (cert_class ctxt)) ((apfst o apply2) (cert_class ctxt)) (apfst (cert_inst ctxt)) I;
 
 fun read_syms' ctxt =
-  Code_Symbol.map_attr (apfst (read_const ctxt)) (apfst (read_tyco ctxt))
+  Code_Symbol.map_attr (apfst (Code.read_const ctxt)) (apfst (read_tyco ctxt))
     (apfst (Proof_Context.read_class ctxt)) ((apfst o apply2) (Proof_Context.read_class ctxt)) (apfst (read_inst ctxt)) I;
 
 fun check_name is_module s =
@@ -172,8 +170,10 @@ type serializer = Token.T list
   -> Code_Symbol.T list
   -> pretty_modules * (Code_Symbol.T -> string option);
 
-type language = {serializer: serializer, literals: literals,
-  check: {env_var: string, make_destination: Path.T -> Path.T, make_command: string -> string},
+type run_command = {module_name: string, cwd: Path.T} -> string * Process_Result.T;
+
+type language = {serializer: serializer, literals: Code_Printer.literals,
+  check: {env_var: string, make_destination: Path.T -> Path.T, run_command: run_command},
   evaluation_args: Token.T list};
 
 type ancestry = (string * (Code_Thingol.program -> Code_Thingol.program)) list;
@@ -206,18 +206,6 @@ fun assert_target thy target_name =
   then target_name
   else error ("Unknown code target language: " ^ quote target_name);
 
-fun reset_index thy =
-  if #2 (Targets.get thy) = 0 then NONE
-  else SOME ((Targets.map o apsnd) (K 0) thy);
-
-val _ = Theory.setup (Theory.at_begin reset_index);
-
-fun next_export thy =
-  let
-    val thy' = (Targets.map o apsnd) (fn i => i + 1) thy;
-    val i = #2 (Targets.get thy');
-  in ("export" ^ string_of_int i, thy') end;
-
 fun fold1 f xs = fold f (tl xs) (hd xs);
 
 fun join_ancestry thy target_name =
@@ -230,7 +218,7 @@ fun join_ancestry thy target_name =
     val modify = fold (curry (op o)) modifies I;
     val datas = rev (map (snd o the_target_data o fst) ancestry) @ [this_data];
     val data = fold1 (fn data' => fn data => Code_Printer.merge_data (data, data')) datas;
-  in (modify, (target, data)) end;
+  in { modify = modify, target = target, data = data } end;
 
 fun allocate_target target_name target thy =
   let
@@ -265,6 +253,9 @@ fun add_derived_target (target_name, initial_ancestry) thy =
       ancestry = ancestry} thy
   end;
 
+fun language_of_target thy target_name =
+  hd ((map fst o #ancestry o fst o the o lookup_target_data thy o assert_target thy) target_name @ [target_name])
+
 fun map_data target_name f thy =
   let
     val _ = assert_target thy target_name;
@@ -276,6 +267,18 @@ fun map_data target_name f thy =
 fun map_reserved target_name = map_data target_name o @{apply 3(1)};
 fun map_identifiers target_name = map_data target_name o @{apply 3(2)};
 fun map_printings target_name = map_data target_name o @{apply 3(3)};
+
+fun reset_index thy =
+  if #2 (Targets.get thy) = 0 then NONE
+  else SOME ((Targets.map o apsnd) (K 0) thy);
+
+val _ = Theory.setup (Theory.at_begin reset_index);
+
+fun next_export thy =
+  let
+    val thy' = (Targets.map o apsnd) (fn i => i + 1) thy;
+    val i = #2 (Targets.get thy');
+  in ("export" ^ string_of_int i, thy') end;
 
 
 (** serializers **)
@@ -380,20 +383,31 @@ local
 fun activate_target ctxt target_name =
   let
     val thy = Proof_Context.theory_of ctxt;
-    val (modify, (target, data)) = join_ancestry thy target_name;
+    val { modify, target, data } = join_ancestry thy target_name;
     val serializer = (#serializer o #language) target;
   in { serializer = serializer, data = data, modify = modify } end;
 
-fun project_program_for_syms ctxt syms_hidden syms1 program1 =
+fun report_unimplemented ctxt program requested unimplemented =
   let
-    val syms2 = subtract (op =) syms_hidden syms1;
+    val deps = flat (map_product (fn req => fn unimpl =>
+      Code_Symbol.Graph.irreducible_paths program (req, Constant unimpl)) requested unimplemented)
+    val pretty_dep = space_implode " -> " o map (Code_Symbol.quote ctxt)
+  in
+    error ("No code equations for "
+      ^ commas (map (Proof_Context.markup_const ctxt) unimplemented)
+      ^ ",\nrequested by dependencies\n"
+      ^ space_implode "\n" (map pretty_dep deps))
+  end;
+
+fun project_program_for_syms ctxt syms_hidden requested1 program1 =
+  let
+    val requested2 = subtract (op =) syms_hidden requested1;
     val program2 = Code_Symbol.Graph.restrict (not o member (op =) syms_hidden) program1;
     val unimplemented = Code_Thingol.unimplemented program2;
     val _ =
       if null unimplemented then ()
-      else error ("No code equations for " ^
-        commas (map (Proof_Context.markup_const ctxt) unimplemented));
-    val syms3 = Code_Symbol.Graph.all_succs program2 syms2;
+      else report_unimplemented ctxt program2 requested2 unimplemented;
+    val syms3 = Code_Symbol.Graph.all_succs program2 requested2;
     val program3 = Code_Symbol.Graph.restrict (member (op =) syms3) program2;
   in program3 end;
 
@@ -463,23 +477,26 @@ fun present_code_for ctxt target_name module_name some_width args =
     present_result selects (the_width ctxt some_width) (serializer program false syms)
   end;
 
+fun run_command_bash script : run_command = fn {module_name, cwd} =>
+  let val cmd = script module_name
+  in (cmd, Isabelle_System.bash_process (Bash.script cmd |> Bash.cwd cwd |> Bash.redirect)) end;
+
 fun check_code_for target_name strict args program all_public syms lthy =
   let
-    val { env_var, make_destination, make_command } = #check (the_language lthy target_name);
+    val { env_var, make_destination, run_command } = #check (the_language lthy target_name);
     val format = Code_Printer.format [] 80;
-    fun ext_check p =
+    fun ext_check tmp_dir =
       let
-        val destination = make_destination p;
+        val destination = make_destination tmp_dir;
         val lthy' = lthy
           |> Local_Theory.background_theory
             (export_result (SOME ({physical = true}, (destination, Position.none))) format
               (invoke_serializer lthy target_name generatedN args program all_public syms));
-        val cmd = make_command generatedN;
-        val context_cmd = "cd " ^ File.bash_path p ^ " && " ^ cmd ^ " 2>&1";
+        val (cmd, result) = run_command {module_name = generatedN, cwd = tmp_dir};
+        val _ = Process_Result.print result;
       in
-        if Isabelle_System.bash context_cmd <> 0
-        then error ("Code check failed for " ^ target_name ^ ": " ^ cmd)
-        else lthy'
+        if Process_Result.ok result then lthy'
+        else error ("Code check failed for " ^ target_name ^ ": " ^ cmd)
       end;
   in
     if not (env_var = "") andalso getenv env_var = "" then
@@ -592,7 +609,7 @@ fun check_code_cmd all_public raw_cs seris lthy =
 
 fun add_reserved target_name sym thy =
   let
-    val (_, (_, data)) = join_ancestry thy target_name;
+    val { data, ... } = join_ancestry thy target_name;
     val _ = if member (op =) (Code_Printer.the_reserved data) sym
       then error ("Reserved symbol " ^ quote sym ^ " already declared")
       else ();
@@ -641,31 +658,44 @@ val set_identifiers_cmd = gen_set_identifiers read_name_decls;
 
 (* custom printings *)
 
-fun arrange_printings prep_syms ctxt =
+datatype target_source = Literal of string | File of Path.T
+
+local
+
+val format_source = Pretty.block0 o Pretty.fbreaks o map Pretty.str o split_lines;
+
+fun eval_source (Literal s) = s
+  | eval_source (File p) = File.read p;
+
+fun arrange_printings prep_syms prep_source ctxt =
   let
+    val thy = Proof_Context.theory_of ctxt;
     fun arrange check (sym, target_syns) =
       map (fn (target_name, some_syn) =>
-        (target_name, (sym, Option.map (check ctxt target_name sym) some_syn))) target_syns;
+        (assert_target thy target_name, (sym, Option.map (check ctxt target_name sym) some_syn))) target_syns;
   in
     Code_Symbol.maps_attr'
       (arrange check_const_syntax) (arrange check_tyco_syntax)
         (arrange ((K o K o K) I)) (arrange ((K o K o K) I)) (arrange ((K o K o K) I))
-        (arrange (fn ctxt => fn _ => fn _ => fn (raw_content, raw_syms) =>
-          (Pretty.block0 (Pretty.fbreaks (map Code_Printer.str (split_lines raw_content))),
-            map (prep_syms ctxt) raw_syms)))
+        (arrange (fn ctxt => fn _ => fn _ => fn (source, raw_syms) =>
+          (format_source (prep_source source), map (prep_syms ctxt) raw_syms)))
   end;
 
-fun cert_printings ctxt = cert_syms' ctxt #> arrange_printings cert_syms ctxt;
+fun cert_printings ctxt = cert_syms' ctxt #> arrange_printings cert_syms I ctxt;
 
-fun read_printings ctxt = read_syms' ctxt #> arrange_printings read_syms ctxt;
+fun read_printings ctxt = read_syms' ctxt #> arrange_printings read_syms eval_source ctxt;
 
 fun set_printing (target_name, sym_syn) = map_printings target_name (Code_Symbol.set_data sym_syn);
 
 fun gen_set_printings prep_print_decl raw_print_decls thy =
   fold set_printing (prep_print_decl (Proof_Context.init_global thy) raw_print_decls) thy;
 
+in
+
 val set_printings = gen_set_printings cert_printings;
 val set_printings_cmd = gen_set_printings read_printings;
+
+end;
 
 
 (* concrete syntax *)
@@ -719,6 +749,9 @@ fun parse_symbol_pragmas parse_const parse_tyco parse_class parse_classrel parse
   Parse.enum1 "|" (Parse.group (fn () => "code symbol pragma")
     (parse_symbol_pragma parse_const parse_tyco parse_class parse_classrel parse_inst parse_module));
 
+val parse_target_source = Code_Printer.parse_target_source >> Literal
+  || \<^keyword>\<open>file\<close> |-- Parse.path >> (File o Path.explode);
+
 val code_expr_argsP = Scan.optional (\<^keyword>\<open>(\<close> |-- Parse.args --| \<^keyword>\<open>)\<close>) [];
 
 fun code_expr_inP (all_public, raw_cs) =
@@ -738,10 +771,9 @@ fun code_expr_checkingP (all_public, raw_cs) =
 in
 
 val _ =
-  Outer_Syntax.command \<^command_keyword>\<open>code_reserved\<close>
-    "declare words as reserved for target language"
-    (Parse.name -- Scan.repeat1 Parse.name
-      >> (fn (target, reserveds) => (Toplevel.theory o fold (add_reserved target)) reserveds));
+  Outer_Syntax.command \<^command_keyword>\<open>code_reserved\<close> "declare words as reserved for target language"
+    (Parse.and_list1 (\<^keyword>\<open>(\<close> |-- (Parse.name --| \<^keyword>\<open>)\<close> -- Scan.repeat1 Parse.name))
+      >> (Toplevel.theory o fold (fn (target, reserveds) => fold (add_reserved target) reserveds)));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>code_identifier\<close> "declare mandatory names for code symbols"
@@ -751,8 +783,8 @@ val _ =
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>code_printing\<close> "declare dedicated printing for code symbols"
     (parse_symbol_pragmas (Code_Printer.parse_const_syntax) (Code_Printer.parse_tyco_syntax)
-      Parse.string (Parse.minus >> K ()) (Parse.minus >> K ())
-      (Parse.embedded -- Scan.optional (\<^keyword>\<open>for\<close> |-- parse_simple_symbols) [])
+      Code_Printer.parse_target_source (Parse.minus >> K ()) (Parse.minus >> K ())
+      (parse_target_source -- Scan.optional (\<^keyword>\<open>for\<close> |-- parse_simple_symbols) [])
       >> (Toplevel.theory o fold set_printings_cmd));
 
 val _ =

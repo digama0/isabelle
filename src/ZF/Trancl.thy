@@ -32,16 +32,16 @@ definition
     "trans(r) \<equiv> \<forall>x y z. \<langle>x,y\<rangle>: r \<longrightarrow> \<langle>y,z\<rangle>: r \<longrightarrow> \<langle>x,z\<rangle>: r"
 
 definition
-  trans_on :: "[i,i]\<Rightarrow>o"  (\<open>trans[_]'(_')\<close>)  where
+  trans_on :: "[i,i]\<Rightarrow>o"  (\<open>(\<open>open_block notation=\<open>mixfix trans_on\<close>\<close>trans[_]'(_'))\<close>)  where
     "trans[A](r) \<equiv> \<forall>x\<in>A. \<forall>y\<in>A. \<forall>z\<in>A.
                           \<langle>x,y\<rangle>: r \<longrightarrow> \<langle>y,z\<rangle>: r \<longrightarrow> \<langle>x,z\<rangle>: r"
 
 definition
-  rtrancl :: "i\<Rightarrow>i"  (\<open>(_^*)\<close> [100] 100)  (*refl/transitive closure*)  where
+  rtrancl :: "i\<Rightarrow>i"  (\<open>(\<open>notation=\<open>postfix ^*\<close>\<close>_^*)\<close> [100] 100)  (*refl/transitive closure*)  where
     "r^* \<equiv> lfp(field(r)*field(r), \<lambda>s. id(field(r)) \<union> (r O s))"
 
 definition
-  trancl  :: "i\<Rightarrow>i"  (\<open>(_^+)\<close> [100] 100)  (*transitive closure*)  where
+  trancl  :: "i\<Rightarrow>i"  (\<open>(\<open>notation=\<open>postfix ^+\<close>\<close>_^+)\<close> [100] 100)  (*transitive closure*)  where
     "r^+ \<equiv> r O r^*"
 
 definition

@@ -64,8 +64,8 @@ object Linux {
 
   def package_installed(name: String): Boolean = {
     val result = Isabelle_System.bash("dpkg-query -s " + Bash.string(name))
-    val pattern = """^Status:.*installed.*$""".r.pattern
-    result.ok && result.out_lines.exists(line => pattern.matcher(line).matches)
+    val pattern = """^Status:.*installed.*$""".r.pattern.nn
+    result.ok && result.out_lines.exists(line => pattern.matcher(line).nn.matches)
   }
 
 
@@ -97,8 +97,11 @@ object Linux {
 
     Isabelle_System.bash(
       "adduser --quiet --disabled-password --gecos " + Bash.string(description) +
+        " --home /home/" + Bash.string(name) +
         (if (system) " --system --group --shell /bin/bash " else "") +
         " " + Bash.string(name)).check
+
+    Isabelle_System.bash("usermod -p '*' " + Bash.string(name)).check
 
     if (ssh_setup) {
       val id_rsa = user_home(name) + "/.ssh/id_rsa"

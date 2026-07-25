@@ -7,9 +7,6 @@ Build sessions for profiling of ML heap content.
 package isabelle
 
 
-import java.util.Locale
-
-
 object Profiling {
   /* percentage: precision in permille */
 
@@ -71,41 +68,35 @@ object Profiling {
 
     def make(
       store: Store,
-      session_background: Sessions.Background,
+      session_base: Sessions.Base,
+      dirs: List[Path] = Nil,
       parent: Option[Statistics] = None
     ): Statistics = {
-      val session_base = session_background.base
       val session_name = session_base.session_name
-      val sessions_structure = session_background.sessions_structure
 
-      val session = {
-        val args = session_base.used_theories.map(p => p._1.theory)
-        val eval_args =
-          List("--eval", "use_thy " + ML_Syntax.print_string_bytes("~~/src/Tools/Profiling"))
+      val session_stats =
         Isabelle_System.with_tmp_dir("profiling") { dir =>
-          val put_env = List("ISABELLE_PROFILING" -> dir.implode)
-          File.write(dir + Path.explode("args.yxml"), YXML.string_of_body(encode_args(args)))
-          val session_heaps =
-            ML_Process.session_heaps(store, session_background, logic = session_name)
-          ML_Process(store.options, session_background, session_heaps, args = eval_args,
-            env = Isabelle_System.settings(put_env)).result().check
+          File.write(dir + Path.explode("args.yxml"),
+            YXML.string_of_body(encode_args(session_base.used_theories.map(p => p._1.theory))))
+          val ml_options = store.options + Options.Spec("profiling_dir", Some(dir.implode))
+          Process_Theories.process_theories(ml_options, session_name,
+            dirs = dirs, files = List(Path.explode("~~/src/Tools/Profiling.thy"))).check
           decode_result(YXML.parse_body(Bytes.read(dir + Path.explode("result.yxml"))))
         }
-      }
 
       new Statistics(parent = parent, session = session_name,
-        theories = session.theories,
-        garbage_theories = session.garbage_theories,
-        locales = session.locales,
-        locale_thms = session.locale_thms,
-        global_thms = session.global_thms,
-        heap_size = File.space(store.get_session(session_name).the_heap),
-        thys_id_size = session.sizeof_thys_id,
-        thms_id_size = session.sizeof_thms_id,
-        terms_size = session.sizeof_terms,
-        types_size = session.sizeof_types,
-        names_size = session.sizeof_names,
-        spaces_size = session.sizeof_spaces)
+        theories = session_stats.theories,
+        garbage_theories = session_stats.garbage_theories,
+        locales = session_stats.locales,
+        locale_thms = session_stats.locale_thms,
+        global_thms = session_stats.global_thms,
+        heap_size = store.get_session(session_name).heap_size,
+        thys_id_size = session_stats.sizeof_thys_id,
+        thms_id_size = session_stats.sizeof_thms_id,
+        terms_size = session_stats.sizeof_terms,
+        types_size = session_stats.sizeof_types,
+        names_size = session_stats.sizeof_names,
+        spaces_size = session_stats.sizeof_spaces)
     }
 
     val empty: Statistics = new Statistics()
@@ -128,7 +119,7 @@ object Profiling {
         "spaces_size%")
 
     def header: List[String] =
-      "session" :: header0.flatMap(a => List(a, "\u2211" + a))
+      "session" :: header0.flatMap(a => List(a, Symbol.decode("""\<Sum>""") + a))
   }
 
   final class Statistics private(
@@ -151,7 +142,7 @@ object Profiling {
       if (theories == 0) "0"
       else {
         val x = (theories + garbage_theories).toDouble / theories
-        String.format(Locale.ROOT, "%.1f", x.asInstanceOf[AnyRef])
+        Library.format("%.1f", Value.Double.obj(x))
       }
 
     private def size_percentage(space: Space): Percentage =
@@ -250,12 +241,9 @@ object Profiling {
       build_heap: Boolean = false,
       clean_build: Boolean = false
     ): Build.Results = {
-      val results =
-        Build.build(build_options, progress = progress,
-          selection = selection, build_heap = build_heap, clean_build = clean_build,
-          dirs = sessions_dirs, numa_shuffling = numa_shuffling, max_jobs = max_jobs)
-
-      if (results.ok) results else error("Build failed")
+      Build.build(build_options, progress = progress,
+        selection = selection, build_heap = build_heap, clean_build = clean_build,
+        dirs = sessions_dirs, numa_shuffling = numa_shuffling, max_jobs = max_jobs).check
     }
 
 
@@ -285,8 +273,8 @@ object Profiling {
             parent_stats <- seen.get(parent_name)
           } yield parent_stats
         val stats =
-          Statistics.make(store,
-            build_results.deps.background(session_name),
+          Statistics.make(store, build_results.deps(session_name),
+            dirs = sessions_dirs,
             parent = parent)
         seen += (session_name -> stats)
         stats
@@ -314,7 +302,7 @@ object Profiling {
         var dirs: List[Path] = Nil
         var session_groups: List[String] = Nil
         var max_jobs: Option[Int] = None
-        var options = Options.init(specs = Options.Spec.ISABELLE_BUILD_OPTIONS)
+        var options = Options.init(update = Options.Spec.ISABELLE_BUILD_OPTIONS)
         var verbose = false
         var exclude_sessions: List[String] = Nil
 
@@ -355,21 +343,19 @@ Usage: isabelle profiling [OPTIONS] [SESSIONS ...]
         val progress = new Console_Progress(verbose = verbose)
 
         val results =
-          progress.interrupt_handler {
-            profiling(options,
-              selection = Sessions.Selection(
-                all_sessions = all_sessions,
-                base_sessions = base_sessions,
-                exclude_session_groups = exclude_session_groups,
-                exclude_sessions = exclude_sessions,
-                session_groups = session_groups,
-                sessions = sessions),
-              progress = progress,
-              dirs = dirs,
-              select_dirs = select_dirs,
-              numa_shuffling = Host.numa_check(progress, numa_shuffling),
-              max_jobs = max_jobs)
-          }
+          profiling(options,
+            selection = Sessions.Selection(
+              all_sessions = all_sessions,
+              base_sessions = base_sessions,
+              exclude_session_groups = exclude_session_groups,
+              exclude_sessions = exclude_sessions,
+              session_groups = session_groups,
+              sessions = sessions),
+            progress = progress,
+            dirs = dirs,
+            select_dirs = select_dirs,
+            numa_shuffling = Host.numa_check(progress, numa_shuffling),
+            max_jobs = max_jobs)
 
         results.output(output_dir = output_dir.absolute, progress = progress)
       })

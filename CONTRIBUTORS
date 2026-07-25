@@ -6,6 +6,54 @@ listed as an author in one of the source files of this Isabelle distribution.
 Contributions to this Isabelle version
 --------------------------------------
 
+* June 2026: Manuel Eberl
+  HOL-Complex_Analysis: new compositional relation "has_zorder" to simplify 
+  analysis of zeros and poles of compound functions.
+
+* April 2026: Manuel Eberl
+  HOL-Analysis: Determinant of a linear function and absolute determinant 
+  of a multiset of vectors.
+  
+* April 2026: Manuel Eberl and Larry Paulson
+  HOL-Analysis: Transfer setup to lift theorems about "real ^ 'n :: finite" 
+  to "'a :: euclidean_space". Used to prove change of variables for 
+  arbitrary euclidean spaces.
+
+Contributions to Isabelle2025-1
+-------------------------------
+
+* October/November 2025: Jonas Stahl and Tobias Nipkow, TU München
+  Improved generation of step-counting time functions from HOL functions (now
+  in "HOL-Library.Time_Functions"): support for higher-order functions,
+  localized, added manual.
+
+* August 2025: Diana Korchmar and Balazs Toth, LMU München
+  Initial design and implementation of various add-ons for Isabelle/VSCode:
+  panels for Documentation, Isabelle Symbols, and Sledgehammer.
+
+* May 2025: Benoît Ballenghien, Université Paris-Saclay.
+  Simproc "apply_cont" for HOLCF.
+
+* February 2025: Kai Naumann and Balazs Toth, LMU München
+  Initial design and implementation of dark mode for Isabelle/jEdit.
+
+
+Contributions to Isabelle2025
+-----------------------------
+
+* October 2024 - January 2025: Lukas Bartl, Universität Augsburg
+  Inference of variable instantiations with Metis.
+
+* 2024: Fabian Huch, TU München
+  Find_Facts search engine: web application based on Apache Solr.
+
+* 2024: Fabian Huch, TU München
+  Build_Manager for distrubuted cluster, with web front-end (supersedes
+  Jenkins).
+
+* April - October 2024: Thomas Lindae and Fabian Huch, TU München
+  Improvements to the language server for Isabelle/VSCode.
+
 * June - July 2024: Fabian Huch
   New Build_Manager module to coordinate CI and user builds, replacing
   the previous Jenkins integration.
@@ -14,7 +62,7 @@ Contributions to this Isabelle version
 Contributions to Isabelle2024
 -----------------------------
 
-* Αpril 2024: Manuel Eberl, Katharina Kreuzer
+* April 2024: Manuel Eberl, Katharina Kreuzer
   Some material on finite fields and the characteristic of a ring in HOL,
   HOL-Computational_Algebra, and HOL-Number_Theory.
   Also a type constructor for the algebraic closure of a field.

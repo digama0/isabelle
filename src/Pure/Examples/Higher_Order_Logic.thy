@@ -9,12 +9,13 @@ theory Higher_Order_Logic
 begin
 
 text \<open>
-  The following theory development illustrates the foundations of Higher-Order
-  Logic. The ``HOL'' logic that is given here resembles \<^cite>\<open>"Gordon:1985:HOL"\<close> and its predecessor \<^cite>\<open>"church40"\<close>, but the order of
-  axiomatizations and defined connectives has be adapted to modern
-  presentations of \<open>\<lambda>\<close>-calculus and Constructive Type Theory. Thus it fits
-  nicely to the underlying Natural Deduction framework of Isabelle/Pure and
-  Isabelle/Isar.
+  The following theory development illustrates the foundations of
+  Higher-Order Logic. The ``HOL'' logic that is given here resembles
+  \<^cite>\<open>"Gordon:1985:HOL"\<close> and its predecessor \<^cite>\<open>"church40"\<close>, but
+  the order of axiomatizations and defined connectives has be adapted to
+  modern presentations of \<open>\<lambda>\<close>-calculus and Constructive Type Theory. Thus
+  it fits nicely to the underlying Natural Deduction framework of
+  Isabelle/Pure and Isabelle/Isar.
 \<close>
 
 
@@ -27,16 +28,16 @@ typedecl o
 instance o :: type ..
 instance "fun" :: (type, type) type ..
 
-judgment Trueprop :: "o \<Rightarrow> prop"  ("_" 5)
+judgment Trueprop :: "o \<Rightarrow> prop"  (\<open>_\<close> 5)
 
 
 section \<open>Minimal logic (axiomatization)\<close>
 
-axiomatization imp :: "o \<Rightarrow> o \<Rightarrow> o"  (infixr "\<longrightarrow>" 25)
+axiomatization imp :: "o \<Rightarrow> o \<Rightarrow> o"  (infixr \<open>\<longrightarrow>\<close> 25)
   where impI [intro]: "(A \<Longrightarrow> B) \<Longrightarrow> A \<longrightarrow> B"
     and impE [dest, trans]: "A \<longrightarrow> B \<Longrightarrow> A \<Longrightarrow> B"
 
-axiomatization All :: "('a \<Rightarrow> o) \<Rightarrow> o"  (binder "\<forall>" 10)
+axiomatization All :: "('a \<Rightarrow> o) \<Rightarrow> o"  (binder \<open>\<forall>\<close> 10)
   where allI [intro]: "(\<And>x. P x) \<Longrightarrow> \<forall>x. P x"
     and allE [dest]: "\<forall>x. P x \<Longrightarrow> P a"
 
@@ -68,7 +69,7 @@ lemma TrueI [intro]: True
   unfolding True_def ..
 
 
-definition not :: "o \<Rightarrow> o"  ("\<not> _" [40] 40)
+definition not :: "o \<Rightarrow> o"  (\<open>\<not> _\<close> [40] 40)
   where "not \<equiv> \<lambda>A. A \<longrightarrow> False"
 
 lemma notI [intro]:
@@ -91,7 +92,7 @@ lemma notE': "A \<Longrightarrow> \<not> A \<Longrightarrow> B"
 lemmas contradiction = notE notE'  \<comment> \<open>proof by contradiction in any order\<close>
 
 
-definition conj :: "o \<Rightarrow> o \<Rightarrow> o"  (infixr "\<and>" 35)
+definition conj :: "o \<Rightarrow> o \<Rightarrow> o"  (infixr \<open>\<and>\<close> 35)
   where "A \<and> B \<equiv> \<forall>C. (A \<longrightarrow> B \<longrightarrow> C) \<longrightarrow> C"
 
 lemma conjI [intro]:
@@ -137,7 +138,7 @@ proof
 qed
 
 
-definition disj :: "o \<Rightarrow> o \<Rightarrow> o"  (infixr "\<or>" 30)
+definition disj :: "o \<Rightarrow> o \<Rightarrow> o"  (infixr \<open>\<or>\<close> 30)
   where "A \<or> B \<equiv> \<forall>C. (A \<longrightarrow> C) \<longrightarrow> (B \<longrightarrow> C) \<longrightarrow> C"
 
 lemma disjI1 [intro]:
@@ -190,7 +191,7 @@ proof -
 qed
 
 
-definition Ex :: "('a \<Rightarrow> o) \<Rightarrow> o"  (binder "\<exists>" 10)
+definition Ex :: "('a \<Rightarrow> o) \<Rightarrow> o"  (binder \<open>\<exists>\<close> 10)
   where "\<exists>x. P x \<equiv> \<forall>C. (\<forall>x. P x \<longrightarrow> C) \<longrightarrow> C"
 
 lemma exI [intro]: "P a \<Longrightarrow> \<exists>x. P x"
@@ -227,14 +228,14 @@ qed
 
 subsubsection \<open>Extensional equality\<close>
 
-axiomatization equal :: "'a \<Rightarrow> 'a \<Rightarrow> o"  (infixl "=" 50)
+axiomatization equal :: "'a \<Rightarrow> 'a \<Rightarrow> o"  (infixl \<open>=\<close> 50)
   where refl [intro]: "x = x"
     and subst: "x = y \<Longrightarrow> P x \<Longrightarrow> P y"
 
-abbreviation not_equal :: "'a \<Rightarrow> 'a \<Rightarrow> o"  (infixl "\<noteq>" 50)
+abbreviation not_equal :: "'a \<Rightarrow> 'a \<Rightarrow> o"  (infixl \<open>\<noteq>\<close> 50)
   where "x \<noteq> y \<equiv> \<not> (x = y)"
 
-abbreviation iff :: "o \<Rightarrow> o \<Rightarrow> o"  (infixr "\<longleftrightarrow>" 25)
+abbreviation iff :: "o \<Rightarrow> o \<Rightarrow> o"  (infixr \<open>\<longleftrightarrow>\<close> 25)
   where "A \<longleftrightarrow> B \<equiv> A = B"
 
 axiomatization
@@ -401,7 +402,7 @@ section \<open>Hilbert's choice operator (axiomatization)\<close>
 axiomatization Eps :: "('a \<Rightarrow> o) \<Rightarrow> 'a"
   where someI: "P x \<Longrightarrow> P (Eps P)"
 
-syntax "_Eps" :: "pttrn \<Rightarrow> o \<Rightarrow> 'a"  ("(3SOME _./ _)" [0, 10] 10)
+syntax "_Eps" :: "pttrn \<Rightarrow> o \<Rightarrow> 'a"  (\<open>(\<open>indent=3 notation=\<open>binder SOME\<close>\<close>SOME _./ _)\<close> [0, 10] 10)
 syntax_consts "_Eps" \<rightleftharpoons> Eps
 translations "SOME x. P" \<rightleftharpoons> "CONST Eps (\<lambda>x. P)"
 

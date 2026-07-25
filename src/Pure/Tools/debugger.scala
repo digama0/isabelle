@@ -144,8 +144,8 @@ class Debugger private(session: Session) {
 
   private val state = Synchronized(Debugger.State())
 
-  private val delay_update =
-    Delay.first(session.output_delay) {
+  private lazy val delay_update =
+    session.resources.Delay.first(session.output_delay) {
       session.debugger_updates.post(Debugger.Update)
     }
 
@@ -189,7 +189,7 @@ class Debugger private(session: Session) {
   def set_break(b: Boolean): Unit = {
     state.change { st =>
       val st1 = st.set_break(b)
-      session.protocol_command("Debugger.break", XML.Encode.bool(b))
+      session.protocol_command("Debugger.break", XML.string(Value.Boolean(b)))
       st1
     }
     delay_update.invoke()
@@ -211,12 +211,12 @@ class Debugger private(session: Session) {
         XML.string(command.node_name.node),
         Document_ID.encode(command.id),
         XML.Encode.long(breakpoint),
-        XML.Encode.bool(breakpoint_state))
+        XML.string(Value.Boolean(breakpoint_state)))
       st1
     }
   }
 
-  def status(focus: Option[Debugger.Context]): (Debugger.Threads, List[XML.Tree]) = {
+  def status(focus: Option[Debugger.Context]): (Debugger.Threads, List[XML.Elem]) = {
     val st = state.value
     val output =
       focus match {
@@ -225,8 +225,8 @@ class Debugger private(session: Session) {
           (for {
             (thread_name, results) <- st.output
             if thread_name == c.thread_name
-            (_, tree) <- results.iterator
-          } yield tree).toList
+            (_, msg) <- results.iterator
+          } yield msg).toList
       }
     (st.threads, output)
   }

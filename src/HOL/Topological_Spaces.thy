@@ -16,6 +16,18 @@ subsection \<open>Topological space\<close>
 class "open" =
   fixes "open" :: "'a set \<Rightarrow> bool"
 
+context \<comment>\<open>Suppress difficult-to-implement class parameter\<close>
+begin
+
+private definition unimplemented_open :: \<open>'a::open set \<Rightarrow> bool\<close>
+  where [code drop]: \<open>unimplemented_open = open\<close>
+
+lemma [code]:
+  \<open>open = unimplemented_open\<close>
+  by (simp add: unimplemented_open_def)
+
+end
+
 class topological_space = "open" +
   assumes open_UNIV [simp, intro]: "open UNIV"
   assumes open_Int [intro]: "open S \<Longrightarrow> open T \<Longrightarrow> open (S \<inter> T)"
@@ -230,7 +242,7 @@ lemma (in perfect_space) UNIV_not_singleton: "UNIV \<noteq> {x}"
   by (metis (no_types) open_UNIV not_open_singleton)
 
 
-subsection \<open>Generators for toplogies\<close>
+subsection \<open>Generators for topologies\<close>
 
 inductive generate_topology :: "'a set set \<Rightarrow> 'a set \<Rightarrow> bool" for S :: "'a set set"
   where
@@ -359,6 +371,35 @@ next
     by (fastforce intro: exI[of _ y] lt_ex)
 qed
 
+lemma filterlim_atLeastAtMost_at_bot_at_top:
+  fixes f g :: "'a \<Rightarrow> 'b :: linorder_topology"
+  assumes "filterlim f at_bot F" "filterlim g at_top F"
+  assumes [simp]: "\<And>a b. finite {a..b::'b}"
+  shows   "filterlim (\<lambda>x. {f x..g x}) finite_sets_at_top F"
+  unfolding filterlim_finite_subsets_at_top
+proof safe
+  fix X :: "'b set"
+  assume X: "finite X"
+  from X obtain lb where lb: "\<And>x. x \<in> X \<Longrightarrow> lb \<le> x"
+    by (metis finite_has_minimal2 nle_le)
+  from X obtain ub where ub: "\<And>x. x \<in> X \<Longrightarrow> x \<le> ub"
+    by (metis all_not_in_conv finite_has_maximal nle_le)
+  have "eventually (\<lambda>x. f x \<le> lb) F" "eventually (\<lambda>x. g x \<ge> ub) F"
+    using assms by (simp_all add: filterlim_at_bot filterlim_at_top)
+  thus "eventually (\<lambda>x. finite {f x..g x} \<and> X \<subseteq> {f x..g x} \<and> {f x..g x} \<subseteq> UNIV) F"
+  proof eventually_elim
+    case (elim x)
+    have "X \<subseteq> {f x..g x}"
+    proof
+      fix y assume "y \<in> X"
+      thus "y \<in> {f x..g x}"
+        using lb[of y] ub[of y] elim by auto
+    qed
+    thus ?case
+      by auto
+  qed
+qed
+
 
 subsection \<open>Setup some topologies\<close>
 
@@ -462,10 +503,10 @@ definition (in topological_space) nhds :: "'a \<Rightarrow> 'a filter"
   where "nhds a = (INF S\<in>{S. open S \<and> a \<in> S}. principal S)"
 
 definition (in topological_space) at_within :: "'a \<Rightarrow> 'a set \<Rightarrow> 'a filter"
-    ("at (_)/ within (_)" [1000, 60] 60)
+    (\<open>at (_)/ within (_)\<close> [1000, 60] 60)
   where "at a within s = inf (nhds a) (principal (s - {a}))"
 
-abbreviation (in topological_space) at :: "'a \<Rightarrow> 'a filter"  ("at")
+abbreviation (in topological_space) at :: "'a \<Rightarrow> 'a filter"  (\<open>at\<close>)
   where "at x \<equiv> at x within (CONST UNIV)"
 
 abbreviation (in order_topology) at_right :: "'a \<Rightarrow> 'a filter"
@@ -746,7 +787,7 @@ qed
 subsubsection \<open>Tendsto\<close>
 
 abbreviation (in topological_space)
-  tendsto :: "('b \<Rightarrow> 'a) \<Rightarrow> 'a \<Rightarrow> 'b filter \<Rightarrow> bool"  (infixr "\<longlongrightarrow>" 55)
+  tendsto :: "('b \<Rightarrow> 'a) \<Rightarrow> 'a \<Rightarrow> 'b filter \<Rightarrow> bool"  (infixr \<open>\<longlongrightarrow>\<close> 55)
   where "(f \<longlongrightarrow> l) F \<equiv> filterlim f (nhds l) F"
 
 definition (in t2_space) Lim :: "'f filter \<Rightarrow> ('f \<Rightarrow> 'a) \<Rightarrow> 'a"
@@ -1191,7 +1232,7 @@ lemma tendsto_at_within_iff_tendsto_nhds:
 subsection \<open>Limits on sequences\<close>
 
 abbreviation (in topological_space)
-  LIMSEQ :: "[nat \<Rightarrow> 'a, 'a] \<Rightarrow> bool"  ("((_)/ \<longlonglongrightarrow> (_))" [60, 60] 60)
+  LIMSEQ :: "[nat \<Rightarrow> 'a, 'a] \<Rightarrow> bool"  (\<open>(\<open>notation=\<open>infix LIMSEQ\<close>\<close>(_)/ \<longlonglongrightarrow> (_))\<close> [60, 60] 60)
   where "X \<longlonglongrightarrow> L \<equiv> (X \<longlongrightarrow> L) sequentially"
 
 abbreviation (in t2_space) lim :: "(nat \<Rightarrow> 'a) \<Rightarrow> 'a"
@@ -1760,7 +1801,7 @@ qed
 subsection \<open>Function limit at a point\<close>
 
 abbreviation LIM :: "('a::topological_space \<Rightarrow> 'b::topological_space) \<Rightarrow> 'a \<Rightarrow> 'b \<Rightarrow> bool"
-    ("((_)/ \<midarrow>(_)/\<rightarrow> (_))" [60, 0, 60] 60)
+    (\<open>(\<open>notation=\<open>infix LIM\<close>\<close>(_)/ \<midarrow>(_)/\<rightarrow> (_))\<close> [60, 0, 60] 60)
   where "f \<midarrow>a\<rightarrow> L \<equiv> (f \<longlongrightarrow> L) (at a)"
 
 lemma tendsto_within_open: "a \<in> S \<Longrightarrow> open S \<Longrightarrow> (f \<longlongrightarrow> l) (at a within S) \<longleftrightarrow> (f \<midarrow>a\<rightarrow> l)"
@@ -2289,6 +2330,34 @@ lemma continuous_on_eq_continuous_within:
 lemma continuous_discrete [simp]:
   "continuous (at x within A) (f :: 'a :: discrete_topology \<Rightarrow> _)"
   by (auto simp: continuous_def at_discrete)
+
+lemma
+  fixes f::"'a::linorder_topology \<Rightarrow> 'b::topological_space"
+  assumes "continuous_on {a..b} f" "a<b"
+  shows continuous_on_at_left: "continuous (at_left b) f" 
+    and continuous_on_at_right: "continuous (at_right a) f"
+  using assms continuous_on_Icc_at_leftD continuous_on_Icc_at_rightD continuous_within 
+  by blast+
+
+text \<open>Continuity in terms of open preimages.\<close>
+
+lemma continuous_at_open:
+  "continuous (at x) f \<longleftrightarrow> (\<forall>t. open t \<and> f x \<in> t \<longrightarrow> (\<exists>S. open S \<and> x \<in> S \<and> (\<forall>x' \<in> S. (f x') \<in> t)))"
+  by (metis UNIV_I continuous_within_topological)
+
+lemma continuous_imp_tendsto:
+  assumes "continuous (at x0) f" and "x \<longlonglongrightarrow> x0"
+  shows "(f \<circ> x) \<longlonglongrightarrow> (f x0)"
+proof (rule topological_tendstoI)
+  fix S
+  assume "open S" "f x0 \<in> S"
+  then obtain T where T_def: "open T" "x0 \<in> T" "\<forall>x\<in>T. f x \<in> S"
+     using assms continuous_at_open by metis
+  then have "eventually (\<lambda>n. x n \<in> T) sequentially"
+    using assms T_def by (auto simp: tendsto_def)
+  then show "eventually (\<lambda>n. (f \<circ> x) n \<in> S) sequentially"
+    using T_def by (auto elim!: eventually_mono)
+qed
 
 abbreviation isCont :: "('a::t2_space \<Rightarrow> 'b::topological_space) \<Rightarrow> 'a \<Rightarrow> bool"
   where "isCont f a \<equiv> continuous (at a) f"
@@ -3150,6 +3219,13 @@ proof
     using assms connected_contains_Ioo[of A a b] by auto
 qed
 
+lemma continuous_on_neq_split:
+  fixes f :: "'a::linear_continuum_topology \<Rightarrow> 'b::linorder_topology"
+  assumes "\<forall>x\<in>S. f x \<noteq> y" and f: "continuous_on S f" and S: "connected S"
+  shows "(\<forall>x\<in>S. f x > y) \<or> (\<forall>x\<in>S. f x < y)"
+  using connectedD_interval assms connected_continuous_image [OF f S]
+  using linorder_not_less by blast
+
 
 subsection \<open>Intermediate Value Theorem\<close>
 
@@ -3383,10 +3459,17 @@ abbreviation uniformity_on :: "'a set \<Rightarrow> ('a \<times> 'a) filter"
 
 end
 
-lemma uniformity_Abort:
-  "uniformity =
-    Filter.abstract_filter (\<lambda>u. Code.abort (STR ''uniformity is not executable'') (\<lambda>u. uniformity))"
-  by simp
+context \<comment>\<open>Suppress difficult-to-implement class parameter\<close>
+begin
+
+private definition unimplemented_uniformity :: \<open>('a::uniformity \<times> 'a) filter\<close>
+  where [code drop]: \<open>unimplemented_uniformity = uniformity\<close>
+
+lemma [code]:
+  \<open>uniformity = unimplemented_uniformity\<close>
+  by (simp add: unimplemented_uniformity_def)
+
+end
 
 class open_uniformity = "open" + uniformity +
   assumes open_uniformity:
@@ -3595,7 +3678,7 @@ subsection \<open>Product is a topological space\<close>
 instantiation prod :: (topological_space, topological_space) topological_space
 begin
 
-definition open_prod_def[code del]:
+definition open_prod_def [code drop]:
   "open (S :: ('a \<times> 'b) set) \<longleftrightarrow>
     (\<forall>x\<in>S. \<exists>A B. open A \<and> open B \<and> x \<in> A \<times> B \<and> A \<times> B \<subseteq> S)"
 
@@ -3640,8 +3723,6 @@ next
 qed
 
 end
-
-declare [[code abort: "open :: ('a::topological_space \<times> 'b::topological_space) set \<Rightarrow> bool"]]
 
 lemma open_Times: "open S \<Longrightarrow> open T \<Longrightarrow> open (S \<times> T)"
   unfolding open_prod_def by auto

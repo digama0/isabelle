@@ -18,10 +18,8 @@ text \<open>Monadic heap actions either produce values
   and transform the heap, or fail\<close>
 datatype 'a Heap = Heap "heap \<Rightarrow> ('a \<times> heap) option"
 
-declare [[code drop: "Code_Evaluation.term_of :: 'a::typerep Heap \<Rightarrow> Code_Evaluation.term"]]
-
 primrec execute :: "'a Heap \<Rightarrow> heap \<Rightarrow> ('a \<times> heap) option" where
-  [code del]: "execute (Heap f) = f"
+  [code drop]: "execute (Heap f) = f"
 
 lemma Heap_cases [case_names succeed fail]:
   fixes f and h
@@ -47,21 +45,21 @@ lemma execute_Let [execute_simps]:
 subsubsection \<open>Specialised lifters\<close>
 
 definition tap :: "(heap \<Rightarrow> 'a) \<Rightarrow> 'a Heap" where
-  [code del]: "tap f = Heap (\<lambda>h. Some (f h, h))"
+  [code drop]: "tap f = Heap (\<lambda>h. Some (f h, h))"
 
 lemma execute_tap [execute_simps]:
   "execute (tap f) h = Some (f h, h)"
   by (simp add: tap_def)
 
 definition heap :: "(heap \<Rightarrow> 'a \<times> heap) \<Rightarrow> 'a Heap" where
-  [code del]: "heap f = Heap (Some \<circ> f)"
+  [code drop]: "heap f = Heap (Some \<circ> f)"
 
 lemma execute_heap [execute_simps]:
   "execute (heap f) = Some \<circ> f"
   by (simp add: heap_def)
 
 definition guard :: "(heap \<Rightarrow> bool) \<Rightarrow> (heap \<Rightarrow> 'a \<times> heap) \<Rightarrow> 'a Heap" where
-  [code del]: "guard P f = Heap (\<lambda>h. if P h then Some (f h) else None)"
+  [code drop]: "guard P f = Heap (\<lambda>h. if P h then Some (f h) else None)"
 
 lemma execute_guard [execute_simps]:
   "\<not> P h \<Longrightarrow> execute (guard P f) h = None"
@@ -211,7 +209,7 @@ lemma effect_guardE [effect_elims]:
 subsubsection \<open>Monad combinators\<close>
 
 definition return :: "'a \<Rightarrow> 'a Heap" where
-  [code del]: "return x = heap (Pair x)"
+  [code drop]: "return x = heap (Pair x)"
 
 lemma execute_return [execute_simps]:
   "execute (return x) = Some \<circ> Pair x"
@@ -235,6 +233,8 @@ definition raise :: "String.literal \<Rightarrow> 'a Heap" \<comment> \<open>the
 
 code_datatype raise \<comment> \<open>avoid \<^const>\<open>Heap\<close> formally\<close>
 
+declare [[code drop: "Code_Evaluation.term_of :: 'a::typerep Heap \<Rightarrow> Code_Evaluation.term"]]
+
 lemma execute_raise [execute_simps]:
   "execute (raise s) = (\<lambda>_. None)"
   by (simp add: raise_def)
@@ -245,12 +245,12 @@ lemma effect_raiseE [effect_elims]:
   using assms by (rule effectE) (simp add: success_def execute_simps)
 
 definition bind :: "'a Heap \<Rightarrow> ('a \<Rightarrow> 'b Heap) \<Rightarrow> 'b Heap" where
-  [code del]: "bind f g = Heap (\<lambda>h. case execute f h of
+  [code drop]: "bind f g = Heap (\<lambda>h. case execute f h of
                   Some (x, h') \<Rightarrow> execute (g x) h'
                 | None \<Rightarrow> None)"
 
 adhoc_overloading
-  Monad_Syntax.bind Heap_Monad.bind
+  Monad_Syntax.bind \<rightleftharpoons> Heap_Monad.bind
 
 lemma execute_bind [execute_simps]:
   "execute f h = Some (x, h') \<Longrightarrow> execute (f \<bind> g) h = execute (g x) h'"
@@ -565,7 +565,7 @@ readArray = Data.Array.ST.readArray
 writeArray :: STArray s a -> Integer -> a -> ST s ()
 writeArray = Data.Array.ST.writeArray\<close>
 
-code_reserved Haskell Heap
+code_reserved (Haskell) Heap
 
 text \<open>Monad\<close>
 
@@ -620,7 +620,7 @@ object Array {
 
 \<close>
 
-code_reserved Scala Heap Ref Array
+code_reserved (Scala) Heap Ref Array
 
 code_printing type_constructor Heap \<rightharpoonup> (Scala) "(Unit/ =>/ _)"
 code_printing constant bind \<rightharpoonup> (Scala) "Heap.bind"
@@ -645,7 +645,7 @@ val imp_program =
     (*assumption: dummy values are not relevant for serialization*)
     val unitT = \<^type_name>\<open>unit\<close> `%% [];
     val unitt =
-      IConst { sym = Code_Symbol.Constant \<^const_name>\<open>Unity\<close>, typargs = [], dicts = [], dom = [],
+      IConst { sym = Code_Symbol.Constant \<^const_name>\<open>Unity\<close>, typargs = [], dictss = [], dom = [],
         annotation = NONE, range = unitT };
     fun dest_abs ((v, ty) `|=> (t, _), _) = ((v, ty), t)
       | dest_abs (t, ty) =

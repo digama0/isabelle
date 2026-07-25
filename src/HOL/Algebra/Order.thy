@@ -16,7 +16,7 @@ section \<open>Orders\<close>
 subsection \<open>Partial Orders\<close>
 
 record 'a gorder = "'a eq_object" +
-  le :: "['a, 'a] => bool" (infixl "\<sqsubseteq>\<index>" 50)
+  le :: "['a, 'a] => bool" (infixl \<open>\<sqsubseteq>\<index>\<close> 50)
 
 abbreviation inv_gorder :: "_ \<Rightarrow> 'a gorder" where
   "inv_gorder L \<equiv>
@@ -40,7 +40,7 @@ locale weak_partial_order = equivalence L for L (structure) +
       x \<sqsubseteq> z \<longleftrightarrow> y \<sqsubseteq> w"
 
 definition
-  lless :: "[_, 'a, 'a] => bool" (infixl "\<sqsubset>\<index>" 50)
+  lless :: "[_, 'a, 'a] => bool" (infixl \<open>\<sqsubset>\<index>\<close> 50)
   where "x \<sqsubset>\<^bsub>L\<^esub> y \<longleftrightarrow> x \<sqsubseteq>\<^bsub>L\<^esub> y \<and> x .\<noteq>\<^bsub>L\<^esub> y"
 
 subsubsection \<open>The order relation\<close>
@@ -411,7 +411,8 @@ lemma greatest_Lower_below:
 subsubsection \<open>Intervals\<close>
 
 definition
-  at_least_at_most :: "('a, 'c) gorder_scheme \<Rightarrow> 'a => 'a => 'a set" ("(1\<lbrace>_.._\<rbrace>\<index>)")
+  at_least_at_most :: "('a, 'c) gorder_scheme \<Rightarrow> 'a => 'a => 'a set"
+    (\<open>(\<open>indent=1 notation=\<open>mixfix interval\<close>\<close>\<lbrace>_.._\<rbrace>\<index>)\<close>)
   where "\<lbrace>l..u\<rbrace>\<^bsub>A\<^esub> = {x \<in> carrier A. l \<sqsubseteq>\<^bsub>A\<^esub> x \<and> x \<sqsubseteq>\<^bsub>A\<^esub> u}"
 
 context weak_partial_order
@@ -452,8 +453,9 @@ lemma isotoneI [intro?]:
   shows "isotone L1 L2 f"
   using assms by (auto simp add:isotone_def)
 
-abbreviation Monotone :: "('a, 'b) gorder_scheme \<Rightarrow> ('a \<Rightarrow> 'a) \<Rightarrow> bool" ("Mono\<index>")
-  where "Monotone L f \<equiv> isotone L L f"
+abbreviation Monotone :: "('a, 'b) gorder_scheme \<Rightarrow> ('a \<Rightarrow> 'a) \<Rightarrow> bool"
+    (\<open>(\<open>open_block notation=\<open>prefix Mono\<close>\<close>Mono\<index>)\<close>)
+  where "Mono\<^bsub>L\<^esub> f \<equiv> isotone L L f"
 
 lemma use_iso1:
   "\<lbrakk>isotone A A f; x \<in> carrier A; y \<in> carrier A; x \<sqsubseteq>\<^bsub>A\<^esub> y\<rbrakk> \<Longrightarrow>
@@ -478,8 +480,9 @@ lemma (in weak_partial_order) inv_isotone [simp]:
 subsubsection \<open>Idempotent functions\<close>
 
 definition idempotent :: 
-  "('a, 'b) gorder_scheme \<Rightarrow> ('a \<Rightarrow> 'a) \<Rightarrow> bool" ("Idem\<index>") where
-  "idempotent L f \<equiv> \<forall>x\<in>carrier L. f (f x) .=\<^bsub>L\<^esub> f x"
+  "('a, 'b) gorder_scheme \<Rightarrow> ('a \<Rightarrow> 'a) \<Rightarrow> bool"
+    (\<open>(\<open>open_block notation=\<open>prefix Idem\<close>\<close>Idem\<index>)\<close>)
+  where "Idem\<^bsub>L\<^esub> f \<equiv> \<forall>x\<in>carrier L. f (f x) .=\<^bsub>L\<^esub> f x"
 
 lemma (in weak_partial_order) idempotent:
   "\<lbrakk>Idem f; x \<in> carrier L\<rbrakk> \<Longrightarrow> f (f x) .= f x"
@@ -568,11 +571,11 @@ lemma (in partial_order) greatest_unique:
 subsection \<open>Bounded Orders\<close>
 
 definition
-  top :: "_ => 'a" ("\<top>\<index>") where
+  top :: "_ => 'a" (\<open>\<top>\<index>\<close>) where
   "\<top>\<^bsub>L\<^esub> = (SOME x. greatest L x (carrier L))"
 
 definition
-  bottom :: "_ => 'a" ("\<bottom>\<index>") where
+  bottom :: "_ => 'a" (\<open>\<bottom>\<index>\<close>) where
   "\<bottom>\<^bsub>L\<^esub> = (SOME x. least L x (carrier L))"
 
 locale weak_partial_order_bottom = weak_partial_order L for L (structure) +

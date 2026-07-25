@@ -81,12 +81,10 @@ lemma map_filter_finite[intro]:
   assumes "finite (dom m)"
   shows "finite (dom (map_filter P m))"
 proof -
-  have "dom (map_filter P m) = Set.filter P (dom m)"
-    unfolding map_filter_def Set.filter_def dom_def
-    by auto
+  from assms have \<open>finite (dom (\<lambda>x. if P x then m x else None))\<close>
+    by (rule rev_finite_subset) (auto split: if_splits)
   then show ?thesis
-    using assms
-    by (simp add: Set.filter_def)
+    by (simp add: map_filter_def)
 qed
 
 definition map_drop :: "'a \<Rightarrow> ('a \<rightharpoonup> 'b) \<Rightarrow> ('a \<rightharpoonup> 'b)" where
@@ -104,6 +102,9 @@ definition map_restrict_set :: "'a set \<Rightarrow> ('a \<rightharpoonup> 'b) \
 
 parametric_constant map_restrict_set_transfer[transfer_rule]: map_restrict_set_def
 
+lemma map_restrict_set_conv_restrict_map: "map_restrict_set A m = Map.restrict_map m A"
+  unfolding map_restrict_set_def map_filter_def Map.restrict_map_def ..
+
 definition map_pred :: "('a \<Rightarrow> 'b \<Rightarrow> bool) \<Rightarrow> ('a \<rightharpoonup> 'b) \<Rightarrow> bool" where
 "map_pred P m \<longleftrightarrow> (\<forall>x. case m x of None \<Rightarrow> True | Some y \<Rightarrow> P x y)"
 
@@ -111,28 +112,6 @@ parametric_constant map_pred_transfer[transfer_rule]: map_pred_def
 
 definition rel_map_on_set :: "'a set \<Rightarrow> ('b \<Rightarrow> 'c \<Rightarrow> bool) \<Rightarrow> ('a \<rightharpoonup> 'b) \<Rightarrow> ('a \<rightharpoonup> 'c) \<Rightarrow> bool" where
 "rel_map_on_set S P = eq_onp (\<lambda>x. x \<in> S) ===> rel_option P"
-
-definition set_of_map :: "('a \<rightharpoonup> 'b) \<Rightarrow> ('a \<times> 'b) set" where
-"set_of_map m = {(k, v)|k v. m k = Some v}"
-
-lemma set_of_map_alt_def: "set_of_map m = (\<lambda>k. (k, the (m k))) ` dom m"
-unfolding set_of_map_def dom_def
-by auto
-
-lemma set_of_map_finite: "finite (dom m) \<Longrightarrow> finite (set_of_map m)"
-unfolding set_of_map_alt_def
-by auto
-
-lemma set_of_map_inj: "inj set_of_map"
-proof
-  fix x y
-  assume "set_of_map x = set_of_map y"
-  hence "(x a = Some b) = (y a = Some b)" for a b
-    unfolding set_of_map_def by auto
-  hence "x k = y k" for k
-    by (metis not_None_eq)
-  thus "x = y" ..
-qed
 
 lemma dom_comp: "dom (m \<circ>\<^sub>m n) \<subseteq> dom n"
 unfolding map_comp_def dom_def
@@ -269,10 +248,10 @@ lift_definition fmfilter :: "('a \<Rightarrow> bool) \<Rightarrow> ('a, 'b) fmap
 by auto
 
 lemma fmdom_filter[simp]: "fmdom (fmfilter P m) = ffilter P (fmdom m)"
-by transfer' (auto simp: map_filter_def Set.filter_def split: if_splits)
+by transfer' (auto simp: map_filter_def split: if_splits)
 
 lemma fmdom'_filter[simp]: "fmdom' (fmfilter P m) = Set.filter P (fmdom' m)"
-by transfer' (auto simp: map_filter_def Set.filter_def split: if_splits)
+by transfer' (auto simp: map_filter_def split: if_splits)
 
 lemma fmlookup_filter[simp]: "fmlookup (fmfilter P m) x = (if P x then fmlookup m x else None)"
 by transfer' (auto simp: map_filter_def)
@@ -497,7 +476,7 @@ by (rule fmap_ext) auto
 lemma fmdrop_fset_fmdrop[simp]: "fmdrop_fset S (fmdrop b m) = fmdrop_fset (finsert b S) m"
 by (rule fmap_ext) auto
 
-lift_definition fmadd :: "('a, 'b) fmap \<Rightarrow> ('a, 'b) fmap \<Rightarrow> ('a, 'b) fmap" (infixl "++\<^sub>f" 100)
+lift_definition fmadd :: "('a, 'b) fmap \<Rightarrow> ('a, 'b) fmap \<Rightarrow> ('a, 'b) fmap" (infixl \<open>++\<^sub>f\<close> 100)
   is map_add
   parametric map_add_transfer
   by simp
@@ -611,9 +590,18 @@ lemma fmpred_cases[consumes 1]:
   obtains (none) "fmlookup m x = None" | (some) y where "fmlookup m x = Some y" "P x y"
 using assms by auto
 
-lift_definition fmsubset :: "('a, 'b) fmap \<Rightarrow> ('a, 'b) fmap \<Rightarrow> bool" (infix "\<subseteq>\<^sub>f" 50)
+lift_definition fmsubset :: "('a, 'b) fmap \<Rightarrow> ('a, 'b) fmap \<Rightarrow> bool" (infix \<open>\<subseteq>\<^sub>f\<close> 50)
   is map_le
 .
+
+lemma fmsubset_refl[simp]: "m \<subseteq>\<^sub>f m"
+  by transfer (rule map_le_refl)
+
+lemma fmsubset_trans[trans]: "m\<^sub>1 \<subseteq>\<^sub>f m\<^sub>2 \<Longrightarrow> m\<^sub>2 \<subseteq>\<^sub>f m\<^sub>3 \<Longrightarrow> m\<^sub>1 \<subseteq>\<^sub>f m\<^sub>3"
+  by transfer (rule map_le_trans)
+
+lemma fmsubset_antisym: "m\<^sub>1 \<subseteq>\<^sub>f m\<^sub>2 \<Longrightarrow> m\<^sub>2 \<subseteq>\<^sub>f m\<^sub>1 \<Longrightarrow> m\<^sub>1 = m\<^sub>2"
+  by transfer (rule map_le_antisym)
 
 lemma fmsubset_alt_def: "m \<subseteq>\<^sub>f n \<longleftrightarrow> fmpred (\<lambda>k v. fmlookup n k = Some v) m"
 by transfer' (auto simp: map_pred_def map_le_def dom_def split: option.splits)
@@ -659,16 +647,16 @@ unfolding fmfilter_alt_defs by (rule fmfilter_subset)
 lemma fmsubset_restrict_fset[simp]: "fmrestrict_fset S m \<subseteq>\<^sub>f m"
 unfolding fmfilter_alt_defs by (rule fmfilter_subset)
 
-lift_definition fset_of_fmap :: "('a, 'b) fmap \<Rightarrow> ('a \<times> 'b) fset" is set_of_map
-  by (rule set_of_map_finite)
+lift_definition fset_of_fmap :: "('a, 'b) fmap \<Rightarrow> ('a \<times> 'b) fset" is Map.graph
+  by simp
 
 lemma fset_of_fmap_inj[intro, simp]: "inj fset_of_fmap"
   apply rule
   apply transfer'
-  using set_of_map_inj unfolding inj_def by auto
+  using inj_on_graph unfolding inj_def by auto
 
 lemma fset_of_fmap_iff[simp]: "(a, b) |\<in>| fset_of_fmap m \<longleftrightarrow> fmlookup m a = Some b"
-by transfer' (auto simp: set_of_map_def)
+  by transfer' (auto simp: Map.graph_def)
 
 lemma fset_of_fmap_iff': "(a, b) \<in> fset (fset_of_fmap m) \<longleftrightarrow> fmlookup m a = Some b"
   by simp
@@ -801,7 +789,7 @@ lemma fmimageE[elim]:
   obtains x where "fmlookup m x = Some y" "x |\<in>| A"
   using assms by (auto simp: fmlookup_image_iff)
 
-lift_definition fmcomp :: "('b, 'c) fmap \<Rightarrow> ('a, 'b) fmap \<Rightarrow> ('a, 'c) fmap" (infixl "\<circ>\<^sub>f" 55)
+lift_definition fmcomp :: "('b, 'c) fmap \<Rightarrow> ('a, 'b) fmap \<Rightarrow> ('a, 'c) fmap" (infixl \<open>\<circ>\<^sub>f\<close> 55)
   is map_comp
   parametric map_comp_transfer
   by (rule dom_comp_finite)
@@ -1023,7 +1011,7 @@ lemma fmmap_subset[intro]: "m \<subseteq>\<^sub>f n \<Longrightarrow> fmmap f m 
 
 lemma fmmap_fset_of_fmap: "fset_of_fmap (fmmap f m) = (\<lambda>(k, v). (k, f v)) |`| fset_of_fmap m"
   including fset.lifting
-  by transfer' (auto simp: set_of_map_def)
+  by transfer' (auto simp: Map.graph_def)
 
 lemma fmmap_fmupd: "fmmap f (fmupd x y m) = fmupd x (f y) (fmmap f m)"
   by transfer' (auto simp: fun_eq_iff map_upd_def)
@@ -1188,7 +1176,7 @@ lifting_update fmap.lifting
 lemma fmap_exhaust[cases type: fmap]:
   obtains (fmempty) "m = fmempty"
         | (fmupd) x y m' where "m = fmupd x y m'" "x |\<notin>| fmdom m'"
-using that including fmap.lifting fset.lifting
+using that including fmap.lifting and fset.lifting
 proof transfer
   fix m P
   assume "finite (dom m)"

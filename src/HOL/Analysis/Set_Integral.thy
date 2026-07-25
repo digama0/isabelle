@@ -1,6 +1,6 @@
 (*  Title:      HOL/Analysis/Set_Integral.thy
     Author:     Jeremy Avigad (CMU), Johannes Hölzl (TUM), Luke Serafin (CMU)
-    Author:  Sébastien Gouëzel   sebastien.gouezel@univ-rennes1.fr
+    Author:     Sébastien Gouëzel   sebastien.gouezel@univ-rennes1.fr
     Author:     Ata Keskin, TU Muenchen
 
 Notation and useful facts for working with integrals over a set.
@@ -24,37 +24,20 @@ definition\<^marker>\<open>tag important\<close>  "set_lebesgue_integral M A f \
 
 syntax
   "_ascii_set_lebesgue_integral" :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'a measure \<Rightarrow> real \<Rightarrow> real"
-  ("(4LINT (_):(_)/|(_)./ _)" [0,0,0,10] 10)
-
+  (\<open>(\<open>indent=4 notation=\<open>binder LINT\<close>\<close>LINT (_):(_)/|(_)./ _)\<close> [0,0,0,10] 10)
 syntax_consts
   "_ascii_set_lebesgue_integral" == set_lebesgue_integral
-
 translations
   "LINT x:A|M. f" == "CONST set_lebesgue_integral M A (\<lambda>x. f)"
 
-(*
-    Notation for integration wrt lebesgue measure on the reals:
-
-      LBINT x. f
-      LBINT x : A. f
-
-    TODO: keep all these? Need unicode.
-*)
-
-syntax
-  "_lebesgue_borel_integral" :: "pttrn \<Rightarrow> real \<Rightarrow> real"
-  ("(2LBINT _./ _)" [0,10] 10)
-
-syntax
-  "_set_lebesgue_borel_integral" :: "pttrn \<Rightarrow> real set \<Rightarrow> real \<Rightarrow> real"
-  ("(3LBINT _:_./ _)" [0,0,10] 10)
 
 section \<open>Basic properties\<close>
 
-(*
-lemma indicator_abs_eq: "\<And>A x. \<bar>indicator A x\<bar> = ((indicator A x) :: real)"
-  by (auto simp add: indicator_def)
-*)
+lemma set_integrable_eq:
+  fixes f :: "'a \<Rightarrow> 'b::{banach, second_countable_topology}"
+  assumes "\<Omega> \<inter> space M \<in> sets M"
+  shows "set_integrable M \<Omega> f = integrable (restrict_space M \<Omega>) f"
+  by (meson assms integrable_restrict_space set_integrable_def)
 
 lemma set_integrable_cong:
   assumes "M = M'" "A = A'" "\<And>x. x \<in> A \<Longrightarrow> f x = f' x"
@@ -572,26 +555,22 @@ section \<open>Complex integrals\<close>
 abbreviation complex_integrable :: "'a measure \<Rightarrow> ('a \<Rightarrow> complex) \<Rightarrow> bool" where
   "complex_integrable M f \<equiv> integrable M f"
 
-abbreviation complex_lebesgue_integral :: "'a measure \<Rightarrow> ('a \<Rightarrow> complex) \<Rightarrow> complex" ("integral\<^sup>C") where
+abbreviation complex_lebesgue_integral :: "'a measure \<Rightarrow> ('a \<Rightarrow> complex) \<Rightarrow> complex" (\<open>integral\<^sup>C\<close>) where
   "integral\<^sup>C M f == integral\<^sup>L M f"
 
 syntax
   "_complex_lebesgue_integral" :: "pttrn \<Rightarrow> complex \<Rightarrow> 'a measure \<Rightarrow> complex"
- ("\<integral>\<^sup>C _. _ \<partial>_" [0,0] 110)
-
+ (\<open>(\<open>open_block notation=\<open>binder integral\<close>\<close>\<integral>\<^sup>C _. _ \<partial>_)\<close> [0,0] 110)
 syntax_consts
   "_complex_lebesgue_integral" == complex_lebesgue_integral
-
 translations
   "\<integral>\<^sup>Cx. f \<partial>M" == "CONST complex_lebesgue_integral M (\<lambda>x. f)"
 
 syntax
   "_ascii_complex_lebesgue_integral" :: "pttrn \<Rightarrow> 'a measure \<Rightarrow> real \<Rightarrow> real"
-  ("(3CLINT _|_. _)" [0,0,10] 10)
-
+  (\<open>(\<open>indent=3 notation=\<open>binder CLINT\<close>\<close>CLINT _|_. _)\<close> [0,0,10] 10)
 syntax_consts
   "_ascii_complex_lebesgue_integral" == complex_lebesgue_integral
-
 translations
   "CLINT x|M. f" == "CONST complex_lebesgue_integral M (\<lambda>x. f)"
 
@@ -624,19 +603,17 @@ abbreviation complex_set_lebesgue_integral :: "'a measure \<Rightarrow> 'a set \
 
 syntax
   "_ascii_complex_set_lebesgue_integral" :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'a measure \<Rightarrow> real \<Rightarrow> real"
-  ("(4CLINT _:_|_. _)" [0,0,0,10] 10)
-
+  (\<open>(\<open>indent=4 notation=\<open>binder CLINT\<close>\<close>CLINT _:_|_. _)\<close> [0,0,0,10] 10)
 syntax_consts
   "_ascii_complex_set_lebesgue_integral" == complex_set_lebesgue_integral
-
 translations
   "CLINT x:A|M. f" == "CONST complex_set_lebesgue_integral M A (\<lambda>x. f)"
 
-lemma set_measurable_continuous_on_ivl:
-  assumes "continuous_on {a..b} (f :: real \<Rightarrow> real)"
-  shows "set_borel_measurable borel {a..b} f"
-  unfolding set_borel_measurable_def
-  by (rule borel_measurable_continuous_on_indicator[OF _ assms]) simp
+lemma set_measurable_continuous_on:
+  fixes f g :: "'a::topological_space \<Rightarrow> 'b::real_normed_vector"
+  shows "A \<in> sets borel \<Longrightarrow> continuous_on A f \<Longrightarrow> set_borel_measurable borel A f"
+  by (meson borel_measurable_continuous_on_indicator
+      set_borel_measurable_def)
 
 section \<open>NN Set Integrals\<close>
 
@@ -646,19 +623,16 @@ notations in this file, they are more in line with sum, and more readable he thi
 abbreviation "set_nn_integral M A f \<equiv> nn_integral M (\<lambda>x. f x * indicator A x)"
 
 syntax
-"_set_nn_integral" :: "pttrn => 'a set => 'a measure => ereal => ereal"
-("(\<integral>\<^sup>+((_)\<in>(_)./ _)/\<partial>_)" [0,0,0,110] 10)
-
-"_set_lebesgue_integral" :: "pttrn => 'a set => 'a measure => ereal => ereal"
-("(\<integral>((_)\<in>(_)./ _)/\<partial>_)" [0,0,0,110] 10)
-
+  "_set_nn_integral" :: "pttrn => 'a set => 'a measure => ereal => ereal"
+    (\<open>(\<open>notation=\<open>binder integral\<close>\<close>\<integral>\<^sup>+((_)\<in>(_)./ _)/\<partial>_)\<close> [0,0,0,110] 10)
+  "_set_lebesgue_integral" :: "pttrn => 'a set => 'a measure => ereal => ereal"
+    (\<open>(\<open>notation=\<open>binder integral\<close>\<close>\<integral>((_)\<in>(_)./ _)/\<partial>_)\<close> [0,0,0,110] 10)
 syntax_consts
-"_set_nn_integral" == set_nn_integral and
-"_set_lebesgue_integral" == set_lebesgue_integral
-
+  "_set_nn_integral" == set_nn_integral and
+  "_set_lebesgue_integral" == set_lebesgue_integral
 translations
-"\<integral>\<^sup>+x \<in> A. f \<partial>M" == "CONST set_nn_integral M A (\<lambda>x. f)"
-"\<integral>x \<in> A. f \<partial>M" == "CONST set_lebesgue_integral M A (\<lambda>x. f)"
+  "\<integral>\<^sup>+x \<in> A. f \<partial>M" == "CONST set_nn_integral M A (\<lambda>x. f)"
+  "\<integral>x \<in> A. f \<partial>M" == "CONST set_lebesgue_integral M A (\<lambda>x. f)"
 
 lemma set_nn_integral_cong:
   assumes "M = M'" "A = B" "\<And>x. x \<in> space M \<inter> A \<Longrightarrow> f x = g x"
@@ -830,7 +804,7 @@ proof -
   then have "AE x\<in>A in M. False" using assms(3) by auto
   then show "A \<in> null_sets M" using assms(2) by (simp add: AE_iff_null_sets)
 qed
-
+                                    
 text\<open>The next lemma is a variant of \<open>density_unique\<close>. Note that it uses the notation
 for nonnegative set integrals introduced earlier.\<close>
 

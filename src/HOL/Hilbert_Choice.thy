@@ -17,11 +17,11 @@ axiomatization Eps :: "('a \<Rightarrow> bool) \<Rightarrow> 'a"
   where someI: "P x \<Longrightarrow> P (Eps P)"
 
 syntax (epsilon)
-  "_Eps" :: "pttrn \<Rightarrow> bool \<Rightarrow> 'a"  ("(3\<some>_./ _)" [0, 10] 10)
+  "_Eps" :: "pttrn \<Rightarrow> bool \<Rightarrow> 'a"  (\<open>(\<open>indent=3 notation=\<open>binder \<some>\<close>\<close>\<some>_./ _)\<close> [0, 10] 10)
 syntax (input)
-  "_Eps" :: "pttrn \<Rightarrow> bool \<Rightarrow> 'a"  ("(3@ _./ _)" [0, 10] 10)
+  "_Eps" :: "pttrn \<Rightarrow> bool \<Rightarrow> 'a"  (\<open>(\<open>indent=3 notation=\<open>binder @\<close>\<close>@ _./ _)\<close> [0, 10] 10)
 syntax
-  "_Eps" :: "pttrn \<Rightarrow> bool \<Rightarrow> 'a"  ("(3SOME _./ _)" [0, 10] 10)
+  "_Eps" :: "pttrn \<Rightarrow> bool \<Rightarrow> 'a"  (\<open>(\<open>indent=3 notation=\<open>binder SOME\<close>\<close>SOME _./ _)\<close> [0, 10] 10)
 
 syntax_consts "_Eps" \<rightleftharpoons> Eps
 
@@ -29,8 +29,8 @@ translations
   "SOME x. P" \<rightleftharpoons> "CONST Eps (\<lambda>x. P)"
 
 print_translation \<open>
-  [(\<^const_syntax>\<open>Eps\<close>, fn _ => fn [Abs abs] =>
-      let val (x, t) = Syntax_Trans.atomic_abs_tr' abs
+  [(\<^const_syntax>\<open>Eps\<close>, fn ctxt => fn [Abs abs] =>
+      let val (x, t) = Syntax_Trans.atomic_abs_tr' ctxt abs
       in Syntax.const \<^syntax_const>\<open>_Eps\<close> $ x $ t end)]
 \<close> \<comment> \<open>to avoid eta-contraction of body\<close>
 
@@ -144,6 +144,34 @@ proof -
     show "finite (f ` A)"
       using assms by auto
   qed (use f in auto)
+qed
+
+
+subsection \<open>Getting an element of a nonempty set\<close>
+
+definition some_elem :: "'a set \<Rightarrow> 'a"
+  where "some_elem A = (SOME x. x \<in> A)"
+
+lemma some_elem_eq [simp]: "some_elem {x} = x"
+  by (simp add: some_elem_def)
+
+lemma some_elem_nonempty: "A \<noteq> {} \<Longrightarrow> some_elem A \<in> A"
+  unfolding some_elem_def by (auto intro: someI)
+
+lemma is_singleton_some_elem: "is_singleton A \<longleftrightarrow> A = {some_elem A}"
+  by (auto simp: is_singleton_def)
+
+lemma some_elem_image_unique:
+  assumes "A \<noteq> {}"
+    and *: "\<And>y. y \<in> A \<Longrightarrow> f y = a"
+  shows "some_elem (f ` A) = a"
+  unfolding some_elem_def
+proof (rule some1_equality)
+  from \<open>A \<noteq> {}\<close> obtain y where "y \<in> A" by auto
+  with * \<open>y \<in> A\<close> have "a \<in> f ` A" by blast
+  then show "a \<in> f ` A" by auto
+  with * show "\<exists>!x. x \<in> f ` A"
+    by auto
 qed
 
 
@@ -406,7 +434,7 @@ qed
 
 
 lemma mono_inv:
-  fixes f::"'a::linorder \<Rightarrow> 'b::linorder"
+  fixes f::"'a::linorder \<Rightarrow> 'b::order"
   assumes "mono f" "bij f"
   shows "mono (inv f)"
 proof
@@ -426,14 +454,14 @@ proof
 qed
 
 lemma strict_mono_inv_on_range:
-  fixes f :: "'a::linorder \<Rightarrow> 'b::order"
-  assumes "strict_mono f"
+  fixes f :: "'a::linorder \<Rightarrow> 'b::preorder"
+  assumes "strict_mono_on UNIV f"
   shows "strict_mono_on (range f) (inv f)"
 proof (clarsimp simp: strict_mono_on_def)
   fix x y
   assume "f x < f y"
   then show "inv f (f x) < inv f (f y)"
-    using assms strict_mono_imp_inj_on strict_mono_less by fastforce
+    using assms strict_mono_on_imp_inj_on strict_mono_less by fastforce
 qed
 
 lemma mono_bij_Inf:
@@ -725,6 +753,10 @@ lemma wf_no_infinite_down_chainE:
   obtains k where "(f (Suc k), f k) \<notin> r"
   using assms wf_iff_no_infinite_down_chain[of r] by blast
 
+corollary no_infinite_less_nat_down_chain:
+  fixes f :: "nat \<Rightarrow> nat"
+  shows "(\<And>i. f i > f (Suc i)) \<Longrightarrow> False"
+using wf_iff_no_infinite_down_chain[of "measure f"] in_measure[of _ _ f] wf_measure[of f] by blast
 
 text \<open>A dynamically-scoped fact for TFL\<close>
 lemma tfl_some: "\<forall>P x. P x \<longrightarrow> P (Eps P)"

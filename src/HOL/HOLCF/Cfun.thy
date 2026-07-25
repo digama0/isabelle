@@ -6,27 +6,24 @@
 section \<open>The type of continuous functions\<close>
 
 theory Cfun
-  imports Cpodef Fun_Cpo Product_Cpo
+  imports Cpodef
 begin
-
-default_sort cpo
-
 
 subsection \<open>Definition of continuous function type\<close>
 
 definition "cfun = {f::'a \<Rightarrow> 'b. cont f}"
 
-cpodef ('a, 'b) cfun ("(_ \<rightarrow>/ _)" [1, 0] 0) = "cfun :: ('a \<Rightarrow> 'b) set"
+cpodef ('a, 'b) cfun (\<open>(\<open>notation=\<open>infix \<rightarrow>\<close>\<close>_ \<rightarrow>/ _)\<close> [1, 0] 0) = "cfun :: ('a \<Rightarrow> 'b) set"
   by (auto simp: cfun_def intro: cont_const adm_cont)
 
 type_notation (ASCII)
-  cfun  (infixr "->" 0)
+  cfun  (infixr \<open>->\<close> 0)
 
 notation (ASCII)
-  Rep_cfun  ("(_$/_)" [999,1000] 999)
+  Rep_cfun  (\<open>(\<open>notation=\<open>infix $\<close>\<close>_$/_)\<close> [999,1000] 999)
 
 notation
-  Rep_cfun  ("(_\<cdot>/_)" [999,1000] 999)
+  Rep_cfun  (\<open>(\<open>notation=\<open>infix \<cdot>\<close>\<close>_\<cdot>/_)\<close> [999,1000] 999)
 
 
 subsection \<open>Syntax for continuous lambda abstraction\<close>
@@ -39,18 +36,18 @@ parse_translation \<open>
 \<close>
 
 print_translation \<open>
-  [(\<^const_syntax>\<open>Abs_cfun\<close>, fn _ => fn [Abs abs] =>
-      let val (x, t) = Syntax_Trans.atomic_abs_tr' abs
+  [(\<^const_syntax>\<open>Abs_cfun\<close>, fn ctxt => fn [Abs abs] =>
+      let val (x, t) = Syntax_Trans.atomic_abs_tr' ctxt abs
       in Syntax.const \<^syntax_const>\<open>_cabs\<close> $ x $ t end)]
 \<close>  \<comment> \<open>To avoid eta-contraction of body\<close>
 
 text \<open>Syntax for nested abstractions\<close>
 
 syntax (ASCII)
-  "_Lambda" :: "[cargs, logic] \<Rightarrow> logic"  ("(3LAM _./ _)" [1000, 10] 10)
+  "_Lambda" :: "[cargs, logic] \<Rightarrow> logic"  (\<open>(\<open>indent=3 notation=\<open>binder LAM\<close>\<close>LAM _./ _)\<close> [1000, 10] 10)
 
 syntax
-  "_Lambda" :: "[cargs, logic] \<Rightarrow> logic" ("(3\<Lambda> _./ _)" [1000, 10] 10)
+  "_Lambda" :: "[cargs, logic] \<Rightarrow> logic" (\<open>(\<open>indent=3 notation=\<open>binder \<Lambda>\<close>\<close>\<Lambda> _./ _)\<close> [1000, 10] 10)
 
 syntax_consts
   "_Lambda" \<rightleftharpoons> Abs_cfun
@@ -147,7 +144,7 @@ text \<open>
 simproc_setup beta_cfun_proc ("Rep_cfun (Abs_cfun f)") = \<open>
   K (fn ctxt => fn ct =>
     let
-      val f = #2 (Thm.dest_comb (#2 (Thm.dest_comb ct)));
+      val f = Thm.dest_arg (Thm.dest_arg ct);
       val [T, U] = Thm.dest_ctyp (Thm.ctyp_of_cterm f);
       val tr = Thm.instantiate' [SOME T, SOME U] [SOME f] (mk_meta_eq @{thm Abs_cfun_inverse2});
       val rules = Named_Theorems.get ctxt \<^named_theorems>\<open>cont2cont\<close>;
@@ -417,7 +414,7 @@ definition ID :: "'a \<rightarrow> 'a"
 definition cfcomp  :: "('b \<rightarrow> 'c) \<rightarrow> ('a \<rightarrow> 'b) \<rightarrow> 'a \<rightarrow> 'c"
   where oo_def: "cfcomp = (\<Lambda> f g x. f\<cdot>(g\<cdot>x))"
 
-abbreviation cfcomp_syn :: "['b \<rightarrow> 'c, 'a \<rightarrow> 'b] \<Rightarrow> 'a \<rightarrow> 'c"  (infixr "oo" 100)
+abbreviation cfcomp_syn :: "['b \<rightarrow> 'c, 'a \<rightarrow> 'b] \<Rightarrow> 'a \<rightarrow> 'c"  (infixr \<open>oo\<close> 100)
   where "f oo g == cfcomp\<cdot>f\<cdot>g"
 
 lemma ID1 [simp]: "ID\<cdot>x = x"
@@ -455,9 +452,7 @@ lemma assoc_oo: "f oo (g oo h) = (f oo g) oo h"
 
 subsection \<open>Strictified functions\<close>
 
-default_sort pcpo
-
-definition seq :: "'a \<rightarrow> 'b \<rightarrow> 'b"
+definition seq :: "'a::pcpo \<rightarrow> 'b::pcpo \<rightarrow> 'b"
   where "seq = (\<Lambda> x. if x = \<bottom> then \<bottom> else ID)"
 
 lemma cont2cont_if_bottom [cont2cont, simp]:
@@ -481,7 +476,7 @@ lemma seq_simps [simp]:
   "x \<noteq> \<bottom> \<Longrightarrow> seq\<cdot>x = ID"
   by (simp_all add: seq_conv_if)
 
-definition strictify  :: "('a \<rightarrow> 'b) \<rightarrow> 'a \<rightarrow> 'b"
+definition strictify  :: "('a::pcpo \<rightarrow> 'b::pcpo) \<rightarrow> 'a \<rightarrow> 'b"
   where "strictify = (\<Lambda> f x. seq\<cdot>x\<cdot>(f\<cdot>x))"
 
 lemma strictify_conv_if: "strictify\<cdot>f\<cdot>x = (if x = \<bottom> then \<bottom> else f\<cdot>x)"

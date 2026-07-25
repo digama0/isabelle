@@ -44,7 +44,7 @@ object Build_CI {
   sealed trait Hosts {
     def hosts_spec: String
     def max_jobs: Option[Int]
-    def prefs: List[Options.Spec]
+    def prefs: Options.Update
     def numa_shuffling: Boolean
     def build_cluster: Boolean
   }
@@ -53,13 +53,13 @@ object Build_CI {
     extends Hosts {
     def hosts_spec: String = host_spec
     def max_jobs: Option[Int] = Some(jobs)
-    def prefs: List[Options.Spec] = List(Options.Spec.eq("threads", threads.toString))
+    def prefs: Options.Update = List(Options.Spec.eq("threads", threads.toString))
     def build_cluster: Boolean = false
   }
 
   case class Cluster(hosts_spec: String, numa_shuffling: Boolean = true) extends Hosts {
     def max_jobs: Option[Int] = None
-    def prefs: List[Options.Spec] = Nil
+    def prefs: Options.Update = Nil
     def build_cluster: Boolean = true
   }
 
@@ -70,16 +70,14 @@ object Build_CI {
   case object On_Commit extends Trigger
 
   object Timed {
-    def nightly(start_time: Time = Time.zero): Timed =
-      Timed { (before, now) =>
-        val start0 = before.midnight + start_time
-        val start1 = now.midnight + start_time
-        (before.time < start0.time && start0.time <= now.time) ||
-          (before.time < start1.time && start1.time <= now.time)
-      }
+    def nightly(start: Time = Time.hms(0, 17, 0)): Timed = Timed(Date.Daily(start))
+    def weekly(day: Date.Day = Date.Day.sun, start: Time = Time.hms(0, 17, 0)): Timed =
+      Timed(Date.Weekly(day, Date.Daily(start)))
   }
 
-  case class Timed(in_interval: (Date, Date) => Boolean) extends Trigger
+  case class Timed(cycle: Date.Cycle) extends Trigger {
+    def next(previous: Date, now: Date): Boolean = cycle.next(previous).time < cycle.next(now).time
+  }
 
 
   /* build hooks */
@@ -109,7 +107,7 @@ object Build_CI {
     presentation: Boolean = false,
     clean_build: Boolean = false,
     select_dirs: List[Path] = Nil,
-    build_prefs: List[Options.Spec] = Nil,
+    build_prefs: Options.Update = Nil,
     hook: Hook = none,
     extra_components: List[String] = Nil,
     other_settings: List[String] = Nil,
@@ -120,8 +118,8 @@ object Build_CI {
 
     def afp_root: Option[Path] = if (!afp) None else Some(AFP.BASE)
 
-    def prefs: List[Options.Spec] = build_prefs ++ hosts.prefs ++ document_prefs
-    def document_prefs: List[Options.Spec] =
+    def prefs: Options.Update = build_prefs ::: hosts.prefs ::: document_prefs
+    def document_prefs: Options.Update =
       if (!presentation) Nil
       else List(
         Options.Spec.eq("browser_info", "true"),
@@ -167,7 +165,7 @@ object Build_CI {
       Exn.capture(f) match {
         case Exn.Res(_) => Process_Result.RC.ok
         case Exn.Exn(e) =>
-          progress.echo_error_message(e.getMessage)
+          progress.echo_error_message(Exn.message(e))
           Process_Result.RC.error
       }
 
@@ -179,7 +177,7 @@ object Build_CI {
     val pre_result = return_code { job.hook.pre(options, progress) }
 
     progress.echo(section("BUILD"))
-    val results = progress.interrupt_handler {
+    val results =
       Build.build(
         options ++ job.prefs,
         build_hosts = build_hosts,
@@ -190,7 +188,6 @@ object Build_CI {
         select_dirs = job.select_dirs,
         numa_shuffling = job.hosts.numa_shuffling,
         max_jobs = job.hosts.max_jobs)
-    }
 
     val stop_date = progress.now()
     val elapsed_time = stop_date - progress.start

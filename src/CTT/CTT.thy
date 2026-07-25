@@ -18,11 +18,11 @@ typedecl o
 
 consts
   \<comment> \<open>Judgments\<close>
-  Type      :: "t \<Rightarrow> prop"          ("(_ type)" [10] 5)
-  Eqtype    :: "[t,t]\<Rightarrow>prop"        ("(_ =/ _)" [10,10] 5)
-  Elem      :: "[i, t]\<Rightarrow>prop"       ("(_ /: _)" [10,10] 5)
-  Eqelem    :: "[i,i,t]\<Rightarrow>prop"      ("(_ =/ _ :/ _)" [10,10,10] 5)
-  Reduce    :: "[i,i]\<Rightarrow>prop"        ("Reduce[_,_]")
+  Type      :: "t \<Rightarrow> prop"          (\<open>(\<open>notation=\<open>postfix Type\<close>\<close>_ type)\<close> [10] 5)
+  Eqtype    :: "[t,t]\<Rightarrow>prop"        (\<open>(\<open>notation=\<open>infix Eqtype\<close>\<close>_ =/ _)\<close> [10,10] 5)
+  Elem      :: "[i, t]\<Rightarrow>prop"       (\<open>(\<open>notation=\<open>infix Elem\<close>\<close>_ /: _)\<close> [10,10] 5)
+  Eqelem    :: "[i,i,t]\<Rightarrow>prop"      (\<open>(\<open>notation=\<open>mixfix Eqelem\<close>\<close>_ =/ _ :/ _)\<close> [10,10,10] 5)
+  Reduce    :: "[i,i]\<Rightarrow>prop"        (\<open>Reduce[_,_]\<close>)
   \<comment> \<open>Types for truth values\<close>
   F         :: "t"
   T         :: "t"          \<comment> \<open>\<open>F\<close> is empty, \<open>T\<close> contains one element\<close>
@@ -30,24 +30,24 @@ consts
   tt        :: "i"
   \<comment> \<open>Natural numbers\<close>
   N         :: "t"
-  Zero      :: "i"                  ("0")
+  Zero      :: "i"                  (\<open>0\<close>)
   succ      :: "i\<Rightarrow>i"
   rec       :: "[i, i, [i,i]\<Rightarrow>i] \<Rightarrow> i"
   \<comment> \<open>Binary sum\<close>
-  Plus      :: "[t,t]\<Rightarrow>t"           (infixr "+" 40)
+  Plus      :: "[t,t]\<Rightarrow>t"           (infixr \<open>+\<close> 40)
   inl       :: "i\<Rightarrow>i"
   inr       :: "i\<Rightarrow>i"
   "when"    :: "[i, i\<Rightarrow>i, i\<Rightarrow>i]\<Rightarrow>i"
   \<comment> \<open>General sum and binary product\<close>
   Sum       :: "[t, i\<Rightarrow>t]\<Rightarrow>t"
-  pair      :: "[i,i]\<Rightarrow>i"           ("(1<_,/_>)")
+  pair      :: "[i,i]\<Rightarrow>i"           (\<open>(\<open>indent=1 notation=\<open>mixfix pair\<close>\<close><_,/_>)\<close>)
   fst       :: "i\<Rightarrow>i"
   snd       :: "i\<Rightarrow>i"
   split     :: "[i, [i,i]\<Rightarrow>i] \<Rightarrow>i"
   \<comment> \<open>General product and function space\<close>
   Prod      :: "[t, i\<Rightarrow>t]\<Rightarrow>t"
-  lambda    :: "(i \<Rightarrow> i) \<Rightarrow> i"      (binder "\<^bold>\<lambda>" 10)
-  app       :: "[i,i]\<Rightarrow>i"           (infixl "`" 60)
+  lambda    :: "(i \<Rightarrow> i) \<Rightarrow> i"      (binder \<open>\<^bold>\<lambda>\<close> 10)
+  app       :: "[i,i]\<Rightarrow>i"           (infixl \<open>`\<close> 60)
   \<comment> \<open>Equality type\<close>
   Eq        :: "[t,i,i]\<Rightarrow>t"
   eq        :: "i"
@@ -56,8 +56,8 @@ text \<open>Some inexplicable syntactic dependencies; in particular, "0"
  must be introduced after the judgment forms.\<close>
 
 syntax
-  "_PROD"   :: "[idt,t,t]\<Rightarrow>t"       ("(3\<Prod>_:_./ _)" 10)
-  "_SUM"    :: "[idt,t,t]\<Rightarrow>t"       ("(3\<Sum>_:_./ _)" 10)
+  "_PROD"   :: "[idt,t,t]\<Rightarrow>t"       (\<open>(\<open>indent=3 notation=\<open>binder \<Prod>\<close>\<close>\<Prod>_:_./ _)\<close> 10)
+  "_SUM"    :: "[idt,t,t]\<Rightarrow>t"       (\<open>(\<open>indent=3 notation=\<open>binder \<Sum>\<close>\<close>\<Sum>_:_./ _)\<close> 10)
 syntax_consts
   "_PROD" \<rightleftharpoons> Prod and
   "_SUM" \<rightleftharpoons> Sum
@@ -65,10 +65,10 @@ translations
   "\<Prod>x:A. B" \<rightleftharpoons> "CONST Prod(A, \<lambda>x. B)"
   "\<Sum>x:A. B" \<rightleftharpoons> "CONST Sum(A, \<lambda>x. B)"
 
-abbreviation Arrow :: "[t,t]\<Rightarrow>t"  (infixr "\<longrightarrow>" 30)
+abbreviation Arrow :: "[t,t]\<Rightarrow>t"  (infixr \<open>\<longrightarrow>\<close> 30)
   where "A \<longrightarrow> B \<equiv> \<Prod>_:A. B"
 
-abbreviation Times :: "[t,t]\<Rightarrow>t"  (infixr "\<times>" 50)
+abbreviation Times :: "[t,t]\<Rightarrow>t"  (infixr \<open>\<times>\<close> 50)
   where "A \<times> B \<equiv> \<Sum>_:A. B"
 
 text \<open>
@@ -328,18 +328,18 @@ lemmas routine_rls = form_rls formL_rls refl_type element_rls
 
 ML \<open>
 fun routine_tac rls ctxt prems =
-  ASSUME ctxt (filt_resolve_from_net_tac ctxt 4 (Tactic.build_net (prems @ rls)));
+  ASSUME ctxt (Bires.filt_resolve_from_net_tac ctxt 4 (Bires.build_net (prems @ rls)));
 
 (*Solve all subgoals "A type" using formation rules. *)
-val form_net = Tactic.build_net @{thms form_rls};
+val form_net = Bires.build_net @{thms form_rls};
 fun form_tac ctxt =
-  REPEAT_FIRST (ASSUME ctxt (filt_resolve_from_net_tac ctxt 1 form_net));
+  REPEAT_FIRST (ASSUME ctxt (Bires.filt_resolve_from_net_tac ctxt 1 form_net));
 
 (*Type checking: solve a:A (a rigid, A flexible) by intro and elim rules. *)
 fun typechk_tac ctxt thms =
   let val tac =
-    filt_resolve_from_net_tac ctxt 3
-      (Tactic.build_net (thms @ @{thms form_rls} @ @{thms element_rls}))
+    Bires.filt_resolve_from_net_tac ctxt 3
+      (Bires.build_net (thms @ @{thms form_rls} @ @{thms element_rls}))
   in  REPEAT_FIRST (ASSUME ctxt tac)  end
 
 (*Solve a:A (a flexible, A rigid) by introduction rules.
@@ -347,16 +347,16 @@ fun typechk_tac ctxt thms =
   goals like ?a:SUM(A,B) have a trivial head-string *)
 fun intr_tac ctxt thms =
   let val tac =
-    filt_resolve_from_net_tac ctxt 1
-      (Tactic.build_net (thms @ @{thms form_rls} @ @{thms intr_rls}))
+    Bires.filt_resolve_from_net_tac ctxt 1
+      (Bires.build_net (thms @ @{thms form_rls} @ @{thms intr_rls}))
   in  REPEAT_FIRST (ASSUME ctxt tac)  end
 
 (*Equality proving: solve a=b:A (where a is rigid) by long rules. *)
 fun equal_tac ctxt thms =
   REPEAT_FIRST
     (ASSUME ctxt
-      (filt_resolve_from_net_tac ctxt 3
-        (Tactic.build_net (thms @ @{thms form_rls element_rls intrL_rls elimL_rls refl_elem}))))
+      (Bires.filt_resolve_from_net_tac ctxt 3
+        (Bires.build_net (thms @ @{thms form_rls element_rls intrL_rls elimL_rls refl_elem}))))
 \<close>
 
 method_setup form = \<open>Scan.succeed (fn ctxt => SIMPLE_METHOD (form_tac ctxt))\<close>
@@ -391,9 +391,9 @@ lemmas reduction_rls = comp_rls [THEN trans_elem]
 ML \<open>
 (*Converts each goal "e : Eq(A,a,b)" into "a=b:A" for simplification.
   Uses other intro rules to avoid changing flexible goals.*)
-val eqintr_net = Tactic.build_net @{thms EqI intr_rls}
+val eqintr_net = Bires.build_net @{thms EqI intr_rls}
 fun eqintr_tac ctxt =
-  REPEAT_FIRST (ASSUME ctxt (filt_resolve_from_net_tac ctxt 1 eqintr_net))
+  REPEAT_FIRST (ASSUME ctxt (Bires.filt_resolve_from_net_tac ctxt 1 eqintr_net))
 
 (** Tactics that instantiate CTT-rules.
     Vars in the given terms will be incremented!
@@ -421,7 +421,7 @@ fun add_mp_tac ctxt i =
 fun mp_tac ctxt i = eresolve_tac ctxt @{thms subst_prodE} i  THEN  assume_tac ctxt i
 
 (*"safe" when regarded as predicate calculus rules*)
-val safe_brls = sort (make_ord lessb)
+val safe_brls = sort Bires.subgoals_ord
     [ (true, @{thm FE}), (true,asm_rl),
       (false, @{thm ProdI}), (true, @{thm SumE}), (true, @{thm PlusE}) ]
 
@@ -431,7 +431,7 @@ val unsafe_brls =
 
 (*0 subgoals vs 1 or more*)
 val (safe0_brls, safep_brls) =
-    List.partition (curry (op =) 0 o subgoals_of_brl) safe_brls
+    List.partition Bires.no_subgoals safe_brls
 
 fun safestep_tac ctxt thms i =
     form_tac ctxt ORELSE
@@ -547,22 +547,22 @@ section \<open>Elementary arithmetic\<close>
 
 subsection \<open>Arithmetic operators and their definitions\<close>
 
-definition add :: "[i,i]\<Rightarrow>i"   (infixr "#+" 65)
+definition add :: "[i,i]\<Rightarrow>i"   (infixr \<open>#+\<close> 65)
   where "a#+b \<equiv> rec(a, b, \<lambda>u v. succ(v))"
 
-definition diff :: "[i,i]\<Rightarrow>i"   (infixr "-" 65)
+definition diff :: "[i,i]\<Rightarrow>i"   (infixr \<open>-\<close> 65)
   where "a-b \<equiv> rec(b, a, \<lambda>u v. rec(v, 0, \<lambda>x y. x))"
 
-definition absdiff :: "[i,i]\<Rightarrow>i"   (infixr "|-|" 65)
+definition absdiff :: "[i,i]\<Rightarrow>i"   (infixr \<open>|-|\<close> 65)
   where "a|-|b \<equiv> (a-b) #+ (b-a)"
 
-definition mult :: "[i,i]\<Rightarrow>i"   (infixr "#*" 70)
+definition mult :: "[i,i]\<Rightarrow>i"   (infixr \<open>#*\<close> 70)
   where "a#*b \<equiv> rec(a, 0, \<lambda>u v. b #+ v)"
 
-definition mod :: "[i,i]\<Rightarrow>i"   (infixr "mod" 70)
+definition mod :: "[i,i]\<Rightarrow>i"   (infixr \<open>mod\<close> 70)
   where "a mod b \<equiv> rec(a, 0, \<lambda>u v. rec(succ(v) |-| b, 0, \<lambda>x y. succ(v)))"
 
-definition div :: "[i,i]\<Rightarrow>i"   (infixr "div" 70)
+definition div :: "[i,i]\<Rightarrow>i"   (infixr \<open>div\<close> 70)
   where "a div b \<equiv> rec(a, 0, \<lambda>u v. rec(succ(u) mod b, succ(v), \<lambda>x y. v))"
 
 lemmas arith_defs = add_def diff_def absdiff_def mult_def mod_def div_def

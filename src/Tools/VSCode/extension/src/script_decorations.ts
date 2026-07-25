@@ -7,67 +7,63 @@ Non-unicode Isabelle symbols as text decorations.
 
 import { DecorationRangeBehavior, ExtensionContext, Range,
   TextDocument, TextEditor, window, workspace } from 'vscode'
+import * as symbol from './symbol'
+
 
 const arrows = {
-  sub: '⇩',
-  sup: '⇧',
-  sub_begin: '⇘',
-  sub_end: '⇙',
-  sup_begin: '⇗',
-  sup_end: '⇖'
+  sub: symbol.control.sub.decoded,
+  sup: symbol.control.sup.decoded,
+  bold: symbol.control.bold.decoded,
+  bsub: symbol.control.bsub.decoded,
+  esub: symbol.control.esub.decoded,
+  bsup: symbol.control.bsup.decoded,
+  esup: symbol.control.esup.decoded
 }
 const no_hide_list = [' ', '\n', '\r', ...Object.values(arrows)]
 
-function should_hide(next_char: string): boolean
-{
+function should_hide(next_char: string): boolean {
   return !no_hide_list.includes(next_char)
 }
 
-function find_closing(close: string, text: string, open_index: number): number | undefined
-{
+function find_closing(close: string, text: string, open_index: number): number | undefined {
   let close_index = open_index
   let counter = 1
   const open = text[open_index]
   while (counter > 0) {
-    let c = text[++close_index]
+    const c = text[++close_index]
 
     if (c === undefined) return
 
-    if (c === open) {
-      counter++
-    }
-    else if (c === close) {
-      counter--
-    }
+    if (c === open) { counter++ }
+    else if (c === close) { counter-- }
   }
   return close_index
 }
 
-
-
-function extract_ranges(doc: TextDocument)
-{
+function extract_ranges(doc: TextDocument) {
   const text = doc.getText()
   const hide_ranges: Range[] = []
   const sup_ranges: Range[] = []
   const sub_ranges: Range[] = []
+  const bold_ranges: Range[] = []
 
   for (let i = 0; i < text.length - 1; i++) {
     switch (text[i]) {
       case arrows.sup:
       case arrows.sub:
+      case arrows.bold:
         if (should_hide(text[i + 1])) {
           const pos_mid = doc.positionAt(i + 1)
           hide_ranges.push(new Range(doc.positionAt(i), pos_mid));
-          (text[i] === arrows.sub ? sub_ranges : sup_ranges)
+          (text[i] === arrows.sub ? sub_ranges : (text[i] === arrows.sup ? sup_ranges : bold_ranges))
             .push(new Range(pos_mid, doc.positionAt(i + 2)))
           i++
         }
         break
-      case arrows.sup_begin:
-      case arrows.sub_begin:
-        const close = text[i] === arrows.sub_begin ? arrows.sub_end : arrows.sup_end
-        const script_ranges = text[i] === arrows.sub_begin ? sub_ranges : sup_ranges
+      case arrows.bsup:
+      case arrows.bsub:
+        const close = text[i] === arrows.bsub ? arrows.esub : arrows.bsup
+        const script_ranges = text[i] === arrows.bsub ? sub_ranges : sup_ranges
         const close_index = find_closing(close, text, i)
 
         if (close_index && close_index - i > 1) {
@@ -75,8 +71,7 @@ function extract_ranges(doc: TextDocument)
           const pos_end = doc.positionAt(close_index)
           hide_ranges.push(
             new Range(doc.positionAt(i), pos_start),
-            new Range(pos_end, doc.positionAt(close_index + 1))
-          )
+            new Range(pos_end, doc.positionAt(close_index + 1)))
           script_ranges.push(new Range(pos_start, pos_end))
           i = close_index
         }
@@ -86,11 +81,11 @@ function extract_ranges(doc: TextDocument)
     }
   }
 
-  return { hide_ranges: hide_ranges, superscript_ranges: sup_ranges, subscript_ranges: sub_ranges }
+  return { hide_ranges: hide_ranges, superscript_ranges: sup_ranges,
+    subscript_ranges: sub_ranges, bold_ranges: bold_ranges }
 }
 
-export function register_script_decorations(context: ExtensionContext)
-{
+export function register_script_decorations(context: ExtensionContext) {
   const hide = window.createTextEditorDecorationType({
     textDecoration: 'none; font-size: 0.001em',
     rangeBehavior: DecorationRangeBehavior.ClosedClosed
@@ -104,23 +99,28 @@ export function register_script_decorations(context: ExtensionContext)
     textDecoration: 'none; position: relative; bottom: -0.5em; font-size: 80%'
   })
 
+  const bold = window.createTextEditorDecorationType({
+    textDecoration: 'none; font-weight: bold'
+  })
+
   const set_editor_decorations = (editor: TextEditor, doc: TextDocument) =>
     {
-      const { hide_ranges: hideRanges, superscript_ranges: superscriptRanges, subscript_ranges: subscriptRanges } = extract_ranges(doc)
+      const 
+        { hide_ranges: hideRanges, superscript_ranges: superscriptRanges,
+          subscript_ranges: subscriptRanges, bold_ranges: boldRanges } = extract_ranges(doc)
 
       editor.setDecorations(hide, hideRanges)
       editor.setDecorations(superscript, superscriptRanges)
       editor.setDecorations(subscript, subscriptRanges)
+      editor.setDecorations(bold, boldRanges)
     }
 
   context.subscriptions.push(
-    hide, superscript, subscript,
+    hide, superscript, subscript, bold,
 
     window.onDidChangeActiveTextEditor(editor =>
       {
-        if (!editor) {
-          return
-        }
+        if (!editor) { return }
 
         const doc = editor.document
         set_editor_decorations(editor, doc)

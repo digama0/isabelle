@@ -7,6 +7,10 @@ Standard Isabelle syntax, based on arbitrary context-free grammars
 
 signature SYNTAX =
 sig
+  datatype 'a trrule =
+    Parse_Rule of 'a * 'a |
+    Print_Rule of 'a * 'a |
+    Parse_Print_Rule of 'a * 'a
   type operations
   val install_operations: operations -> theory -> theory
   val root: string Config.T
@@ -18,6 +22,7 @@ sig
   val read_input: string -> Input.source
   val parse_input: Proof.context -> (XML.tree list -> 'a) ->
     (bool -> Markup.T) -> (Symbol_Pos.T list * Position.T -> 'a) -> string -> 'a
+  val parse_trrule: Proof.context -> (string * string) trrule -> Ast.ast trrule
   val parse_sort: Proof.context -> string -> sort
   val parse_typ: Proof.context -> string -> typ
   val parse_term: Proof.context -> string -> term
@@ -72,7 +77,6 @@ sig
   val string_of_sort_global: theory -> sort -> string
   val pretty_flexpair: Proof.context -> term * term -> Pretty.T list
   type syntax
-  val cache_persistent: bool Unsynchronized.ref
   val cache_syntax: syntax -> unit
   val eq_syntax: syntax * syntax -> bool
   datatype approx = Prefix of string | Infix of {assoc: Printer.assoc, delim: string, pri: int}
@@ -80,8 +84,8 @@ sig
   val get_consts: syntax -> string -> string list
   val is_const: syntax -> string -> bool
   val is_keyword: syntax -> string -> bool
-  val tokenize: syntax -> bool -> Symbol_Pos.T list -> Lexicon.token list
-  val parse: syntax -> string -> Lexicon.token list -> Parser.parsetree list
+  val tokenize: syntax -> {raw: bool} -> Symbol_Pos.T list -> Lexicon.token list
+  val parse: syntax -> string -> Lexicon.token list -> Parser.tree list
   val parse_ast_translation: syntax -> string -> (Proof.context -> Ast.ast list -> Ast.ast) option
   val parse_rules: syntax -> string -> (Ast.ast * Ast.ast) list
   val parse_translation: syntax -> string -> (Proof.context -> term list -> term) option
@@ -91,6 +95,7 @@ sig
   val print_ast_translation: syntax -> string ->
     Proof.context -> Ast.ast list -> Ast.ast  (*exception Match*)
   val prtabs: syntax -> Printer.prtabs
+  val print_mode_tabs: syntax -> Printer.prtab list
   type mode
   val mode_default: mode
   val mode_input: mode
@@ -99,22 +104,24 @@ sig
   val print_gram: syntax -> unit
   val print_trans: syntax -> unit
   val print_syntax: syntax -> unit
-  datatype 'a trrule =
-    Parse_Rule of 'a * 'a |
-    Print_Rule of 'a * 'a |
-    Parse_Print_Rule of 'a * 'a
   val map_trrule: ('a -> 'b) -> 'a trrule -> 'b trrule
-  val update_trfuns:
+  val update_trfuns: Proof.context ->
     (string * ((Proof.context -> Ast.ast list -> Ast.ast) * stamp)) list *
     (string * ((Proof.context -> term list -> term) * stamp)) list *
     (string * ((Proof.context -> typ -> term list -> term) * stamp)) list *
     (string * ((Proof.context -> Ast.ast list -> Ast.ast) * stamp)) list -> syntax -> syntax
-  val update_type_gram: bool -> mode -> (string * typ * mixfix) list -> syntax -> syntax
-  val update_const_gram: bool -> string list ->
+  val update_type_gram: Proof.context -> bool -> mode -> (string * typ * mixfix) list ->
+    syntax -> syntax
+  val update_const_gram: Proof.context -> bool -> string list ->
     mode -> (string * typ * mixfix) list -> syntax -> syntax
-  val update_consts: (string * string list) list -> syntax -> syntax
-  val update_trrules: Ast.ast trrule list -> syntax -> syntax
-  val remove_trrules: Ast.ast trrule list -> syntax -> syntax
+  val update_consts: Proof.context -> (string * string list) list -> syntax -> syntax
+  val update_trrules: Proof.context -> bool -> Ast.ast trrule list -> syntax -> syntax
+  val get_polarity: Proof.context -> bool
+  val set_polarity: bool -> Proof.context -> Proof.context
+  val set_polarity_generic: bool -> Context.generic -> Context.generic
+  val effective_polarity: Proof.context -> bool -> bool
+  val effective_polarity_global: theory -> bool -> bool
+  val effective_polarity_generic: Context.generic -> bool -> bool
   val const: string -> term
   val free: string -> term
   val var: indexname -> term
@@ -128,8 +135,14 @@ struct
 
 (* operations *)
 
+datatype 'a trrule =
+  Parse_Rule of 'a * 'a |
+  Print_Rule of 'a * 'a |
+  Parse_Print_Rule of 'a * 'a;
+
 type operations =
- {parse_sort: Proof.context -> string -> sort,
+ {parse_trrule: Proof.context -> (string * string) trrule -> Ast.ast trrule,
+  parse_sort: Proof.context -> string -> sort,
   parse_typ: Proof.context -> string -> typ,
   parse_term: Proof.context -> string -> term,
   parse_prop: Proof.context -> string -> term,
@@ -227,6 +240,7 @@ end;
 
 (* (un)parsing *)
 
+val parse_trrule = operation #parse_trrule;
 val parse_sort = operation #parse_sort;
 val parse_typ = operation #parse_typ;
 val parse_term = operation #parse_term;
@@ -354,6 +368,48 @@ fun pretty_flexpair ctxt (t, u) =
 
 
 
+(** keywords **)
+
+abstype keywords = Keywords of Symset.T * Scan.lexicon lazy
+with
+
+val empty_keywords =
+  Keywords (Symset.empty, Lazy.value Scan.empty_lexicon);
+
+fun make_keywords set =
+  let fun lex () = Scan.build_lexicon (set |> Symset.fold (Scan.extend_lexicon o Symbol.explode))
+  in Keywords (set, Lazy.lazy lex) end;
+
+fun add_keywords s (keywords as Keywords (set, lex)) =
+  if Symset.member set s then keywords
+  else
+    let
+      val set' = Symset.insert s set;
+      val lex' = Lazy.map_finished (fn x => Scan.extend_lexicon (Symbol.explode s) x) lex;
+    in Keywords (set', lex') end;
+
+fun merge_keywords (keywords1 as Keywords (set1, lex1), keywords2 as Keywords (set2, lex2)) =
+  if pointer_eq (keywords1, keywords2) then keywords1
+  else if Symset.is_empty set1 then keywords2
+  else if Symset.is_empty set2 then keywords1
+  else if Symset.subset (set1, set2) then keywords2
+  else if Symset.subset (set2, set1) then keywords1
+  else
+    let
+      val set' = Symset.merge (set1, set2);
+      val lex' = Lazy.value (Scan.merge_lexicons (apply2 Lazy.force (lex1, lex2)));
+    in Keywords (set', lex') end;
+
+fun member_keywords (Keywords (set, _)) = Symset.member set;
+
+fun dest_keywords (Keywords (set, _)) = sort_strings (Symset.dest set);
+
+fun tokenize_keywords (Keywords (_, lex)) = Lexicon.tokenize (Lazy.force lex);
+
+end;
+
+
+
 (** tables of translation functions **)
 
 (* parse (ast) translations *)
@@ -398,10 +454,10 @@ fun merge_tr'tabs tab1 tab2 = Symtab.merge_list Syntax_Ext.eq_trfun (tab1, tab2)
 
 type ruletab = (Ast.ast * Ast.ast) list Symtab.table;
 
-fun dest_ruletab tab = maps snd (Symtab.dest tab);
+fun dest_ruletab tab = Symtab.dest tab |> sort_by #1 |> maps #2;
 
-val update_ruletab = fold_rev (fn r => Symtab.update_list (op =) (Ast.head_of_rule r, r));
-val remove_ruletab = fold (fn r => Symtab.remove_list (op =) (Ast.head_of_rule r, r));
+val update_ruletab = fold_rev (fn r => Symtab.update_list (op =) (Ast.rule_index r, r));
+val remove_ruletab = fold (fn r => Symtab.remove_list (op =) (Ast.rule_index r, r));
 fun merge_ruletabs tab1 tab2 = Symtab.merge_list (op =) (tab1, tab2);
 
 
@@ -411,7 +467,7 @@ fun merge_ruletabs tab1 tab2 = Symtab.merge_list (op =) (tab1, tab2);
 datatype syntax =
   Syntax of {
     input: Syntax_Ext.xprod list,
-    lexicon: Scan.lexicon,
+    keywords: keywords,
     gram: Parser.gram Synchronized.cache,
     consts: unit Graph.T,
     prmodes: string list,
@@ -423,10 +479,8 @@ datatype syntax =
     print_ast_trtab: ((Proof.context -> Ast.ast list -> Ast.ast) * stamp) list Symtab.table,
     prtabs: Printer.prtabs} * stamp;
 
-val cache_persistent = Unsynchronized.ref false;
-
 fun cache_eval (gram: Parser.gram Synchronized.cache) =
-  Synchronized.cache_eval {persistent = ! cache_persistent} gram;
+  Synchronized.cache_eval {persistent = Interactive.enabled ()} gram;
 
 fun cache_syntax (Syntax ({gram, ...}, _)) = ignore (cache_eval gram);
 
@@ -443,10 +497,10 @@ fun get_approx (Syntax ({prtabs, ...}, _)) c =
       |> Option.map Prefix);
 
 fun is_const (Syntax ({consts, ...}, _)) c =
-  Graph.defined consts c andalso not (Lexicon.is_marked c);
+  Graph.defined consts c andalso not (Lexicon.is_marked_entity c);
 
-fun is_keyword (Syntax ({lexicon, ...}, _)) = Scan.is_literal lexicon o Symbol.explode;
-fun tokenize (Syntax ({lexicon, ...}, _)) = Lexicon.tokenize lexicon;
+fun is_keyword (Syntax ({keywords, ...}, _)) = member_keywords keywords;
+fun tokenize (Syntax ({keywords, ...}, _)) = tokenize_keywords keywords;
 fun parse (Syntax ({gram, ...}, _)) = Parser.parse (cache_eval gram);
 
 fun parse_ast_translation (Syntax ({parse_ast_trtab, ...}, _)) = lookup_tr parse_ast_trtab;
@@ -457,6 +511,7 @@ fun print_rules (Syntax ({print_ruletab, ...}, _)) = Symtab.lookup_list print_ru
 fun print_ast_translation (Syntax ({print_ast_trtab, ...}, _)) = apply_ast_tr' print_ast_trtab;
 
 fun prtabs (Syntax ({prtabs, ...}, _)) = prtabs;
+val print_mode_tabs = Printer.print_mode_tabs o prtabs;
 
 type mode = string * bool;
 val mode_default = ("", true);
@@ -477,13 +532,12 @@ fun err_cyclic_consts css =
     "Cycle in syntax consts: " ^ (space_implode " \<leadsto> " (map quote cs))) css));
 
 fun get_consts (Syntax ({consts, ...}, _)) c =
-  if Graph.defined consts c then
-    Graph.all_preds consts [c]
-    |> filter (Graph.Keys.is_empty o Graph.imm_preds consts)
+  if Graph.defined consts c
+  then filter (Graph.is_minimal consts) (Graph.all_preds consts [c])
   else [c];
 
-fun update_consts (c, bs) consts =
-  if c = "" orelse (null bs andalso (Lexicon.is_marked c orelse Graph.defined consts c))
+fun add_consts (c, bs) consts =
+  if c = "" orelse (null bs andalso (Lexicon.is_marked_entity c orelse Graph.defined consts c))
   then consts
   else
     consts
@@ -496,7 +550,7 @@ fun update_consts (c, bs) consts =
 
 val empty_syntax = Syntax
   ({input = [],
-    lexicon = Scan.empty_lexicon,
+    keywords = empty_keywords,
     gram = Synchronized.cache (fn () => Parser.empty_gram),
     consts = Graph.empty,
     prmodes = [],
@@ -513,7 +567,7 @@ val empty_syntax = Syntax
 
 fun update_syntax (mode, inout) syn_ext (Syntax (tabs, _)) =
   let
-    val {input, lexicon, gram, consts = consts1, prmodes, parse_ast_trtab, parse_ruletab,
+    val {input, keywords, gram, consts = consts1, prmodes, parse_ast_trtab, parse_ruletab,
       parse_trtab, print_trtab, print_ruletab, print_ast_trtab, prtabs} = tabs;
     val Syntax_Ext.Syn_Ext {xprods, consts = consts2, parse_ast_translation,
       parse_rules, parse_translation, print_translation, print_rules,
@@ -524,9 +578,9 @@ fun update_syntax (mode, inout) syn_ext (Syntax (tabs, _)) =
   in
     Syntax
     ({input = new_xprods @ input,
-      lexicon = fold Scan.extend_lexicon (Syntax_Ext.delims_of new_xprods) lexicon,
+      keywords = (fold o Syntax_Ext.fold_delims) add_keywords new_xprods keywords,
       gram = if null new_xprods then gram else extend_gram new_xprods input gram,
-      consts = fold update_consts consts2 consts1,
+      consts = fold add_consts consts2 consts1,
       prmodes = insert (op =) mode prmodes,
       parse_ast_trtab =
         update_trtab "parse ast translation" (if_inout parse_ast_translation) parse_ast_trtab,
@@ -545,7 +599,7 @@ fun remove_syntax (mode, inout) syn_ext (Syntax (tabs, _)) =
   let
     val Syntax_Ext.Syn_Ext {xprods, consts = _, parse_ast_translation, parse_rules,
       parse_translation, print_translation, print_rules, print_ast_translation} = syn_ext;
-    val {input, lexicon, gram, consts, prmodes, parse_ast_trtab, parse_ruletab,
+    val {input, keywords, gram, consts, prmodes, parse_ast_trtab, parse_ruletab,
       parse_trtab, print_trtab, print_ruletab, print_ast_trtab, prtabs} = tabs;
     val input' = if inout then subtract (op =) xprods input else input;
     val changed = length input <> length input';
@@ -553,7 +607,10 @@ fun remove_syntax (mode, inout) syn_ext (Syntax (tabs, _)) =
   in
     Syntax
     ({input = input',
-      lexicon = if changed then Scan.make_lexicon (Syntax_Ext.delims_of input') else lexicon,
+      keywords =
+        if changed
+        then make_keywords (Symset.build (input' |> (fold o Syntax_Ext.fold_delims) Symset.insert))
+        else keywords,
       gram = if changed then new_gram input' else gram,
       consts = consts,
       prmodes = prmodes,
@@ -571,12 +628,12 @@ fun remove_syntax (mode, inout) syn_ext (Syntax (tabs, _)) =
 
 fun merge_syntax (Syntax (tabs1, _), Syntax (tabs2, _)) =
   let
-    val {input = input1, lexicon = lexicon1, gram = gram1, consts = consts1,
+    val {input = input1, keywords = keywords1, gram = gram1, consts = consts1,
       prmodes = prmodes1, parse_ast_trtab = parse_ast_trtab1, parse_ruletab = parse_ruletab1,
       parse_trtab = parse_trtab1, print_trtab = print_trtab1, print_ruletab = print_ruletab1,
       print_ast_trtab = print_ast_trtab1, prtabs = prtabs1} = tabs1;
 
-    val {input = input2, lexicon = lexicon2, gram = gram2, consts = consts2,
+    val {input = input2, keywords = keywords2, gram = gram2, consts = consts2,
       prmodes = prmodes2, parse_ast_trtab = parse_ast_trtab2, parse_ruletab = parse_ruletab2,
       parse_trtab = parse_trtab2, print_trtab = print_trtab2, print_ruletab = print_ruletab2,
       print_ast_trtab = print_ast_trtab2, prtabs = prtabs2} = tabs2;
@@ -596,7 +653,7 @@ fun merge_syntax (Syntax (tabs1, _), Syntax (tabs2, _)) =
   in
     Syntax
     ({input = input',
-      lexicon = Scan.merge_lexicons (lexicon1, lexicon2),
+      keywords = merge_keywords (keywords1, keywords2),
       gram = gram',
       consts =
         Graph.merge_acyclic (op =) (consts1, consts2)
@@ -609,7 +666,7 @@ fun merge_syntax (Syntax (tabs1, _), Syntax (tabs2, _)) =
       print_trtab = merge_tr'tabs print_trtab1 print_trtab2,
       print_ruletab = merge_ruletabs print_ruletab1 print_ruletab2,
       print_ast_trtab = merge_tr'tabs print_ast_trtab1 print_ast_trtab2,
-      prtabs = Printer.merge_prtabs prtabs1 prtabs2}, stamp ())
+      prtabs = Printer.merge_prtabs (prtabs1, prtabs2)}, stamp ())
   end;
 
 
@@ -623,11 +680,11 @@ fun pretty_strs_qs name strs =
 
 fun pretty_gram (Syntax (tabs, _)) =
   let
-    val {lexicon, prmodes, gram, ...} = tabs;
+    val {keywords, prmodes, gram, ...} = tabs;
     val prmodes' = sort_strings (filter_out (fn s => s = "") prmodes);
   in
     [Pretty.block (Pretty.breaks
-      (Pretty.str "lexicon:" :: map (Pretty.quote o Pretty.keyword1) (Scan.dest_lexicon lexicon))),
+      (Pretty.str "lexicon:" :: map (Pretty.quote o Pretty.keyword1) (dest_keywords keywords))),
       Pretty.big_list "productions:" (Parser.pretty_gram (cache_eval gram)),
       pretty_strs_qs "print modes:" prmodes']
   end;
@@ -654,9 +711,9 @@ fun pretty_trans (Syntax (tabs, _)) =
 
 in
 
-fun print_gram syn = Pretty.writeln_chunks (pretty_gram syn);
-fun print_trans syn = Pretty.writeln_chunks (pretty_trans syn);
-fun print_syntax syn = Pretty.writeln_chunks (pretty_gram syn @ pretty_trans syn);
+fun print_gram syn = Pretty.writeln (Pretty.chunks (pretty_gram syn));
+fun print_trans syn = Pretty.writeln (Pretty.chunks (pretty_trans syn));
+fun print_syntax syn = Pretty.writeln (Pretty.chunks (pretty_gram syn @ pretty_trans syn));
 
 end;
 
@@ -665,11 +722,6 @@ end;
 (** prepare translation rules **)
 
 (* rules *)
-
-datatype 'a trrule =
-  Parse_Rule of 'a * 'a |
-  Print_Rule of 'a * 'a |
-  Parse_Print_Rule of 'a * 'a;
 
 fun map_trrule f (Parse_Rule (x, y)) = Parse_Rule (f x, f y)
   | map_trrule f (Print_Rule (x, y)) = Print_Rule (f x, f y)
@@ -707,18 +759,35 @@ end;
 
 (** modify syntax **)
 
-val update_trfuns = update_syntax mode_default o Syntax_Ext.syn_ext_trfuns;
+(* updates *)
 
-fun update_type_gram add prmode decls =
-  (if add then update_syntax else remove_syntax) prmode (Mixfix.syn_ext_types decls);
+fun update_trfuns ctxt = update_syntax mode_default o Syntax_Ext.syn_ext_trfuns ctxt;
 
-fun update_const_gram add logical_types prmode decls =
-  (if add then update_syntax else remove_syntax) prmode (Mixfix.syn_ext_consts logical_types decls);
+fun update_type_gram ctxt add prmode decls =
+  (if add then update_syntax else remove_syntax) prmode (Mixfix.syn_ext_types ctxt decls);
 
-val update_consts = update_syntax mode_default o Syntax_Ext.syn_ext_consts;
+fun update_const_gram ctxt add logical_types prmode decls =
+  (if add then update_syntax else remove_syntax) prmode
+    (Mixfix.syn_ext_consts ctxt logical_types decls);
 
-val update_trrules = update_syntax mode_default o Syntax_Ext.syn_ext_rules o check_rules;
-val remove_trrules = remove_syntax mode_default o Syntax_Ext.syn_ext_rules o check_rules;
+val update_consts = update_syntax mode_default oo Syntax_Ext.syn_ext_consts;
+
+fun update_trrules ctxt add =
+  (if add then update_syntax else remove_syntax) mode_default o
+    Syntax_Ext.syn_ext_rules ctxt o check_rules;
+
+
+(* polarity of declarations: true = add, false = del *)
+
+val polarity = Config.declare_bool ("polarity", Position.none) (K true);
+
+fun get_polarity ctxt = Config.get ctxt polarity;
+val set_polarity = Config.put polarity;
+val set_polarity_generic = Config.put_generic polarity;
+
+fun effective_polarity ctxt add = get_polarity ctxt = add;
+fun effective_polarity_global thy add = Config.get_global thy polarity = add;
+val effective_polarity_generic = Context.cases effective_polarity_global effective_polarity;
 
 
 open Lexicon.Syntax;

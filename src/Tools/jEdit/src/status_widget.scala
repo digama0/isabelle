@@ -6,6 +6,7 @@ ML status bar: heap and garbage collection.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 import java.awt.{Color, Dimension, Graphics, Graphics2D, Insets, RenderingHints}
@@ -25,7 +26,7 @@ object Status_Widget {
   abstract class GUI(view: View) extends JComponent {
     /* init */
 
-    setFont(new JLabel().getFont)
+    setFont(GUI.copy_font(GUI.label_font()))
 
     private val font_render_context = new FontRenderContext(null, true, false)
     private val line_metrics = getFont.getLineMetrics(template, font_render_context)
@@ -86,8 +87,9 @@ object Status_Widget {
     def action: String
 
     addMouseListener(new MouseAdapter {
-      override def mouseClicked(evt: MouseEvent): Unit = {
-        if (evt.getClickCount == 2) {
+      override def mousePressed(evt: MouseEvent): Unit = {
+        if (!evt.isConsumed() && evt.getClickCount == 2 && GUI.no_modifier(evt)) {
+          evt.consume()
           view.getInputHandler.invokeAction(action)
         }
       }
@@ -104,8 +106,9 @@ object Status_Widget {
     private var status = Java_Statistics.memory_status()
 
     def get_status: (String, Double) = {
-      val text = "JVM: " + status.heap_used.MiB.round + "/" + status.heap_size.MiB.round + "MiB"
-      (text, status.heap_used_fraction)
+      val text =
+        "JVM: " + status.heap_used_minor.MiB.round + "/" + status.heap_size_minor.MiB.round + "MiB"
+      (text, status.heap_used_minor_fraction)
     }
 
     private def update_status(new_status: Java_Statistics.Memory_Status): Unit = {
@@ -160,8 +163,9 @@ object Status_Widget {
       status.gc_progress match {
         case Some(p) => ("ML cleanup", 1.0 - p)
         case None =>
-          val text = "ML: " + status.heap_used.MiB.round + "/" + status.heap_size.MiB.round + "MiB"
-          (text, status.heap_used_fraction)
+          val text =
+            "ML: " + status.heap_used_minor.MiB.round + "/" + status.heap_size.MiB.round + "MiB"
+          (text, status.heap_used_minor_fraction)
       }
 
     private def update_status(new_status: ML_Statistics.Memory_Status): Unit = {
@@ -175,7 +179,7 @@ object Status_Widget {
     /* main */
 
     private val main =
-      Session.Consumer[Session.Runtime_Statistics](getClass.getName) {
+      Session.Consumer[Session.Runtime_Statistics](this.class_name) {
         case stats =>
           val status = ML_Statistics.memory_status(stats.props)
           GUI_Thread.later { update_status(status) }

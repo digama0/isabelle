@@ -80,14 +80,14 @@ fun la_farkas_tac ({context = ctxt, prems, concl,  ...}: Subgoal.focus) args thm
     val _ = trace (fn () => @{print} combined)
     fun arith_full_simps ctxt thms =
       ctxt
-       |> empty_simpset
-      |> put_simpset HOL_basic_ss
-       |> (fn ctxt => ctxt addsimps thms
-           addsimps arith_thms
-           |> fold Simplifier.add_proc
-            [@{simproc int_div_cancel_numeral_factors}, @{simproc int_combine_numerals},
-             @{simproc divide_cancel_numeral_factor}, @{simproc intle_cancel_numerals},
-             @{simproc field_combine_numerals}, @{simproc intless_cancel_numerals}])
+       |> Simplifier.empty_simpset
+       |> put_simpset HOL_basic_ss
+       |> Simplifier.add_simps thms
+       |> Simplifier.add_simps arith_thms
+       |> fold Simplifier.add_proc
+        [@{simproc int_div_cancel_numeral_factors}, @{simproc int_combine_numerals},
+         @{simproc divide_cancel_numeral_factor}, @{simproc intle_cancel_numerals},
+         @{simproc field_combine_numerals}, @{simproc intless_cancel_numerals}]
       |> asm_full_simplify
     val final_False = combined
       |> arith_full_simps ctxt (Named_Theorems.get ctxt @{named_theorems ac_simps})
@@ -104,9 +104,9 @@ fun REPEAT' tac = fn i => REPEAT (tac i)
 
 fun rewrite_only_thms ctxt thms =
   ctxt
-  |> empty_simpset
+  |> Simplifier.empty_simpset
   |> put_simpset HOL_basic_ss
-  |> (fn ctxt => ctxt addsimps thms)
+  |> Simplifier.add_simps thms
   |> Simplifier.full_simp_tac
 
 fun la_farkas args ctxt =

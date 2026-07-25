@@ -5,7 +5,6 @@ theory HOL_Specific
     Main
     "HOL-Library.Old_Datatype"
     "HOL-Library.Old_Recdef"
-    "HOL-Library.Adhoc_Overloading"
     "HOL-Library.Dlist"
     "HOL-Library.FSet"
     Base
@@ -214,7 +213,7 @@ where
 text \<open>The accessible part of a relation is defined as follows:\<close>
 
 inductive acc :: "('a \<Rightarrow> 'a \<Rightarrow> bool) \<Rightarrow> 'a \<Rightarrow> bool"
-  for r :: "'a \<Rightarrow> 'a \<Rightarrow> bool"  (infix "\<prec>" 50)
+  for r :: "'a \<Rightarrow> 'a \<Rightarrow> bool"  (infix \<open>\<prec>\<close> 50)
 where acc: "(\<And>y. y \<prec> x \<Longrightarrow> acc r y) \<Longrightarrow> acc r x"
 (*<*)end(*>*)
 
@@ -645,41 +644,6 @@ text \<open>
     (@@{attribute (HOL) recdef_simp} | @@{attribute (HOL) recdef_cong} |
       @@{attribute (HOL) recdef_wf}) (() | 'add' | 'del')
   \<close>
-\<close>
-
-
-section \<open>Adhoc overloading of constants\<close>
-
-text \<open>
-  \begin{tabular}{rcll}
-  @{command_def "adhoc_overloading"} & : & \<open>local_theory \<rightarrow> local_theory\<close> \\
-  @{command_def "no_adhoc_overloading"} & : & \<open>local_theory \<rightarrow> local_theory\<close> \\
-  @{attribute_def "show_variants"} & : & \<open>attribute\<close> & default \<open>false\<close> \\
-  \end{tabular}
-
-  \<^medskip>
-  Adhoc overloading allows to overload a constant depending on its type.
-  Typically this involves the introduction of an uninterpreted constant (used
-  for input and output) and the addition of some variants (used internally).
-  For examples see \<^file>\<open>~~/src/HOL/Examples/Adhoc_Overloading_Examples.thy\<close> and
-  \<^file>\<open>~~/src/HOL/Library/Monad_Syntax.thy\<close>.
-
-  \<^rail>\<open>
-    (@@{command adhoc_overloading} | @@{command no_adhoc_overloading})
-      (@{syntax name} (@{syntax term} + ) + @'and')
-  \<close>
-
-  \<^descr> @{command "adhoc_overloading"}~\<open>c v\<^sub>1 ... v\<^sub>n\<close> associates variants with an
-  existing constant.
-
-  \<^descr> @{command "no_adhoc_overloading"} is similar to @{command
-  "adhoc_overloading"}, but removes the specified variants from the present
-  context.
-
-  \<^descr> @{attribute "show_variants"} controls printing of variants of overloaded
-  constants. If enabled, the internally used variants are printed instead of
-  their respective overloaded constants. This is occasionally useful to check
-  whether the system agrees with a user's expectations about derived variants.
 \<close>
 
 
@@ -1689,7 +1653,6 @@ text \<open>
     ;
 
     @@{command (HOL) try0} ( ( ( 'simp' | 'intro' | 'elim' | 'dest' ) ':' @{syntax thms} ) + ) ?
-      @{syntax nat}?
     ;
 
     @@{command (HOL) sledgehammer} ( '[' args ']' )? facts? @{syntax nat}?
@@ -2300,7 +2263,7 @@ text \<open>
     path: @{syntax embedded}
     ;
     @@{attribute (HOL) code} ('equation' | 'nbe' | 'abstype' | 'abstract'
-      | 'del' | 'drop:' (const+) | 'abort:' (const+))?
+      | 'drop:' (const+) | 'drop' | 'abort:' (const+) | 'abort')?
     ;
     @@{command (HOL) code_datatype} (const+)
     ;
@@ -2314,7 +2277,7 @@ text \<open>
     ;
     @@{command (HOL) code_deps} (const_expr+)
     ;
-    @@{command (HOL) code_reserved} target (@{syntax string}+)
+    @@{command (HOL) code_reserved} ('(' target ')' (@{syntax string}+) + @'and')
     ;
     symbol_const: @'constant' const
     ;
@@ -2328,26 +2291,29 @@ text \<open>
     ;
     symbol_module: @'code_module' name
     ;
-    syntax: @{syntax string} | (@'infix' | @'infixl' | @'infixr')
-      @{syntax nat} @{syntax string}
+    target_syntax: @{syntax embedded}
+    ;
+    rich_syntax: target_syntax | (@'infix' | @'infixl' | @'infixr')
+      @{syntax nat} target_syntax
     ;
     printing_const: symbol_const ('\<rightharpoonup>' | '=>') \<newline>
-      ('(' target ')' syntax ? + @'and')
+      ('(' target ')' rich_syntax ? + @'and')
     ;
     printing_type_constructor: symbol_type_constructor ('\<rightharpoonup>' | '=>') \<newline>
-      ('(' target ')' syntax ? + @'and')
+      ('(' target ')' rich_syntax ? + @'and')
     ;
     printing_class: symbol_class ('\<rightharpoonup>' | '=>') \<newline>
-      ('(' target ')' @{syntax string} ? + @'and')
+      ('(' target ')' target_syntax ? + @'and')
     ;
     printing_class_relation: symbol_class_relation ('\<rightharpoonup>' | '=>') \<newline>
-      ('(' target ')' @{syntax string} ? + @'and')
+      ('(' target ')' target_syntax ? + @'and')
     ;
     printing_class_instance: symbol_class_instance ('\<rightharpoonup>'| '=>') \<newline>
       ('(' target ')' '-' ? + @'and')
     ;
     printing_module: symbol_module ('\<rightharpoonup>' | '=>') \<newline>
-      ('(' target ')' (@{syntax string} for_symbol?)? + @'and')
+      ('(' target ')' \<newline>
+        ((target_syntax | @'file' path) for_symbol?)? + @'and')
     ;
     for_symbol:
       @'for'
@@ -2417,6 +2383,22 @@ text \<open>
 
   Variant \<open>code equation\<close> declares a conventional equation as code equation.
 
+  Variant \<open>code nbe\<close> accepts also non-left-linear equations for
+  \<^emph>\<open>normalization by evaluation\<close> only.
+
+  Multiple \<open>code equation\<close> / \<open>code nbe\<close> declarations referring to the same
+  constant within the same theory are handled as \<^emph>\<open>one\<close> function declaration
+  for that particular constant: the first code declaration within a theory
+  disregards any previous function declaration and superseedes any equations
+  from preceeding theories.
+
+  Each code equation is prepended to existing code equations declared in
+  the same theory, with syntactically subsumed equations removed.
+
+  Packages usually provide reasonable default code equations; an explicit
+  declaration of a code equation superseedes any preceeding default code
+  equations.
+
   Variants \<open>code abstype\<close> and \<open>code abstract\<close> declare abstract datatype
   certificates or code equations on abstract datatype representations
   respectively.
@@ -2424,18 +2406,11 @@ text \<open>
   Vanilla \<open>code\<close> falls back to \<open>code equation\<close> or \<open>code abstract\<close>
   depending on the syntactic shape of the underlying equation.
 
-  Variant \<open>code del\<close> deselects a code equation for code generation.
-
-  Variant \<open>code nbe\<close> accepts also non-left-linear equations for
-  \<^emph>\<open>normalization by evaluation\<close> only.
-
   Variants \<open>code drop:\<close> and \<open>code abort:\<close> take a list of constants as arguments
   and drop all code equations declared for them. In the case of \<open>abort\<close>,
   these constants if needed are implemented by program abort
-  (exception).
-
-  Packages declaring code equations usually provide a reasonable default
-  setup.
+  (exception). Variants \<open>code drop\<close> and \<open>code abort\<close> derive the affected
+  constants from the underlying theorems interpreted as code equations.
 
   \<^descr> @{command (HOL) "code_datatype"} specifies a constructor set for a logical
   type.

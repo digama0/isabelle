@@ -10,7 +10,7 @@ package isabelle
 object Component_E {
   /* build E prover */
 
-  val default_version = "3.1"
+  val default_version = "3.2"
   val default_download_url = "https://wwwlehre.dhbw-stuttgart.de/~sschulz/WORK/E_DOWNLOAD"
 
   def build_e(
@@ -19,8 +19,6 @@ object Component_E {
     progress: Progress = new Progress,
     target_dir: Path = Path.current
   ): Unit = {
-    Isabelle_System.require_command("patch")
-
     Isabelle_System.with_tmp_dir("build") { tmp_dir =>
       /* component */
 
@@ -28,7 +26,7 @@ object Component_E {
       val component_dir =
         Components.Directory(target_dir + Path.basic(component_name)).create(progress = progress)
 
-      val platform_name = Isabelle_Platform.self.ISABELLE_PLATFORM(apple = true)
+      val platform_name = Isabelle_Platform.local.ISABELLE_PLATFORM(apple = true)
       val platform_dir =
         Isabelle_System.make_directory(component_dir.path + Path.basic(platform_name))
 
@@ -49,12 +47,15 @@ object Component_E {
 
       progress.echo("Building E prover for " + platform_name + " ...")
 
-      val build_options = {
-        val result = Isabelle_System.bash("./configure --help", cwd = source_dir)
-        if (result.check.out.containsSlice("--enable-ho")) " --enable-ho" else ""
+      // adhoc patch wrt. https://github.com/eprover/eprover/commit/d40e1db7d786
+      // obsolete after https://github.com/eprover/eprover/commit/5ae1a2c66da6
+      if (Platform.is_windows) {
+        File.change_lines(source_dir + Path.explode("PROVER/eprover.c"), strict = true) {
+          _.map(line => if (line.containsSlice("setpgid(0, 0)")) "" else line)
+        }
       }
 
-      val build_script = "./configure" + build_options + " && make"
+      val build_script = "./configure --enable-ho && make"
       Isabelle_System.bash(build_script, cwd = source_dir,
         progress_stdout = progress.echo(_, verbose = true),
         progress_stderr = progress.echo(_, verbose = true)).check
@@ -64,13 +65,12 @@ object Component_E {
 
       Isabelle_System.copy_file(source_dir + Path.basic("COPYING"), component_dir.LICENSE)
 
-      val install_files = List("epclextract", "eprover", "eprover-ho")
+      val install_files = List("epclextract", "eprover-ho")
       for (name <- install_files ::: install_files.map(_ + ".exe")) {
         val path = source_dir + Path.basic("PROVER") + Path.basic(name)
         if (path.is_file) Isabelle_System.copy_file(path, platform_dir)
       }
-      Isabelle_System.bash("if [ -f eprover-ho ]; then mv eprover-ho eprover; fi",
-        cwd = platform_dir).check
+      Isabelle_System.bash("mv eprover-ho eprover", cwd = platform_dir).check
 
 
       /* settings */
@@ -85,6 +85,9 @@ E_VERSION=""" + quote(version) + """
 
       File.write(component_dir.README,
         "This is E prover " + version + " from\n" + archive_url + """
+
+* On Windows/Cygwin, the sources have been patched to remove setpgid in
+  PROVER/eprover.c
 
 * The distribution has been built like this:
 

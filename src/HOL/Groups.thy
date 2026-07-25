@@ -50,7 +50,7 @@ text \<open>
 \<close>
 
 locale semigroup =
-  fixes f :: "'a \<Rightarrow> 'a \<Rightarrow> 'a"  (infixl "\<^bold>*" 70)
+  fixes f :: "'a \<Rightarrow> 'a \<Rightarrow> 'a"  (infixl \<open>\<^bold>*\<close> 70)
   assumes assoc [ac_simps]: "a \<^bold>* b \<^bold>* c = a \<^bold>* (b \<^bold>* c)"
 
 locale abel_semigroup = semigroup +
@@ -68,12 +68,12 @@ qed
 end
 
 locale monoid = semigroup +
-  fixes z :: 'a ("\<^bold>1")
+  fixes z :: 'a (\<open>\<^bold>1\<close>)
   assumes left_neutral [simp]: "\<^bold>1 \<^bold>* a = a"
   assumes right_neutral [simp]: "a \<^bold>* \<^bold>1 = a"
 
 locale comm_monoid = abel_semigroup +
-  fixes z :: 'a ("\<^bold>1")
+  fixes z :: 'a (\<open>\<^bold>1\<close>)
   assumes comm_neutral: "a \<^bold>* \<^bold>1 = a"
 begin
 
@@ -83,7 +83,7 @@ sublocale monoid
 end
 
 locale group = semigroup +
-  fixes z :: 'a ("\<^bold>1")
+  fixes z :: 'a (\<open>\<^bold>1\<close>)
   fixes inverse :: "'a \<Rightarrow> 'a"
   assumes group_left_neutral: "\<^bold>1 \<^bold>* a = a"
   assumes left_inverse [simp]:  "inverse a \<^bold>* a = \<^bold>1"
@@ -158,10 +158,10 @@ end
 subsection \<open>Generic operations\<close>
 
 class zero =
-  fixes zero :: 'a  ("0")
+  fixes zero :: 'a  (\<open>0\<close>)
 
 class one =
-  fixes one  :: 'a  ("1")
+  fixes one  :: 'a  (\<open>1\<close>)
 
 hide_const (open) zero one
 
@@ -192,16 +192,21 @@ typed_print_translation \<open>
 \<close> \<comment> \<open>show types that are presumably too general\<close>
 
 class plus =
-  fixes plus :: "'a \<Rightarrow> 'a \<Rightarrow> 'a"  (infixl "+" 65)
+  fixes plus :: "'a \<Rightarrow> 'a \<Rightarrow> 'a"  (infixl \<open>+\<close> 65)
 
 class minus =
-  fixes minus :: "'a \<Rightarrow> 'a \<Rightarrow> 'a"  (infixl "-" 65)
+  fixes minus :: "'a \<Rightarrow> 'a \<Rightarrow> 'a"  (infixl \<open>-\<close> 65)
 
 class uminus =
-  fixes uminus :: "'a \<Rightarrow> 'a"  ("- _" [81] 80)
+  fixes uminus :: "'a \<Rightarrow> 'a"  (\<open>(\<open>open_block notation=\<open>prefix -\<close>\<close>- _)\<close> [81] 80)
 
 class times =
-  fixes times :: "'a \<Rightarrow> 'a \<Rightarrow> 'a"  (infixl "*" 70)
+  fixes times :: "'a \<Rightarrow> 'a \<Rightarrow> 'a"  (infixl \<open>*\<close> 70)
+
+bundle uminus_syntax
+begin
+notation uminus  (\<open>(\<open>open_block notation=\<open>prefix -\<close>\<close>- _)\<close> [81] 80)
+end
 
 
 subsection \<open>Semigroups and Monoids\<close>
@@ -1164,7 +1169,12 @@ lemma minus_min_eq_max: "- min x y = max (- x) (- y)"
 end
 
 class abs =
-  fixes abs :: "'a \<Rightarrow> 'a"  ("\<bar>_\<bar>")
+  fixes abs :: "'a \<Rightarrow> 'a"  (\<open>(\<open>open_block notation=\<open>mixfix abs\<close>\<close>\<bar>_\<bar>)\<close>)
+
+bundle abs_syntax
+begin
+notation abs  (\<open>(\<open>open_block notation=\<open>mixfix abs\<close>\<close>\<bar>_\<bar>)\<close>)
+end
 
 class sgn =
   fixes sgn :: "'a \<Rightarrow> 'a"
@@ -1331,7 +1341,7 @@ qed
 end
 
 lemma dense_eq0_I:
-  fixes x::"'a::{dense_linorder,ordered_ab_group_add_abs}"
+  fixes x::"'a::{dense_order,ordered_ab_group_add_abs}"
   assumes "\<And>e. 0 < e \<Longrightarrow> \<bar>x\<bar> \<le> e"
   shows "x = 0"
 proof (cases "\<bar>x\<bar> = 0")
@@ -1341,7 +1351,7 @@ proof (cases "\<bar>x\<bar> = 0")
   then obtain z where "0 < z" "z < \<bar>x\<bar>"
     using dense by force
   then show ?thesis
-    using assms by (simp flip: not_less)
+    using assms[of z] by auto
 qed auto
 
 hide_fact (open) ab_diff_conv_add_uminus add_0 mult_1 ab_left_minus

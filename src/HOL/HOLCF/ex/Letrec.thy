@@ -15,15 +15,15 @@ definition
 nonterminal recbinds and recbindt and recbind
 
 syntax
-  "_recbind"  :: "[logic, logic] \<Rightarrow> recbind"         ("(2_ =/ _)" 10)
-  ""          :: "recbind \<Rightarrow> recbindt"               ("_")
-  "_recbindt" :: "[recbind, recbindt] \<Rightarrow> recbindt"   ("_,/ _")
-  ""          :: "recbindt \<Rightarrow> recbinds"              ("_")
-  "_recbinds" :: "[recbindt, recbinds] \<Rightarrow> recbinds"  ("_;/ _")
-  "_Letrec"   :: "[recbinds, logic] \<Rightarrow> logic"        ("(Letrec (_)/ in (_))" 10)
+  "_recbind"  :: "[logic, logic] \<Rightarrow> recbind"         (\<open>(\<open>indent=2 notation=\<open>mixfix Letrec binding\<close>\<close>_ =/ _)\<close> 10)
+  ""          :: "recbind \<Rightarrow> recbindt"               (\<open>_\<close>)
+  "_recbindt" :: "[recbind, recbindt] \<Rightarrow> recbindt"   (\<open>_,/ _\<close>)
+  ""          :: "recbindt \<Rightarrow> recbinds"              (\<open>_\<close>)
+  "_recbinds" :: "[recbindt, recbinds] \<Rightarrow> recbinds"  (\<open>_;/ _\<close>)
+  "_Letrec"   :: "[recbinds, logic] \<Rightarrow> logic"        (\<open>(\<open>notation=\<open>mixfix Letrec expression\<close>\<close>Letrec (_)/ in (_))\<close> 10)
 
 syntax_consts
-  "_recbind" "_recbinds" "_recbindt" "_Letrec" == CLetrec
+  "_Letrec" \<rightleftharpoons> CLetrec
 
 translations
   (recbindt) "x = a, (y,ys) = (b,bs)" == (recbindt) "(x,y,ys) = (a,b,bs)"

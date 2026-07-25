@@ -6,29 +6,22 @@ Printing of theorems, goals, results etc.
 
 signature PROOF_DISPLAY =
 sig
-  val pp_context: Proof.context -> Pretty.T
-  val pp_thm: (unit -> theory) -> thm -> Pretty.T
-  val pp_typ: (unit -> theory) -> typ -> Pretty.T
-  val pp_term: (unit -> theory) -> term -> Pretty.T
-  val pp_ctyp: (unit -> theory) -> ctyp -> Pretty.T
-  val pp_cterm: (unit -> theory) -> cterm -> Pretty.T
-  val pp_ztyp: (unit -> theory) -> ztyp -> Pretty.T
   val pretty_theory: bool -> Proof.context -> Pretty.T
   val pretty_definitions: bool -> Proof.context -> Pretty.T
   val pretty_theorems_diff: bool -> theory list -> Proof.context -> Pretty.T list
   val pretty_theorems: bool -> Proof.context -> Pretty.T list
   val string_of_rule: Proof.context -> string -> thm -> string
   val pretty_goal_header: thm -> Pretty.T
-  val string_of_goal: Proof.context -> thm -> string
+  val pretty_goal: Proof.context -> thm -> Pretty.T
   val pretty_goal_facts: Proof.context -> string -> thm list option -> Pretty.T list
   val pretty_goal_inst: Proof.context -> term list list -> thm -> Pretty.T list
   val method_error: string -> Position.T ->
     {context: Proof.context, facts: thm list, goal: thm} -> 'a Seq.result
   val show_results: bool Config.T
-  val print_results: {interactive: bool, pos: Position.T, proof_state: bool} -> Proof.context ->
+  val print_results: {verbose: bool, pos: Position.T} -> Proof.context ->
     ((string * string) * (string * thm list) list) -> unit
   val print_theorem: Position.T -> Proof.context -> string * thm list -> unit
-  val print_consts: bool -> Position.T -> Proof.context ->
+  val print_consts: {verbose: bool, pos: Position.T} -> Proof.context ->
     (string * typ -> bool) -> (string * typ) list -> unit
   val markup_extern_label: Position.T -> (Markup.T * xstring) option
   val print_label: Position.T -> string
@@ -37,39 +30,6 @@ end
 
 structure Proof_Display: PROOF_DISPLAY =
 struct
-
-(** toplevel pretty printing **)
-
-fun pp_context ctxt =
- (if Config.get ctxt Proof_Context.debug then
-    Pretty.quote (Pretty.big_list "proof context:" (Proof_Context.pretty_context ctxt))
-  else Pretty.str "<context>");
-
-fun default_context mk_thy =
-  let
-    fun global_context () =
-      Config.put_global Name_Space.names_long true (mk_thy ());
-  in
-    (case Context.get_generic_context () of
-      SOME (Context.Proof ctxt) => ctxt
-    | SOME (Context.Theory thy) =>
-        try Syntax.init_pretty_global thy
-        |> \<^if_none>\<open>Syntax.init_pretty_global (global_context ())\<close>
-    | NONE => Syntax.init_pretty_global (global_context ()))
-  end;
-
-fun pp_thm mk_thy th =
-  Thm.pretty_thm_raw (default_context mk_thy) {quote = true, show_hyps = false} th;
-
-fun pp_typ mk_thy T = Pretty.quote (Syntax.pretty_typ (default_context mk_thy) T);
-fun pp_term mk_thy t = Pretty.quote (Syntax.pretty_term (default_context mk_thy) t);
-
-fun pp_ctyp mk_thy cT = pp_typ mk_thy (Thm.typ_of cT);
-fun pp_cterm mk_thy ct = pp_term mk_thy (Thm.term_of ct);
-
-fun pp_ztyp mk_thy T = Pretty.quote (Syntax.pretty_typ (default_context mk_thy) (ZTerm.typ_of T));
-
-
 
 (** theory content **)
 
@@ -84,7 +44,7 @@ fun pretty_theory verbose ctxt =
     val prt_typ_no_tvars = prt_typ o Logic.unvarifyT_global;
     fun prt_term t = Pretty.quote (Syntax.pretty_term ctxt t);
     val prt_term_no_vars = prt_term o Logic.unvarify_global;
-    fun prt_const (c, ty) = [Pretty.mark_str c, Pretty.str " ::", Pretty.brk 1, prt_typ_no_tvars ty];
+    fun prt_const (c, ty) = [Pretty.marks_str c, Pretty.str " ::", Pretty.brk 1, prt_typ_no_tvars ty];
 
     fun pretty_classrel (c, []) = prt_cls c
       | pretty_classrel (c, cs) = Pretty.block
@@ -96,7 +56,7 @@ fun pretty_theory verbose ctxt =
     val tfrees = map (fn v => TFree (v, []));
     fun pretty_type syn (t, Type.Logical_Type n) =
           if syn then NONE
-          else SOME (prt_typ (Type (t, tfrees (Name.invent Name.context Name.aT n))))
+          else SOME (prt_typ (Type (t, tfrees (Name.invent_global_types n))))
       | pretty_type syn (t, Type.Abbreviation (vs, U, syn')) =
           if syn <> syn' then NONE
           else SOME (Pretty.block
@@ -128,10 +88,10 @@ fun pretty_theory verbose ctxt =
       Name_Space.extern_entries verbose ctxt type_space (Symtab.dest arities)
       |> map (apfst #1);
 
-    val cnsts = Name_Space.markup_entries verbose ctxt const_space constants;
+    val cnsts = Name_Space.markups_entries verbose ctxt const_space constants;
     val log_cnsts = map_filter (fn (c, (ty, NONE)) => SOME (c, ty) | _ => NONE) cnsts;
     val abbrevs = map_filter (fn (c, (ty, SOME t)) => SOME (c, (ty, t)) | _ => NONE) cnsts;
-    val cnstrs = Name_Space.markup_entries verbose ctxt const_space constraints;
+    val cnstrs = Name_Space.markups_entries verbose ctxt const_space constraints;
   in
     Pretty.chunks
      [Pretty.big_list "classes:" (map pretty_classrel clsses),
@@ -144,7 +104,7 @@ fun pretty_theory verbose ctxt =
       Pretty.big_list "constraints:" (map (Pretty.block o prt_const) cnstrs),
       Pretty.block
         (Pretty.breaks (Pretty.str "oracles:" ::
-          map Pretty.mark_str (Thm.extern_oracles verbose ctxt)))]
+          map Pretty.marks_str (Thm.extern_oracles verbose ctxt)))]
   end;
 
 
@@ -240,10 +200,10 @@ in
 fun pretty_goal_header goal =
   Pretty.block ([Pretty.keyword1 "goal"] @ subgoals (Thm.nprems_of goal) @ [Pretty.str ":"]);
 
-end;
+fun pretty_goal ctxt goal =
+  Pretty.chunks [pretty_goal_header goal, Goal_Display.pretty_goal ctxt goal];
 
-fun string_of_goal ctxt goal =
-  Pretty.string_of (Pretty.chunks [pretty_goal_header goal, Goal_Display.pretty_goal ctxt goal]);
+end;
 
 
 (* goal facts *)
@@ -322,35 +282,29 @@ fun pretty_goal_inst ctxt propss goal =
 fun method_error kind pos {context = ctxt, facts, goal} = Seq.Error (fn () =>
   let
     val pr_header =
-      "Failed to apply " ^ (if kind = "" then "" else kind ^ " ") ^
-      "proof method" ^ Position.here pos ^ ":\n";
+      Pretty.block0
+       ([Pretty.str ("Failed to apply " ^ (if kind = "" then "" else kind ^ " ") ^ "proof method")]
+         @ Pretty.here pos @ [Pretty.str ":"]);
     val pr_facts =
-      if null facts then ""
-      else Pretty.string_of (Pretty.chunks (pretty_goal_facts ctxt "using" (SOME facts))) ^ "\n";
-    val pr_goal = string_of_goal ctxt goal;
-  in pr_header ^ pr_facts ^ pr_goal end);
+      if null facts then []
+      else [Pretty.chunks (pretty_goal_facts ctxt "using" (SOME facts))];
+    val pr_goal = pretty_goal ctxt goal;
+  in Pretty.string_of (Pretty.chunks ([pr_header] @ pr_facts @ [pr_goal])) end);
 
 
 (* results *)
 
-fun position_markup pos = Pretty.mark (Position.markup pos Markup.position);
-
-val interactive =
-  Config.declare_bool ("interactive", \<^here>) (K false);
-
 val show_results =
   Attrib.setup_config_bool \<^binding>\<open>show_results\<close>
-    (fn context =>
-      Config.get_generic context interactive orelse
-      Options.default_bool \<^system_option>\<open>show_states\<close>);
+    (fn _ => Options.default_bool \<^system_option>\<open>show_results\<close>);
 
-fun no_print int ctxt = not (Config.get (Config.put interactive int ctxt) show_results);
+fun no_print verbose ctxt = not (verbose andalso Config.get ctxt show_results);
 
 local
 
-fun pretty_fact_name pos (kind, "") = position_markup pos (Pretty.keyword1 kind)
+fun pretty_fact_name pos (kind, "") = Pretty.mark_position pos (Pretty.keyword1 kind)
   | pretty_fact_name pos (kind, name) =
-      Pretty.block [position_markup pos (Pretty.keyword1 kind), Pretty.brk 1,
+      Pretty.block [Pretty.mark_position pos (Pretty.keyword1 kind), Pretty.brk 1,
         Pretty.str (Long_Name.base_name name), Pretty.str ":"];
 
 fun pretty_facts ctxt =
@@ -359,25 +313,22 @@ fun pretty_facts ctxt =
 
 in
 
-fun print_results {interactive, pos, proof_state} ctxt ((kind, name), facts) =
-  let val print = if proof_state then Output.state o Pretty.string_of else Pretty.writeln in
-    if kind = "" orelse no_print interactive ctxt then ()
-    else if name = "" then
-      print
-        (Pretty.block (position_markup pos (Pretty.keyword1 kind) :: Pretty.brk 1 ::
-          pretty_facts ctxt facts))
-    else
-      print
-        (case facts of
-          [fact] => Pretty.block1 [pretty_fact_name pos (kind, name), Pretty.fbrk,
-            Proof_Context.pretty_fact ctxt fact]
-        | _ => Pretty.block1 [pretty_fact_name pos (kind, name), Pretty.fbrk,
-            Pretty.block1 (Pretty.str "(" :: pretty_facts ctxt facts @ [Pretty.str ")"])])
-  end;
+fun print_results {verbose, pos} ctxt ((kind, name), facts) =
+  if kind = "" orelse no_print verbose ctxt then ()
+  else if name = "" then
+    Pretty.writeln_urgent
+      (Pretty.block (Pretty.mark_position pos (Pretty.keyword1 kind) :: Pretty.brk 1 ::
+        pretty_facts ctxt facts))
+  else
+    Pretty.writeln_urgent
+      (case facts of
+        [fact] => Pretty.block1 [pretty_fact_name pos (kind, name), Pretty.fbrk,
+          Proof_Context.pretty_fact ctxt fact]
+      | _ => Pretty.block1 [pretty_fact_name pos (kind, name), Pretty.fbrk,
+          Pretty.block1 (Pretty.str "(" :: pretty_facts ctxt facts @ [Pretty.str ")"])]);
 
 fun print_theorem pos ctxt fact =
-  print_results {interactive = true, pos = pos, proof_state = false}
-    ctxt ((Thm.theoremK, ""), [fact]);
+  print_results {verbose = true, pos = pos} ctxt ((Thm.theoremK, ""), [fact]);
 
 end;
 
@@ -392,7 +343,7 @@ fun pretty_var ctxt (x, T) =
 
 fun pretty_vars pos ctxt kind vs =
   Pretty.block
-    (Pretty.fbreaks (position_markup pos (Pretty.mark_str kind) :: map (pretty_var ctxt) vs));
+    (Pretty.fbreaks (Pretty.mark_position pos (Pretty.mark_str kind) :: map (pretty_var ctxt) vs));
 
 val fixes = (Markup.keyword2, "fixes");
 val consts = (Markup.keyword1, "consts");
@@ -404,8 +355,8 @@ fun pretty_consts pos ctxt pred cs =
 
 in
 
-fun print_consts int pos ctxt pred cs =
-  if null cs orelse no_print int ctxt then ()
+fun print_consts {verbose, pos} ctxt pred cs =
+  if null cs orelse no_print verbose ctxt then ()
   else Pretty.writeln (pretty_consts pos ctxt pred cs);
 
 end;

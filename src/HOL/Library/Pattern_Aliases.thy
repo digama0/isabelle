@@ -160,7 +160,7 @@ end
 
 bundle pattern_aliases begin
 
-  notation as (infixr "=:" 1)
+  notation as (infixr \<open>=:\<close> 1)
 
   declaration \<open>K (Syntax_Phases.term_check 98 "pattern_syntax" (K (map check_pattern_syntax)))\<close>
   declaration \<open>K (Syntax_Phases.term_uncheck 98 "pattern_syntax" (map o uncheck_pattern_syntax))\<close>
@@ -199,8 +199,8 @@ let
   val actual =
     @{thm test_2.simps(1)}
     |> Thm.prop_of
-    |> Syntax.string_of_term \<^context>
-    |> YXML.content_of
+    |> Syntax.pretty_term \<^context>
+    |> Pretty.pure_string_of
   val expected = "test_2 (?y # (?y' # ?ys =: x') =: x) = x @ x' @ x'"
 in \<^assert> (actual = expected) end
 \<close>

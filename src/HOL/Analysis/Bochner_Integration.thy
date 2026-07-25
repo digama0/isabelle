@@ -586,7 +586,7 @@ proof (safe intro!: has_bochner_integral.intros elim!: has_bochner_integral.case
   proof (rule tendsto_sandwich)
     show "eventually (\<lambda>n. 0 \<le> ?f n) sequentially" "(\<lambda>_. 0) \<longlonglongrightarrow> 0"
       by auto
-    show "eventually (\<lambda>i. ?f i \<le> (\<integral>\<^sup>+ x. (norm (f x - sf i x)) \<partial>M) + \<integral>\<^sup>+ x. (norm (g x - sg i x)) \<partial>M) sequentially"
+    show "eventually (\<lambda>i. ?f i \<le> (\<integral>\<^sup>+ x. (norm (f x - sf i x)) \<partial>M) + (\<integral>\<^sup>+ x. (norm (g x - sg i x)) \<partial>M)) sequentially"
       (is "eventually (\<lambda>i. ?f i \<le> ?g i) sequentially")
     proof (intro always_eventually allI)
       fix i have "?f i \<le> (\<integral>\<^sup>+ x. (norm (f x - sf i x)) + ennreal (norm (g x - sg i x)) \<partial>M)"
@@ -886,24 +886,22 @@ inductive integrable for M f where
 
 end
 
-definition\<^marker>\<open>tag important\<close> lebesgue_integral ("integral\<^sup>L") where
+definition\<^marker>\<open>tag important\<close> lebesgue_integral (\<open>integral\<^sup>L\<close>) where
   "integral\<^sup>L M f = (if \<exists>x. has_bochner_integral M f x then THE x. has_bochner_integral M f x else 0)"
 
 syntax
-  "_lebesgue_integral" :: "pttrn \<Rightarrow> real \<Rightarrow> 'a measure \<Rightarrow> real" ("\<integral>((2 _./ _)/ \<partial>_)" [60,61] 110)
-
+  "_lebesgue_integral" :: "pttrn \<Rightarrow> real \<Rightarrow> 'a measure \<Rightarrow> real"
+    (\<open>(\<open>indent=1 notation=\<open>binder integral\<close>\<close>\<integral>(2 _./ _)/ \<partial>_)\<close> [60,61] 110)
 syntax_consts
   "_lebesgue_integral" == lebesgue_integral
-
 translations
   "\<integral> x. f \<partial>M" == "CONST lebesgue_integral M (\<lambda>x. f)"
 
 syntax
-  "_ascii_lebesgue_integral" :: "pttrn \<Rightarrow> 'a measure \<Rightarrow> real \<Rightarrow> real" ("(3LINT (1_)/|(_)./ _)" [0,110,60] 60)
-
+  "_ascii_lebesgue_integral" :: "pttrn \<Rightarrow> 'a measure \<Rightarrow> real \<Rightarrow> real"
+    (\<open>(\<open>indent=3 notation=\<open>mixfix LINT\<close>\<close>LINT (1_)/|(_)./ _)\<close> [0,110,60] 60)
 syntax_consts
   "_ascii_lebesgue_integral" == lebesgue_integral
-
 translations
   "LINT x|M. f" == "CONST lebesgue_integral M (\<lambda>x. f)"
 

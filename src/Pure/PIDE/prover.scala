@@ -59,8 +59,11 @@ object Prover {
       case _ => throw new Malformed("single chunk expected: " + print)
     }
 
+  class System_Output(text: String) extends
+    Output(XML.Elem(Markup(Markup.SYSTEM, Nil), List(XML.Text(text))))
+
   class Protocol_Output(props: Properties.T, val chunks: List[Bytes])
-  extends Output(XML.Elem(Markup(Markup.PROTOCOL, props), Nil)) {
+  extends Output(XML.elem(Markup(Markup.PROTOCOL, props))) {
     def chunk: Bytes = the_chunk(chunks, toString)
     lazy val text: String = chunk.text
   }
@@ -75,13 +78,11 @@ class Prover(
 ) extends Protocol {
   /** receiver output **/
 
-  private def system_output(text: String): Unit = {
-    receiver(new Prover.Output(XML.Elem(Markup(Markup.SYSTEM, Nil), List(XML.Text(text)))))
-  }
+  private def system_output(text: String): Unit =
+    receiver(new Prover.System_Output(text))
 
-  private def protocol_output(props: Properties.T, chunks: List[Bytes]): Unit = {
+  private def protocol_output(props: Properties.T, chunks: List[Bytes]): Unit =
     receiver(new Prover.Protocol_Output(props, chunks))
-  }
 
   private def output(kind: String, props: Properties.T, body: XML.Body): Unit = {
     val main = XML.Elem(Markup(kind, props), Protocol_Message.clean_reports(body))
@@ -90,7 +91,7 @@ class Prover(
   }
 
   private def exit_message(result: Process_Result): Unit = {
-    output(Markup.EXIT, Markup.Process_Result(result),
+    output(Markup.EXIT, Markup.Process_Result.make(result),
       List(XML.Text(result.print_return_code)))
   }
 
@@ -108,7 +109,7 @@ class Prover(
   private def terminate_process(): Unit = {
     try { process.terminate() }
     catch {
-      case exn @ ERROR(_) => system_output("Failed to terminate prover process: " + exn.getMessage)
+      case exn @ ERROR(msg) => system_output("Failed to terminate prover process: " + msg)
     }
   }
 
@@ -129,7 +130,7 @@ class Prover(
         }
         Time.seconds(0.05).sleep()
       }
-      (finished.isEmpty || !finished.get, result.toString.trim)
+      (finished.isEmpty || !finished.get, Library.trim_string(result.toString))
     }
     if (startup_errors != "") system_output(startup_errors)
 
@@ -188,19 +189,17 @@ class Prover(
     val stream = new BufferedOutputStream(raw_stream)
     command_input =
       Some(
-        Consumer_Thread.fork(name)(
-          consume =
-            {
-              case chunks =>
-                try {
-                  Bytes(chunks.map(_.size).mkString("", ",", "\n")).write_stream(stream)
-                  chunks.foreach(_.write_stream(stream))
-                  stream.flush
-                  true
-                }
-                catch { case e: IOException => system_output(name + ": " + e.getMessage); false }
-            },
-          finish = { case () => stream.close(); system_output(name + " terminated") }
+        Consumer_Thread.fork(name,
+          { chunks =>
+            try {
+              Bytes(chunks.map(_.size).mkString("", ",", "\n")).write_stream(stream)
+              chunks.foreach(_.write_stream(stream))
+              stream.flush
+              true
+            }
+            catch { case e: IOException => system_output(name + ": " + Exn.message(e)); false }
+          },
+          finish = { () => stream.close(); system_output(name + " terminated") }
         )
       )
   }
@@ -215,7 +214,7 @@ class Prover(
 
     Isabelle_Thread.fork(name = name) {
       try {
-        var result = new StringBuilder(100)
+        val result = new StringBuilder(100)
         var finished = false
         while (!finished) {
           //{{{
@@ -237,7 +236,7 @@ class Prover(
           //}}}
         }
       }
-      catch { case e: IOException => system_output(name + ": " + e.getMessage) }
+      catch { case e: IOException => system_output(name + ": " + Exn.message(e)) }
       system_output(name + " terminated")
     }
   }
@@ -272,8 +271,8 @@ class Prover(
         }
       }
       catch {
-        case e: IOException => system_output("Cannot read message:\n" + e.getMessage)
-        case e: Prover.Malformed => system_output(e.getMessage)
+        case e: IOException => system_output("Cannot read message:\n" + Exn.message(e))
+        case e: Prover.Malformed => system_output(Exn.message(e))
       }
       stream.close()
 

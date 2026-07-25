@@ -8,29 +8,9 @@ theory Cardinality
 imports Phantom_Type
 begin
 
-subsection \<open>Preliminary lemmas\<close>
-(* These should be moved elsewhere *)
-
-lemma (in type_definition) univ:
-  "UNIV = Abs ` A"
-proof
-  show "Abs ` A \<subseteq> UNIV" by (rule subset_UNIV)
-  show "UNIV \<subseteq> Abs ` A"
-  proof
-    fix x :: 'b
-    have "x = Abs (Rep x)" by (rule Rep_inverse [symmetric])
-    moreover have "Rep x \<in> A" by (rule Rep)
-    ultimately show "x \<in> Abs ` A" by (rule image_eqI)
-  qed
-qed
-
-lemma (in type_definition) card: "card (UNIV :: 'b set) = card A"
-  by (simp add: univ card_image inj_on_def Abs_inject)
-
-
 subsection \<open>Cardinalities of types\<close>
 
-syntax "_type_card" :: "type => nat" ("(1CARD/(1'(_')))")
+syntax "_type_card" :: "type => nat"  (\<open>(\<open>indent=1 notation=\<open>mixfix CARD\<close>\<close>CARD/(1'(_')))\<close>)
 
 syntax_consts "_type_card" == card
 
@@ -47,8 +27,8 @@ lemma card_prod [simp]: "CARD('a \<times> 'b) = CARD('a) * CARD('b)"
   unfolding UNIV_Times_UNIV [symmetric] by (simp only: card_cartesian_product)
 
 lemma card_UNIV_sum: "CARD('a + 'b) = (if CARD('a) \<noteq> 0 \<and> CARD('b) \<noteq> 0 then CARD('a) + CARD('b) else 0)"
-unfolding UNIV_Plus_UNIV[symmetric]
-by(auto simp add: card_eq_0_iff card_Plus simp del: UNIV_Plus_UNIV)
+  unfolding UNIV_Plus_UNIV[symmetric]
+  by(auto simp add: card_eq_0_iff card_Plus simp del: UNIV_Plus_UNIV)
 
 lemma card_sum [simp]: "CARD('a + 'b) = CARD('a::finite) + CARD('b::finite)"
 by(simp add: card_UNIV_sum)
@@ -61,21 +41,22 @@ proof -
 qed
 
 lemma card_option [simp]: "CARD('a option) = Suc CARD('a::finite)"
-by(simp add: card_UNIV_option)
+  by(simp add: card_UNIV_option)
 
 lemma card_UNIV_set: "CARD('a set) = (if CARD('a) = 0 then 0 else 2 ^ CARD('a))"
-by(simp add: card_eq_0_iff card_Pow flip: Pow_UNIV)
+  by(simp add: card_eq_0_iff card_Pow flip: Pow_UNIV)
 
 lemma card_set [simp]: "CARD('a set) = 2 ^ CARD('a::finite)"
-by(simp add: card_UNIV_set)
+  by(simp add: card_UNIV_set)
 
 lemma card_nat [simp]: "CARD(nat) = 0"
   by (simp add: card_eq_0_iff)
 
 lemma card_fun: "CARD('a \<Rightarrow> 'b) = (if CARD('a) \<noteq> 0 \<and> CARD('b) \<noteq> 0 \<or> CARD('b) = 1 then CARD('b) ^ CARD('a) else 0)"
 proof -
-  {  assume "0 < CARD('a)" and "0 < CARD('b)"
-    hence fina: "finite (UNIV :: 'a set)" and finb: "finite (UNIV :: 'b set)"
+  have "CARD('a \<Rightarrow> 'b) = CARD('b) ^ CARD('a)" if "0 < CARD('a)" and "0 < CARD('b)"
+  proof -
+    from that have fina: "finite (UNIV :: 'a set)" and finb: "finite (UNIV :: 'b set)"
       by(simp_all only: card_ge_0_finite)
     from finite_distinct_list[OF finb] obtain bs 
       where bs: "set bs = (UNIV :: 'b set)" and distb: "distinct bs" by blast
@@ -113,19 +94,23 @@ proof -
     qed
     hence "card (set ?xs) = length ?xs" by(simp only: distinct_card)
     moreover have "length ?xs = length bs ^ length as" by(simp add: length_n_lists)
-    ultimately have "CARD('a \<Rightarrow> 'b) = CARD('b) ^ CARD('a)" using cb ca by simp }
-  moreover {
-    assume cb: "CARD('b) = 1"
-    then obtain b where b: "UNIV = {b :: 'b}" by(auto simp add: card_Suc_eq)
+    ultimately show ?thesis using cb ca by simp
+  qed
+  moreover have "CARD('a \<Rightarrow> 'b) = 1" if "CARD('b) = 1"
+  proof -
+    from that obtain b where b: "UNIV = {b :: 'b}" by(auto simp add: card_Suc_eq)
     have eq: "UNIV = {\<lambda>x :: 'a. b ::'b}"
     proof(rule UNIV_eq_I)
       fix x :: "'a \<Rightarrow> 'b"
-      { fix y
+      have "x y = b" for y
+      proof -
         have "x y \<in> UNIV" ..
-        hence "x y = b" unfolding b by simp }
+        thus ?thesis unfolding b by simp
+      qed
       thus "x \<in> {\<lambda>x. b}" by(auto)
     qed
-    have "CARD('a \<Rightarrow> 'b) = 1" unfolding eq by simp }
+    show ?thesis unfolding eq by simp
+  qed
   ultimately show ?thesis
     by(auto simp del: One_nat_def)(auto simp add: card_eq_0_iff dest: finite_fun_UNIVD2 finite_fun_UNIVD1)
 qed
@@ -226,20 +211,24 @@ instantiation natural :: card_UNIV begin
 definition "finite_UNIV = Phantom(natural) False"
 definition "card_UNIV = Phantom(natural) 0"
 instance
-  by standard
-    (auto simp add: finite_UNIV_natural_def card_UNIV_natural_def card_eq_0_iff
-      type_definition.univ [OF type_definition_natural] natural_eq_iff
-      dest!: finite_imageD intro: inj_onI)
+proof
+  show "finite_UNIV = Phantom(natural) (finite (UNIV::natural set))"
+    by (simp add: finite_UNIV_natural_def infinite_UNIV_char_0)
+  then show "card_UNIV_class.card_UNIV = Phantom(natural) CARD(natural)"
+    by (metis card_UNIV_natural_def card_eq_0_iff finite_UNIV_natural_def phantom.inject)
+qed
 end
 
 instantiation integer :: card_UNIV begin
 definition "finite_UNIV = Phantom(integer) False"
 definition "card_UNIV = Phantom(integer) 0"
 instance
-  by standard
-    (auto simp add: finite_UNIV_integer_def card_UNIV_integer_def card_eq_0_iff
-      type_definition.univ [OF type_definition_integer]
-      dest!: finite_imageD intro: inj_onI)
+proof
+  show "finite_UNIV = Phantom(integer) (finite (UNIV::integer set))"
+    by (simp add: finite_UNIV_integer_def infinite_UNIV_char_0)
+  then show "card_UNIV_class.card_UNIV = Phantom(integer) CARD(integer)"
+    by (metis card_UNIV_integer_def card_eq_0_iff finite_UNIV_integer_def phantom.inject)
+qed
 end
 
 instantiation list :: (type) card_UNIV begin

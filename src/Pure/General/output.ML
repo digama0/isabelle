@@ -16,12 +16,6 @@ signature OUTPUT =
 sig
   include BASIC_OUTPUT
   type output = string
-  val default_output: string -> output * int
-  val default_escape: output list -> string list
-  val add_mode: string -> (string -> output * int) -> (output list -> string list) -> unit
-  val output_width: string -> output * int
-  val output: string -> output
-  val escape: output list -> string list
   val physical_stdout: output -> unit
   val physical_stderr: output -> unit
   val physical_writeln: output -> unit
@@ -29,7 +23,9 @@ sig
   exception Protocol_Message of Properties.T
   val protocol_message_undefined: protocol_message_fn
   val writelns: string list -> unit
-  val state: string -> unit
+  val writelns_urgent: string list -> unit
+  val writeln_urgent: string -> unit
+  val state: string list -> unit
   val information: string -> unit
   val error_message': serial * string -> unit
   val error_message: string -> unit
@@ -45,6 +41,7 @@ signature PRIVATE_OUTPUT =
 sig
   include OUTPUT
   val writeln_fn: (output list -> unit) Unsynchronized.ref
+  val writeln_urgent_fn: (output list -> unit) Unsynchronized.ref
   val state_fn: (output list -> unit) Unsynchronized.ref
   val information_fn: (output list -> unit) Unsynchronized.ref
   val tracing_fn: (output list -> unit) Unsynchronized.ref
@@ -61,37 +58,13 @@ end;
 structure Private_Output: PRIVATE_OUTPUT =
 struct
 
-(** print modes **)
-
 type output = string;  (*raw system output*)
 
-fun default_output s = (s, size s);
-fun default_escape (ss: output list) = ss;
-
-local
-  val default = {output = default_output, escape = default_escape};
-  val modes = Synchronized.var "Output.modes" (Symtab.make [("", default)]);
-in
-  fun add_mode name output escape =
-    if Thread_Data.is_virtual then ()
-    else Synchronized.change modes (Symtab.update_new (name, {output = output, escape = escape}));
-  fun get_mode () =
-    the_default default
-      (Library.get_first (Symtab.lookup (Synchronized.value modes)) (print_mode_value ()));
-end;
-
-fun output_width x = #output (get_mode ()) x;
-val output = #1 o output_width;
-
-fun escape x = #escape (get_mode ()) x;
-
-
-
-(** output channels **)
 
 (* primitives -- provided via bootstrap environment *)
 
 val writeln_fn = Unsynchronized.ref Output_Primitives.writeln_fn;
+val writeln_urgent_fn = Unsynchronized.ref Output_Primitives.writeln_urgent_fn;
 val state_fn = Unsynchronized.ref Output_Primitives.state_fn;
 val information_fn = Unsynchronized.ref Output_Primitives.information_fn;
 val tracing_fn = Unsynchronized.ref Output_Primitives.tracing_fn;
@@ -125,6 +98,7 @@ val protocol_message_undefined: Output_Primitives.protocol_message_fn =
 
 fun init_channels () =
  (writeln_fn := (physical_writeln o implode);
+  writeln_urgent_fn := (fn ss => ! writeln_fn ss);
   state_fn := (fn ss => ! writeln_fn ss);
   information_fn := Output_Primitives.ignore_outputs;
   tracing_fn := (fn ss => ! writeln_fn ss);
@@ -139,19 +113,21 @@ fun init_channels () =
 
 val _ = if Thread_Data.is_virtual then () else init_channels ();
 
-fun writelns ss = ! writeln_fn (map output ss);
+fun writelns ss = ! writeln_fn ss;
 fun writeln s = writelns [s];
-fun state s = ! state_fn [output s];
-fun information s = ! information_fn [output s];
-fun tracing s = ! tracing_fn [output s];
-fun warning s = ! warning_fn [output s];
-fun legacy_feature s = ! legacy_fn [output ("Legacy feature! " ^ s)];
-fun error_message' (i, s) = ! error_message_fn (i, [output s]);
+fun writelns_urgent ss = ! writeln_urgent_fn ss;
+fun writeln_urgent s = writelns_urgent [s];
+fun state ss = ! state_fn ss;
+fun information s = ! information_fn [s];
+fun tracing s = ! tracing_fn [s];
+fun warning s = ! warning_fn [s];
+fun legacy_feature s = ! legacy_fn [("Legacy feature! " ^ s)];
+fun error_message' (i, s) = ! error_message_fn (i, [s]);
 fun error_message s = error_message' (serial (), s);
-fun system_message s = ! system_message_fn [output s];
-fun status ss = ! status_fn (map output ss);
-fun report ss = ! report_fn (map output ss);
-fun result props ss = ! result_fn props (map output ss);
+fun system_message s = ! system_message_fn [s];
+fun status ss = ! status_fn ss;
+fun report ss = ! report_fn ss;
+fun result props ss = ! result_fn props ss;
 fun protocol_message props body = ! protocol_message_fn props body;
 fun try_protocol_message props body = protocol_message props body handle Protocol_Message _ => ();
 

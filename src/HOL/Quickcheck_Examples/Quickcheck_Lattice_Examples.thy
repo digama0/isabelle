@@ -12,13 +12,7 @@ declare [[quickcheck_finite_type_size=5]]
 text \<open>We show how other default types help to find counterexamples to propositions if
   the standard default type \<^typ>\<open>int\<close> is insufficient.\<close>
 
-notation
-  less_eq  (infix "\<sqsubseteq>" 50) and
-  less  (infix "\<sqsubset>" 50) and
-  top ("\<top>") and
-  bot ("\<bottom>") and
-  inf (infixl "\<sqinter>" 70) and
-  sup (infixl "\<squnion>" 65)
+unbundle lattice_syntax
 
 declare [[quickcheck_narrowing_active = false, quickcheck_timeout = 3600]]
 
@@ -131,13 +125,6 @@ lemma inf_eq_top_iff [simp]:
   quickcheck[expect = no_counterexample]
   by (simp add: eq_iff)
 
-
-no_notation
-  less_eq  (infix "\<sqsubseteq>" 50) and
-  less (infix "\<sqsubset>" 50) and
-  inf  (infixl "\<sqinter>" 70) and
-  sup  (infixl "\<squnion>" 65) and
-  top ("\<top>") and
-  bot ("\<bottom>")
+unbundle no lattice_syntax
 
 end

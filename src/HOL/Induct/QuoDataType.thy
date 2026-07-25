@@ -30,7 +30,7 @@ and transitivity.\<close>
 
 inductive_set
   msgrel :: "(freemsg * freemsg) set"
-  and msg_rel :: "[freemsg, freemsg] => bool"  (infixl "\<sim>" 50)
+  and msg_rel :: "[freemsg, freemsg] => bool"  (infixl \<open>\<sim>\<close> 50)
   where
     "X \<sim> Y == (X,Y) \<in> msgrel"
   | CD:    "CRYPT K (DECRYPT K X) \<sim> X"
@@ -50,6 +50,7 @@ lemma msgrel_refl: "X \<sim> X"
 
 theorem equiv_msgrel: "equiv UNIV msgrel"
 proof (rule equivI)
+  show "msgrel \<subseteq> UNIV \<times> UNIV" by simp
   show "refl msgrel" by (simp add: refl_on_def msgrel_refl)
   show "sym msgrel" by (simp add: sym_def, blast intro: msgrel.SYM)
   show "trans msgrel" by (simp add: trans_def, blast intro: msgrel.TRANS)

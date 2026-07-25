@@ -45,7 +45,7 @@ where
 definition keys :: "('a, 'b) rbt \<Rightarrow> 'a list" where
   "keys t = map fst (entries t)"
 
-lemma keys_simps [simp, code]:
+lemma keys_simps [simp]:
   "keys Empty = []"
   "keys (Branch c l k v r) = keys l @ k # keys r"
   by (simp_all add: keys_def)
@@ -74,10 +74,10 @@ definition rbt_less :: "'a \<Rightarrow> ('a, 'b) rbt \<Rightarrow> bool"
 where
   rbt_less_prop: "rbt_less k t \<longleftrightarrow> (\<forall>x\<in>set (keys t). x < k)"
 
-abbreviation rbt_less_symbol (infix "|\<guillemotleft>" 50)
+abbreviation rbt_less_symbol (infix \<open>|\<guillemotleft>\<close> 50)
 where "t |\<guillemotleft> x \<equiv> rbt_less x t"
 
-definition rbt_greater :: "'a \<Rightarrow> ('a, 'b) rbt \<Rightarrow> bool" (infix "\<guillemotleft>|" 50) 
+definition rbt_greater :: "'a \<Rightarrow> ('a, 'b) rbt \<Rightarrow> bool" (infix \<open>\<guillemotleft>|\<close> 50) 
 where
   rbt_greater_prop: "rbt_greater k t = (\<forall>x\<in>set (keys t). k < x)"
 
@@ -1853,10 +1853,6 @@ end
 
 lemma distinct_map_of_rev: "distinct (map fst xs) \<Longrightarrow> map_of (rev xs) = map_of xs"
 by(induct xs)(auto 4 3 simp add: map_add_def intro!: ext split: option.split intro: rev_image_eqI)
-
-lemma map_map_filter: 
-  "map f (List.map_filter g xs) = List.map_filter (map_option f \<circ> g) xs"
-by(auto simp add: List.map_filter_def)
 
 lemma map_filter_map_option_const: 
   "List.map_filter (\<lambda>x. map_option (\<lambda>y. f x) (g (f x))) xs = filter (\<lambda>x. g x \<noteq> None) (map f xs)"

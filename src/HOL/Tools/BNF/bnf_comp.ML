@@ -290,7 +290,7 @@ fun clean_compose_bnf const_policy qualify b outer inners (unfold_set, lthy) =
         (map_cong0_of_bnf outer) (collect_set_map_of_bnf outer)
         (map ((fn thms => nth thms i) o set_map0_of_bnf) inners);
 
-    val set_map0_tacs = map mk_single_set_map0_tac (0 upto ilive - 1);
+    val set_map0_tacs = map_range mk_single_set_map0_tac ilive;
 
     fun bd_card_order_tac ctxt =
       mk_comp_bd_card_order_tac ctxt (map bd_card_order_of_bnf inners) (bd_card_order_of_bnf outer);
@@ -335,8 +335,8 @@ fun clean_compose_bnf const_policy qualify b outer inners (unfold_set, lthy) =
             nth inner_bd_Cinfinites i
           ]
           val single_set_bd_thmss =
-            map ((fn f => map f (0 upto olive - 1)) o single_set_bd_thm) (0 upto ilive - 1);
-          val Gbd_Fbd_Cinfinites = map single_bd_Cinfinite (0 upto length inners - 1)
+            map_range ((fn f => map_range f olive) o single_set_bd_thm) ilive;
+          val Gbd_Fbd_Cinfinites = map_range single_bd_Cinfinite (length inners)
         in
           @{map 3} (fn set'_eq_set => fn set_alt => fn single_set_bds => fn ctxt =>
             mk_comp_set_bd_tac ctxt set'_eq_set bd_ordIso_natLeq_thm_opt set_alt single_set_bds
@@ -868,7 +868,7 @@ fun seal_bnf qualify (unfold_set : unfold_set) b force_out_of_line Ds all_Ds bnf
        else inter (op =) repTA_tfrees all_TA_params_in_order);
     val ((TA, (Rep_name, Abs_name, type_definition, Abs_inverse, Abs_inject, _)), lthy) =
       maybe_typedef force_out_of_line (T_bind, TA_params, NoSyn) (HOLogic.mk_UNIV repTA) NONE
-        (fn ctxt => EVERY' [rtac ctxt exI, rtac ctxt UNIV_I] 1) lthy;
+        (fn ctxt => EVERY' [rtac ctxt exI, rtac ctxt @{thm UNIV_I}] 1) lthy;
 
     val repTB = mk_T_of_bnf Ds Bs bnf;
     val TB = Term.typ_subst_atomic (As ~~ Bs) TA;
@@ -900,7 +900,7 @@ fun seal_bnf qualify (unfold_set : unfold_set) b force_out_of_line Ds all_Ds bnf
 
     val ((bdT, (_, Abs_bd_name, _, _, Abs_bdT_inject, Abs_bdT_cases)), lthy) =
       maybe_typedef false (bdT_bind, params, NoSyn) (HOLogic.mk_UNIV bd_repT) NONE
-        (fn ctxt => EVERY' [rtac ctxt exI, rtac ctxt UNIV_I] 1) lthy;
+        (fn ctxt => EVERY' [rtac ctxt exI, rtac ctxt @{thm UNIV_I}] 1) lthy;
 
     val (bnf_bd', bd_ordIso, bd_card_order, bd_cinfinite, bd_regularCard) =
       if bdT = bd_repT then (bnf_bd, bd_Card_order_of_bnf bnf RS @{thm ordIso_refl},
@@ -930,7 +930,7 @@ fun seal_bnf qualify (unfold_set : unfold_set) b force_out_of_line Ds all_Ds bnf
     fun map_cong0_tac ctxt =
       EVERY' (rtac ctxt @{thm type_copy_map_cong0} :: rtac ctxt (map_cong0_of_bnf bnf) ::
         map (fn i => EVERY' [select_prem_tac ctxt live (dtac ctxt meta_spec) i, etac ctxt meta_mp,
-          etac ctxt (o_apply RS equalityD2 RS set_mp)]) (1 upto live)) 1;
+          etac ctxt (o_apply RS @{thm equalityD2} RS set_mp)]) (1 upto live)) 1;
     fun set_map0_tac thm ctxt =
       rtac ctxt (@{thm type_copy_set_map0} OF [type_definition, thm]) 1;
     val set_bd_tacs = map (fn thm => fn ctxt => rtac ctxt (@{thm ordLess_ordIso_trans} OF
@@ -957,7 +957,7 @@ fun seal_bnf qualify (unfold_set : unfold_set) b force_out_of_line Ds all_Ds bnf
 
     val bnf_wits = map (fn (I, t) =>
         fold Term.absdummy (map (nth As) I)
-          (AbsA $ Term.list_comb (t, map Bound (0 upto length I - 1))))
+          (AbsA $ Term.list_comb (t, map_range Bound (length I))))
       (mk_wits_of_bnf (replicate nwits Ds) (replicate nwits As) bnf);
 
     fun wit_tac ctxt =

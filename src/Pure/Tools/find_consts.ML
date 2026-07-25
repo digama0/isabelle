@@ -62,10 +62,10 @@ fun pretty_criterion (b, c) =
 fun pretty_const ctxt (c, ty) =
   let
     val ty' = Logic.unvarifyT_global ty;
-    val markup = Name_Space.markup (Proof_Context.const_space ctxt) c;
+    val markups = Name_Space.markups (Proof_Context.const_space ctxt) c;
   in
     Pretty.block
-     [Pretty.mark markup (Pretty.str c), Pretty.str " ::", Pretty.brk 1,
+     [Pretty.marks_str (markups, c), Pretty.str " ::", Pretty.brk 1,
       Pretty.quote (Syntax.pretty_typ ctxt ty')]
   end;
 
@@ -115,7 +115,7 @@ fun pretty_consts ctxt raw_criteria =
       |> sort (prod_ord (rev_order o int_ord) (string_ord o apply2 fst))
       |> map (apsnd fst o snd);
 
-    val position_markup = Position.markup (Position.thread_data ()) Markup.position;
+    val position_markup = Position.markup (Position.thread_data ());
   in
     Pretty.block
       (Pretty.fbreaks
@@ -159,13 +159,13 @@ end;
 
 val _ =
   Query_Operation.register {name = "find_consts", pri = Task_Queue.urgent_pri}
-    (fn {state, args, writeln_result, ...} =>
+    (fn {state, args, writelns_result, ...} =>
       (case try Toplevel.context_of state of
         SOME ctxt =>
           let
             val [query_arg] = args;
             val query = read_query Position.none query_arg;
-          in writeln_result (Pretty.string_of (pretty_consts ctxt query)) end
+          in writelns_result (Pretty.strings_of (pretty_consts ctxt query)) end
       | NONE => error "Unknown context"));
 
 end;

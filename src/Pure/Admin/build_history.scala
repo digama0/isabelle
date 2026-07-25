@@ -6,6 +6,8 @@ Build other history versions.
 
 package isabelle
 
+import scala.collection.mutable
+
 
 object Build_History {
   /* log files */
@@ -17,7 +19,7 @@ object Build_History {
   /* augment settings */
 
   def make_64_32(platform: String): String =
-    platform.replace("x86_64-", "x86_64_32-").replace("arm64-", "arm64_32-")
+    platform.replacing("x86_64-" -> "x86_64_32-", "arm64-" -> "arm64_32-")
 
   def augment_settings(
     other_isabelle: Other_Isabelle,
@@ -39,10 +41,7 @@ object Build_History {
       val platform_apple_64 = other_isabelle.getenv("ISABELLE_APPLE_PLATFORM64")
       val platform_apple_64_32 = make_64_32(platform_apple_64)
 
-      val polyml_home =
-        try { Path.explode(other_isabelle.getenv("ML_HOME")).dir }
-        catch { case ERROR(msg) => error("Bad ML_HOME: " + msg) }
-
+      val polyml_home = other_isabelle.ml_settings.polyml_home
       def ml_home(platform: String): Path = polyml_home + Path.explode(platform)
 
       def err(platform: String): Nothing =
@@ -116,7 +115,7 @@ object Build_History {
     ml_statistics_step: Int = 1,
     component_repository: String = Components.static_component_repository,
     components_base: String = Components.dynamic_components_base,
-    clean_platforms: Option[List[Platform.Family]] = None,
+    clean_platforms: Option[List[Platform_Family]] = None,
     clean_archives: Boolean = false,
     fresh: Boolean = false,
     hostname: String = "",
@@ -204,9 +203,7 @@ object Build_History {
       File.write(other_isabelle.etc_preferences,
         cat_lines("build_log_verbose = true" :: more_preferences))
 
-      val isabelle_output =
-        other_isabelle.expand_path(
-          Path.explode("$ISABELLE_HOME_USER/heaps/$ML_IDENTIFIER"))
+      val isabelle_output = other_isabelle.user_output_dir
       val isabelle_output_log = isabelle_output + Path.explode("log")
       val isabelle_base_log = isabelle_output + Path.explode("../base_log")
 
@@ -291,7 +288,7 @@ object Build_History {
               val session_sources =
                 store.read_build(db, session_name).map(_.sources) match {
                   case Some(sources) if !sources.is_empty =>
-                    List("Sources " + session_name + " " + sources.digest.toString)
+                    List("Sources " + session_name + " " + SHA1.digest(sources).rep)
                   case _ => Nil
                 }
 
@@ -312,7 +309,7 @@ object Build_History {
               using(SQLite.open_database(database))(store.read_ml_statistics(_, session_name))
             }
             else if (log_gz.is_file) {
-              Build_Log.Log_File.read(log_gz.file, cache = store.cache)
+              Build_Log.Log_File.read(log_gz, cache = store.cache)
                 .parse_session_info(ml_statistics = true).ml_statistics
             }
             else Nil
@@ -342,7 +339,7 @@ object Build_History {
             else Nil
           for (msg <- errors)
           yield {
-            val content = Library.encode_lines(Output.clean_yxml(msg))
+            val content = Library.encode_lines(Protocol_Message.clean_output(msg))
             List(Build_Log.SESSION_NAME -> session_name, Markup.CONTENT -> content)
           }
         }
@@ -404,19 +401,19 @@ object Build_History {
       var max_heap: Option[Int] = None
       var multicore_list = List(default_multicore)
       var isabelle_identifier = default_isabelle_identifier
-      var clean_platforms: Option[List[Platform.Family]] = None
+      var clean_platforms: Option[List[Platform_Family]] = None
       var clean_archives = false
       var component_repository = Components.static_component_repository
       var components_base = Components.dynamic_components_base
       var arch_apple = false
-      var more_settings: List[String] = Nil
-      var more_preferences: List[String] = Nil
+      val more_settings = new mutable.ListBuffer[String]
+      val more_preferences = new mutable.ListBuffer[String]
       var fresh = false
       var hostname = ""
       var arch_64 = false
       var output_file = ""
       var ml_statistics_step = 1
-      var build_tags = List.empty[String]
+      val build_tags = new mutable.ListBuffer[String]
       var verbose = false
       var exit_code = false
 
@@ -463,13 +460,13 @@ Usage: Admin/build_other [OPTIONS] ISABELLE_HOME [ARGS ...]
         "H:" -> (arg => heap = Some(Value.Int.parse(arg))),
         "M:" -> (arg => multicore_list = space_explode(',', arg).map(Multicore.parse)),
         "N:" -> (arg => isabelle_identifier = arg),
-        "O:" -> (arg => clean_platforms = Some(space_explode(',',arg).map(Platform.Family.parse))),
+        "O:" -> (arg => clean_platforms = Some(space_explode(',',arg).map(Platform_Family.parse))),
         "Q" -> (_ => clean_archives = true),
         "R:" -> (arg => component_repository = arg),
         "S:" -> (arg => components_base = arg),
         "U:" -> (arg => max_heap = Some(Value.Int.parse(arg))),
         "a" -> (_ => arch_apple = true),
-        "e:" -> (arg => more_settings = more_settings ::: List(arg)),
+        "e:" -> (arg => more_settings += arg),
         "f" -> (_ => fresh = true),
         "h:" -> (arg => hostname = arg),
         "m:" ->
@@ -479,9 +476,9 @@ Usage: Admin/build_other [OPTIONS] ISABELLE_HOME [ARGS ...]
             case bad => error("Bad processor architecture: " + quote(bad))
           },
         "o:" -> (arg => output_file = arg),
-        "p:" -> (arg => more_preferences = more_preferences ::: List(arg)),
+        "p:" -> (arg => more_preferences += arg),
         "s:" -> (arg => ml_statistics_step = Value.Int.parse(arg)),
-        "t:" -> (arg => build_tags = build_tags ::: List(arg)),
+        "t:" -> (arg => build_tags += arg),
         "v" -> (_ => verbose = true),
         "x" -> (_ => exit_code = true))
 
@@ -502,9 +499,9 @@ Usage: Admin/build_other [OPTIONS] ISABELLE_HOME [ARGS ...]
           fresh = fresh, hostname = hostname, multicore_base = multicore_base,
           multicore_list = multicore_list, arch_64 = arch_64, arch_apple = arch_apple,
           heap = heap.getOrElse(if (arch_64) default_heap * 2 else default_heap),
-          max_heap = max_heap, more_settings = more_settings,
-          more_preferences = more_preferences, verbose = verbose, build_tags = build_tags,
-          build_args = build_args)
+          max_heap = max_heap, more_settings = more_settings.toList,
+          more_preferences = more_preferences.toList, verbose = verbose,
+          build_tags = build_tags.toList, build_args = build_args)
 
       if (output_file.isEmpty) {
         for ((_, log_path) <- results) Output.writeln(log_path.implode, stdout = true)
@@ -594,7 +591,9 @@ Usage: Admin/build_other [OPTIONS] ISABELLE_HOME [ARGS ...]
         }
         catch {
           case ERROR(msg) =>
-            cat_error(msg, "The error(s) above occurred for Admin/build_other " + build_options)
+            cat_error(msg,
+              "The error(s) above occurred for Admin/build_other " + build_options +
+              if_proper(rev, "\n(Isabelle/" + rev + ")"))
         }
 
         for (line <- split_lines(ssh.read(output_file)))

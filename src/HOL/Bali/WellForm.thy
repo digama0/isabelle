@@ -323,7 +323,7 @@ A class declaration is wellformed if:
 \<close>
 (* to Table *)
 definition
-  entails :: "('a,'b) table \<Rightarrow> ('b \<Rightarrow> bool) \<Rightarrow> bool" ("_ entails _" 20)
+  entails :: "('a,'b) table \<Rightarrow> ('b \<Rightarrow> bool) \<Rightarrow> bool" (\<open>_ entails _\<close> 20)
   where "(t entails P) = (\<forall>k. \<forall> x \<in> t k: P x)"
 
 lemma entailsD:
@@ -927,15 +927,16 @@ proof -
     from wf cls_C neq_C_Obj
     have accessible_super: "G\<turnstile>(Class (super c)) accessible_in (pid C)" 
       by (auto dest: wf_prog_cdecl wf_cdecl_supD is_acc_classD)
-    {
-      fix old
-      assume    member_super: "G\<turnstile>Method old member_of (super c)"
-      assume     inheritable: "G \<turnstile>Method old inheritable_in pid C"
-      assume instance_method: "\<not> is_static old"
+    have hyp_member_super: "?P C old"
+      if member_super: "G\<turnstile>Method old member_of (super c)"
+      and inheritable: "G \<turnstile>Method old inheritable_in pid C"
+      and instance_method: "\<not> is_static old"
+    for old
+    proof -
       from member_super
       have old_declared: "G\<turnstile>Method old declared_in (declclass old)"
        by (cases old) (auto dest: member_of_declC)
-      have "?P C old"
+      show ?thesis
       proof (cases "G\<turnstile>mid (msig old) undeclared_in C")
         case True
         with inheritable super accessible_super member_super
@@ -982,7 +983,7 @@ proof -
             by (contradiction)
         qed
       qed
-    } note hyp_member_super = this
+    qed
     from subclsC cls_C 
     have "G\<turnstile>(super c)\<preceq>\<^sub>C declclass old"
       by (rule subcls_superD)
@@ -1411,9 +1412,8 @@ proof -
         \<Longrightarrow> G\<turnstile>(mdecl (sig,mthd m)) declared_in (declclass m)"
   proof (induct C rule: ws_class_induct')
     case Object
-    assume "methd G Object sig = Some m" 
-    with wf show ?thesis
-      by - (rule method_declared_inI, auto) 
+    show ?thesis if "methd G Object sig = Some m"
+      by (rule method_declared_inI) (use wf that in auto)
   next
     case Subcls
     fix C c
@@ -2012,15 +2012,13 @@ lemma wf_imethds_hiding_objmethdsD:
   shows "G\<turnstile>resTy new\<preceq>resTy old \<and> is_static new = is_static old" (is "?P new")
 proof -
   from wf have ws: "ws_prog G" by simp
-  {
-    fix I i new
-    assume ifI: "iface G I = Some i"
-    assume new: "table_of (imethods i) sig = Some new" 
-    from ifI new not_private wf old  
-    have "?P (I,new)"
+  have hyp_newmethod: "?P (I,new)"
+    if ifI: "iface G I = Some i"
+    and new: "table_of (imethods i) sig = Some new"
+    for I i new
+    using ifI new not_private wf old  
       by (auto dest!: wf_prog_idecl wf_idecl_hiding cond_hiding_entailsD
             simp del: methd_Object)
-  } note hyp_newmethod = this  
   from is_if_I ws new 
   show ?thesis
   proof (induct rule: ws_interface_induct)
@@ -2093,7 +2091,7 @@ non private fields. Then we would get the following column:
  Array    Object
 \<close>
 primrec valid_lookup_cls:: "prog \<Rightarrow> ref_ty \<Rightarrow> qtname \<Rightarrow> bool \<Rightarrow> bool"
-                        ("_,_ \<turnstile> _ valid'_lookup'_cls'_for _" [61,61,61,61] 60)
+                        (\<open>_,_ \<turnstile> _ valid'_lookup'_cls'_for _\<close> [61,61,61,61] 60)
 where
   "G,NullT    \<turnstile> dynC valid_lookup_cls_for static_membr = False"
 | "G,IfaceT I \<turnstile> dynC valid_lookup_cls_for static_membr 
@@ -2127,7 +2125,7 @@ next
 qed
 
 declare split_paired_All [simp del] split_paired_Ex [simp del]
-setup \<open>map_theory_simpset (fn ctxt => ctxt delloop "split_all_tac")\<close>
+setup \<open>Simplifier.map_theory_simpset (Simplifier.del_loop "split_all_tac")\<close>
 setup \<open>map_theory_claset (fn ctxt => ctxt delSWrapper "split_all_tac")\<close>
 
 lemma dynamic_mheadsD:   
@@ -2258,7 +2256,7 @@ proof -
 qed
 declare split_paired_All [simp] split_paired_Ex [simp]
 setup \<open>map_theory_claset (fn ctxt => ctxt addSbefore ("split_all_tac", split_all_tac))\<close>
-setup \<open>map_theory_simpset (fn ctxt => ctxt addloop ("split_all_tac", split_all_tac))\<close>
+setup \<open>Simplifier.map_theory_simpset (Simplifier.add_loop ("split_all_tac", split_all_tac))\<close>
 
 (* Tactical version *)
 (*
@@ -2401,7 +2399,7 @@ qed
   
 
 declare split_paired_All [simp del] split_paired_Ex [simp del]
-setup \<open>map_theory_simpset (fn ctxt => ctxt delloop "split_all_tac")\<close>
+setup \<open>Simplifier.map_theory_simpset (Simplifier.del_loop "split_all_tac")\<close>
 setup \<open>map_theory_claset (fn ctxt => ctxt delSWrapper "split_all_tac")\<close>
 
 lemma wt_is_type: "E,dt\<Turnstile>v\<Colon>T \<Longrightarrow>  wf_prog (prg E) \<longrightarrow> 
@@ -2427,7 +2425,7 @@ apply  (auto dest: accmethd_rT_is_type
 done
 declare split_paired_All [simp] split_paired_Ex [simp]
 setup \<open>map_theory_claset (fn ctxt => ctxt addSbefore ("split_all_tac", split_all_tac))\<close>
-setup \<open>map_theory_simpset (fn ctxt => ctxt addloop ("split_all_tac", split_all_tac))\<close>
+setup \<open>Simplifier.map_theory_simpset (Simplifier.add_loop ("split_all_tac", split_all_tac))\<close>
 
 lemma ty_expr_is_type: 
 "\<lbrakk>E\<turnstile>e\<Colon>-T; wf_prog (prg E)\<rbrakk> \<Longrightarrow> is_type (prg E) T"
@@ -2540,7 +2538,7 @@ proof -
   from subclseq iscls_statC 
   have iscls_dynC: "is_class G dynC"
     by (rule subcls_is_class2)
-  from  iscls_dynC iscls_statC wf m
+  from iscls_dynC iscls_statC wf m
   have "G\<turnstile>dynC \<preceq>\<^sub>C (declclass m) \<and> is_class G (declclass m) \<and>
         methd G (declclass m) sig = Some m" 
     by - (drule dynmethd_declC, auto)

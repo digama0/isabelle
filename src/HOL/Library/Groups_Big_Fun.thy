@@ -74,7 +74,7 @@ lemma reindex_cong:
 proof -
   from assms have unfold: "h = g \<circ> l" by simp
   from \<open>bij l\<close> have "inj l" by (rule bij_is_inj)
-  then have "inj_on l {a. h a \<noteq> \<^bold>1}" by (rule subset_inj_on) simp
+  then have "inj_on l {a. h a \<noteq> \<^bold>1}" by (rule inj_on_subset) simp
   moreover from \<open>bij l\<close> have "{a. g a \<noteq> \<^bold>1} = l ` {a. h a \<noteq> \<^bold>1}"
     by (auto simp add: image_Collect unfold elim: bij_pointE)
   moreover have "\<And>x. x \<in> {a. h a \<noteq> \<^bold>1} \<Longrightarrow> g (l x) = h x"
@@ -199,9 +199,9 @@ qed
 end
 
 syntax (ASCII)
-  "_Sum_any" :: "pttrn \<Rightarrow> 'a \<Rightarrow> 'a::comm_monoid_add"    ("(3SUM _. _)" [0, 10] 10)
+  "_Sum_any" :: "pttrn \<Rightarrow> 'a \<Rightarrow> 'a::comm_monoid_add"    (\<open>(\<open>indent=3 notation=\<open>binder SUM\<close>\<close>SUM _. _)\<close> [0, 10] 10)
 syntax
-  "_Sum_any" :: "pttrn \<Rightarrow> 'a \<Rightarrow> 'a::comm_monoid_add"    ("(3\<Sum>_. _)" [0, 10] 10)
+  "_Sum_any" :: "pttrn \<Rightarrow> 'a \<Rightarrow> 'a::comm_monoid_add"    (\<open>(\<open>indent=2 notation=\<open>binder \<Sum>\<close>\<close>\<Sum>_. _)\<close> [0, 10] 10)
 syntax_consts
   "_Sum_any" \<rightleftharpoons> Sum_any
 translations
@@ -254,9 +254,9 @@ qed
 end
 
 syntax (ASCII)
-  "_Prod_any" :: "pttrn \<Rightarrow> 'a \<Rightarrow> 'a::comm_monoid_mult"  ("(3PROD _. _)" [0, 10] 10)
+  "_Prod_any" :: "pttrn \<Rightarrow> 'a \<Rightarrow> 'a::comm_monoid_mult"  (\<open>(\<open>indent=4 notation=\<open>binder PROD\<close>\<close>PROD _. _)\<close> [0, 10] 10)
 syntax
-  "_Prod_any" :: "pttrn \<Rightarrow> 'a \<Rightarrow> 'a::comm_monoid_mult"  ("(3\<Prod>_. _)" [0, 10] 10)
+  "_Prod_any" :: "pttrn \<Rightarrow> 'a \<Rightarrow> 'a::comm_monoid_mult"  (\<open>(\<open>indent=2 notation=\<open>binder \<Prod>\<close>\<close>\<Prod>_. _)\<close> [0, 10] 10)
 syntax_consts
   "_Prod_any" == Prod_any
 translations

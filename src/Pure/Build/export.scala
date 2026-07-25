@@ -25,7 +25,8 @@ object Export {
   val PROOFS_PREFIX: String = "proofs/"
 
   def explode_name(s: String): List[String] = space_explode('/', s)
-  def implode_name(elems: Iterable[String]): String = elems.mkString("/")
+  def implode_name(elems: Iterable[String], terminate: Boolean = false): String =
+    elems.mkString("", "/", if (terminate) "/" else "")
 
 
   /* SQL data model */
@@ -283,9 +284,8 @@ object Export {
     }
 
     private val consumer =
-      Consumer_Thread.fork_bulk[(Entry, Boolean)](name = "export")(
-        bulk = _ => true,
-        consume = args => (args.grouped(20).toList.flatMap(consume), true))
+      Consumer_Thread.fork_bulk[(Entry, Boolean)]("export",
+        args => (args.grouped(20).toList.flatMap(consume), true))
 
     def make_entry(session_name: String, args: Protocol.Export.Args, body: Bytes): Unit = {
       if (!progress.stopped && !body.is_empty) {
@@ -296,7 +296,7 @@ object Export {
     def shutdown(close: Boolean = false): List[String] = {
       consumer.shutdown()
       if (close) db.close()
-      errors.value.reverse ::: (if (progress.stopped) List("Export stopped") else Nil)
+      errors.value.reverse ::: (if (progress.stopped) List("Session export stopped") else Nil)
     }
   }
 
@@ -502,7 +502,7 @@ object Export {
       def db_source: Option[String] = {
         val theory_context = session_context.theory(theory)
         for {
-          name <- theory_context.files0(permissive = true).headOption
+          (_, name) <- theory_context.files0(permissive = true).headOption
           file <- get_source_file(name)
         } yield Symbol.output(unicode_symbols, file.bytes.text)
       }
@@ -549,13 +549,15 @@ object Export {
         case _ => None
       }
 
-    def files0(permissive: Boolean = false): List[String] =
-      split_lines(apply(FILES, permissive = permissive).text)
+    def files0(permissive: Boolean = false): List[(Int, String)] = {
+      import XML.Decode._
+      list(pair(int, string))(apply(FILES, permissive = permissive).yxml())
+    }
 
-    def files(permissive: Boolean = false): Option[(String, List[String])] =
+    def files(permissive: Boolean = false): Option[(String, List[(Int, String)])] =
       files0(permissive = permissive) match {
         case Nil => None
-        case a :: bs => Some((a, bs))
+        case (_, a) :: bs => Some((a, bs))
       }
 
     override def toString: String = "Export.Theory_Context(" + quote(theory) + ")"
@@ -657,11 +659,8 @@ Usage: isabelle export [OPTIONS] SESSION
         /* build */
 
         if (!no_build) {
-          val rc =
-            progress.interrupt_handler {
-              Build.build_logic(options, session_name, progress = progress, dirs = dirs)
-            }
-          if (rc != Process_Result.RC.ok) sys.exit(rc)
+          val results = Build.build_logic(options, session_name, progress = progress, dirs = dirs)
+          if (!results.ok) sys.exit(results.rc)
         }
 
 

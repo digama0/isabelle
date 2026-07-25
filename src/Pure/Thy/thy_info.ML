@@ -17,15 +17,11 @@ sig
   val lookup_theory: string -> theory option
   val defined_theory: string -> bool
   val get_theory: string -> theory
+  val get_theory_segments: string -> Document_Output.segment list
+  val get_theory_elements: string -> Document_Output.segment Thy_Element.element list
   val check_theory: Proof.context -> string * Position.T -> theory
-  val master_directory: string -> Path.T
-  val remove_thy: string -> unit
-  val use_theories: Options.T -> string -> (string * Position.T) list ->
+  val use_theories: string -> ((string * Position.T) * Options.update) list ->
     (theory * Document_Output.segment list) list
-  val use_thy: string -> unit
-  val script_thy: Position.T -> string -> theory -> theory
-  val register_thy: theory -> unit
-  val finish: unit -> unit
 end;
 
 structure Thy_Info: THY_INFO =
@@ -95,19 +91,9 @@ fun new_entry name parents entry =
 
 (* global thys *)
 
-type deps =
- {master: (Path.T * SHA1.digest),  (*master dependencies for thy file*)
-  imports: (string * Position.T) list};  (*source specification of imports (partially qualified)*)
-
-fun make_deps master imports : deps = {master = master, imports = imports};
-
-fun master_dir_deps (d: deps option) =
-  the_default Path.current (Option.map (Path.dir o #1 o #master) d);
-
 local
-  val global_thys =
-    Synchronized.var "Thy_Info.thys"
-      (String_Graph.empty: (deps option * theory option) String_Graph.T);
+  type thy = theory * Document_Output.segment list;
+  val global_thys = Synchronized.var "Thy_Info.thys" (String_Graph.empty: thy String_Graph.T);
 in
   fun get_thys () = Synchronized.value global_thys;
   fun change_thys f = Synchronized.change global_thys f;
@@ -126,22 +112,21 @@ fun get thys name =
     SOME thy => thy
   | NONE => error ("Theory loader: nothing known about theory " ^ quote name));
 
-fun get_thy name = get (get_thys ()) name;
+fun check_new thys name =
+  if String_Graph.defined thys name
+  then error ("Theory loader: cannot change loaded theory " ^ quote name)
+  else ();
 
-
-(* access deps *)
-
-val lookup_deps = Option.map #1 o lookup_thy;
-
-val master_directory = master_dir_deps o #1 o get_thy;
+fun check_old thys (name, thy) =
+  let val (thy', _) = get thys name in
+    if Context.eq_thy (thy, thy') then ()
+    else error ("Theory loader: incoherent theory " ^ quote name)
+  end;
 
 
 (* access theory *)
 
-fun lookup_theory name =
-  (case lookup_thy name of
-    SOME (_, SOME theory) => SOME theory
-  | _ => NONE);
+fun lookup_theory name = lookup_thy name |> Option.map #1;
 
 val defined_theory = is_some o lookup_theory;
 
@@ -150,7 +135,26 @@ fun get_theory name =
     SOME theory => theory
   | _ => error ("Theory loader: undefined entry for theory " ^ quote name));
 
-val get_imports = Resources.imports_of o get_theory;
+fun get_theory_segments name =
+  let
+    val segments =
+      (case lookup_thy name of
+        SOME (_, segments) => segments
+      | _ => []);
+  in
+    if null segments then
+      error ("Theory loader: no theory segments for theory " ^ quote name ^
+        "\n Need to build with option " ^ quote \<^system_option>\<open>record_theories\<close>)
+    else segments
+  end;
+
+fun get_theory_elements name =
+  let
+    val keywords = Thy_Header.get_keywords (get_theory name);
+    val stopper = Document_Output.segment_stopper;
+    val segments = get_theory_segments name;
+  in Thy_Element.parse_elements_generic keywords #span stopper segments end;
+
 
 val check_theory = Theory.check_theory {get = get_theory, all = get_names};
 
@@ -158,33 +162,15 @@ val check_theory = Theory.check_theory {get = get_theory, all = get_names};
 
 (** thy operations **)
 
-(* remove *)
+(* commit *)
 
-fun remove name thys =
-  (case lookup thys name of
-    NONE => thys
-  | SOME (NONE, _) => error ("Cannot update finished theory " ^ quote name)
-  | SOME _ =>
-      let
-        val succs = String_Graph.all_succs thys [name];
-        val _ = writeln ("Theory loader: removing " ^ commas_quote succs);
-      in fold String_Graph.del_node succs thys end);
-
-val remove_thy = change_thys o remove;
-
-
-(* update *)
-
-fun update deps theory thys =
+fun commit_thy (res as (theory, _)) = change_thys (fn thys =>
   let
     val name = Context.theory_long_name theory;
-    val parents = map Context.theory_long_name (Theory.parents_of theory);
-
-    val thys' = remove name thys;
-    val _ = map (get thys') parents;
-  in new_entry name parents (SOME deps, SOME theory) thys' end;
-
-fun update_thy deps theory = change_thys (update deps theory);
+    val _ = check_new thys name;
+    val parents = map (`Context.theory_long_name) (Theory.parents_of theory);
+    val _ = List.app (check_old thys) parents;
+  in new_entry name (map #1 parents) res thys end);
 
 
 (* scheduling loader tasks *)
@@ -194,14 +180,14 @@ datatype result =
    {theory: theory,
     exec_id: Document_ID.exec,
     present: unit -> presentation_context option,
-    commit: unit -> unit};
+    commit: Document_Output.segment list -> unit};
 
 fun theory_result theory =
   Result
    {theory = theory,
     exec_id = Document_ID.none,
     present = K NONE,
-    commit = I};
+    commit = K ()};
 
 fun result_theory (Result {theory, ...}) = theory;
 fun result_commit (Result {commit, ...}) = commit;
@@ -220,12 +206,10 @@ fun consolidate_theory (Exn.Exn exn) = [Exn.Exn exn]
         val exns = maps Task_Queue.group_status (Execution.peek exec_id);
       in result :: map Exn.Exn exns end;
 
-fun present_theory (Exn.Exn exn) = [Exn.Exn exn]
+fun present_theory (Exn.Exn exn) = SOME (Exn.Exn exn)
   | present_theory (Exn.Res (Result {theory, present, ...})) =
-      (case present () of
-        NONE => []
-      | SOME (context as {segments, ...}) =>
-          [Exn.capture_body (fn () => (apply_presentation context theory; (theory, segments)))]);
+      present () |> Option.map (fn context as {segments, ...} =>
+        Exn.capture_body (fn () => (apply_presentation context theory; (theory, segments))));
 
 in
 
@@ -252,11 +236,14 @@ val schedule_theories = Thread_Attributes.uninterruptible (fn _ => fn tasks =>
 
     val results1 = futures |> maps (consolidate_theory o Future.join_result);
 
-    val present_results = futures |> maps (present_theory o Future.join_result);
+    val presented_results = futures |> map (present_theory o Future.join_result);
+    val present_results = map_filter I presented_results;
+
     val results2 = (map o Exn.map_res) (K ()) present_results;
 
-    val results3 = futures
-      |> map (fn future => Exn.capture_body (fn () => result_commit (Future.join future) ()));
+    val results3 = (futures, presented_results) |> ListPair.map (fn (future, presented) =>
+      let val segments = (case presented of SOME (Exn.Res (_, segments)) => segments | _ => []);
+      in Exn.capture_body (fn () => result_commit (Future.join future) segments) end);
 
     val results4 = map Exn.Exn (maps Task_Queue.group_status (Execution.reset ()));
 
@@ -268,15 +255,23 @@ end;
 
 (* eval theory *)
 
-fun eval_thy options master_dir header text_pos text parents =
+fun eval_thy loading_theory master_dir header text_pos text parents =
   let
+    val options = Options.default [];
+
     val (name, _) = #name header;
     val keywords =
       fold (curry Keyword.merge_keywords o Thy_Header.get_keywords) parents
         (Keyword.add_keywords (#keywords header) Keyword.empty_keywords);
 
     val spans = Outer_Syntax.parse_spans (Token.explode keywords text_pos text);
+    val commands =
+      fold (fn span => fn i => if Command_Span.is_ignored span then i else i + 1) spans 0;
+    val () = loading_theory commands;
+
     val elements = Thy_Element.parse_elements keywords spans;
+    val command_ranges =
+      Command_Span.command_ranges spans |> map (fn (pos, _) => (pos, Markup.command_range));
 
     val text_id = Position.copy_id text_pos Position.none;
 
@@ -284,6 +279,8 @@ fun eval_thy options master_dir header text_pos text parents =
 
     fun excursion () =
       let
+        val _ = Position.setmp_thread_data text_id (fn () => Position.reports command_ranges) ();
+
         fun element_result span_elem (st, _) =
           let
             fun prepare span =
@@ -322,9 +319,8 @@ local
 fun required_by _ [] = ""
   | required_by s initiators = s ^ "(required by " ^ show_path (rev initiators) ^ ")";
 
-fun load_thy options initiators deps text (name, header_pos) keywords parents =
+fun load_thy initiators (thy_path, text) ((name, header_pos), opts) imports keywords parents =
   let
-    val {master = (thy_path, _), imports} = deps;
     val dir = Path.dir thy_path;
 
     val exec_id = Document_ID.make ();
@@ -337,55 +333,49 @@ fun load_thy options initiators deps text (name, header_pos) keywords parents =
     val text_pos = put_id (Position.file (File.symbolic_path thy_path));
     val text_props = Position.properties_of text_pos;
 
-    val _ = remove_thy name;
-    val _ = writeln ("Loading theory " ^ quote name ^ required_by " " initiators);
-    val _ = Output.try_protocol_message (Markup.loading_theory name @ text_props) [XML.blob [text]];
+    fun loading_theory commands =
+      let
+        val _ = writeln ("Loading theory " ^ quote name ^ required_by " " initiators);
+        val _ =
+          Output.try_protocol_message
+            (Markup.loading_theory {name = name, commands = commands} @ text_props)
+            [XML.blob [text]];
+        val _ =
+          Position.setmp_thread_data (Position.id_only id) (fn () =>
+            (parents, map #2 imports) |> ListPair.app (fn (thy, pos) =>
+              Context_Position.reports_global thy [(put_id pos, Theory.get_markup thy)])) ();
+      in () end;
 
-    val _ =
-      Position.setmp_thread_data (Position.id_only id) (fn () =>
-        (parents, map #2 imports) |> ListPair.app (fn (thy, pos) =>
-          Context_Position.reports_global thy [(put_id pos, Theory.get_markup thy)])) ();
-
-    val timing_start = Timing.start ();
-
-    val header = Thy_Header.make (name, put_id header_pos) imports keywords;
+    val header = Thy_Header.make (name, put_id header_pos) imports [] keywords;
     val (theory, present) =
-      eval_thy options dir header text_pos text
-        (if name = Context.PureN then [Context.the_global_context ()] else parents);
+      Options.strict_thread_update opts (fn () =>
+        eval_thy loading_theory dir header text_pos text
+          (if name = Context.PureN then [Context.the_global_context ()] else parents)) ();
 
-    val timing_result = Timing.result timing_start;
-    val timing_props = [Markup.theory_timing, (Markup.nameN, name)];
-    val _ = Output.try_protocol_message (timing_props @ Markup.timing_properties timing_result) []
-
-    fun commit () = update_thy deps theory;
+    fun commit segments =
+      let
+        val options = Options.default opts;
+        val record_theories = Options.bool options \<^system_option>\<open>record_theories\<close>;
+      in commit_thy (theory, if record_theories then segments else []) end;
   in Result {theory = theory, exec_id = exec_id, present = SOME o present, commit = commit} end;
 
 fun check_thy_deps dir name =
-  (case lookup_deps name of
-    SOME NONE => (true, NONE, Position.none, get_imports name, [])
+  (case lookup_theory name of
+    SOME thy => (NONE, Position.none, Resources.imports_of thy, [], [])
   | NONE =>
-      let val {master, text, theory_pos, imports, keywords} = Resources.check_thy dir name
-      in (false, SOME (make_deps master imports, text), theory_pos, imports, keywords) end
-  | SOME (SOME {master, ...}) =>
       let
-        val {master = master', text = text', theory_pos = theory_pos', imports = imports',
-          keywords = keywords'} = Resources.check_thy dir name;
-        val deps' = SOME (make_deps master' imports', text');
-        val current =
-          #2 master = #2 master' andalso
-            (case lookup_theory name of
-              NONE => false
-            | SOME theory => Resources.loaded_files_current theory);
-      in (current, deps', theory_pos', imports', keywords') end);
+        val {thy_path, text, theory_pos, imports, options, keywords} =
+          Resources.check_thy dir name;
+      in (SOME (thy_path, text), theory_pos, imports, options, keywords) end);
 
 fun task_finished (Task _) = false
   | task_finished (Finished _) = true;
 
 in
 
-fun require_thys options initiators qualifier dir strs tasks =
-      fold_map (require_thy options initiators qualifier dir) strs tasks |>> forall I
-and require_thy options initiators qualifier dir (s, require_pos) tasks =
+fun require_thys initiators qualifier dir imports tasks =
+      fold_map (require_thy initiators qualifier dir) imports tasks |>> forall I
+and require_thy initiators qualifier dir ((s, require_pos), theory_opts) tasks =
   let
     val {master_dir, theory_name, ...} = Resources.import_name qualifier dir s;
   in
@@ -395,28 +385,31 @@ and require_thy options initiators qualifier dir (s, require_pos) tasks =
         let
           val _ = member (op =) initiators theory_name andalso error (cycle_msg initiators);
 
-          val (current, deps, theory_pos, imports, keywords) = check_thy_deps master_dir theory_name
-            handle ERROR msg =>
+          val (load, theory_pos, imports, header_options, keywords) =
+            check_thy_deps master_dir theory_name handle ERROR msg =>
               cat_error msg
                 ("The error(s) above occurred for theory " ^ quote theory_name ^
                   Position.here require_pos ^ required_by "\n" initiators);
 
           val qualifier' = Resources.theory_qualifier theory_name;
-          val dir' = dir + master_dir_deps (Option.map #1 deps);
+          val dir' =
+            (case load of
+              NONE => dir
+            | SOME (thy_path, _) => dir + Path.dir thy_path);
+          val imports' = map (rpair theory_opts) imports;
 
           val parents = map (#theory_name o Resources.import_name qualifier' dir' o #1) imports;
           val (parents_current, tasks') =
-            require_thys options (theory_name :: initiators) qualifier' dir' imports tasks;
+            require_thys (theory_name :: initiators) qualifier' dir' imports' tasks;
 
-          val all_current = current andalso parents_current;
+          val all_current = is_none load andalso parents_current;
           val task =
             if all_current then Finished (get_theory theory_name)
             else
-              (case deps of
-                NONE => raise Fail "Malformed deps"
-              | SOME (dep, text) =>
-                  Task (parents,
-                    load_thy options initiators dep text (theory_name, theory_pos) keywords));
+              let
+                val opts = Options.update_no_pos header_options @ theory_opts;
+                val thy = ((theory_name, theory_pos), opts);
+              in Task (parents, load_thy initiators (the load) thy imports keywords) end;
 
           val tasks'' = new_entry theory_name parents task tasks';
         in (all_current, tasks'') end)
@@ -427,43 +420,7 @@ end;
 
 (* use theories *)
 
-fun use_theories options qualifier imports =
-  schedule_theories (#2 (require_thys options [] qualifier Path.current imports String_Graph.empty));
-
-fun use_thy name =
-  ignore (use_theories (Options.default ()) Resources.default_qualifier [(name, Position.none)]);
-
-
-(* toplevel scripting -- without maintaining database *)
-
-fun script_thy pos txt thy =
-  let
-    val trs = Outer_Syntax.parse_text thy (K thy) pos txt;
-    val end_pos = if null trs then pos else Toplevel.pos_of (List.last trs);
-    val end_state = fold (Toplevel.command_exception true) trs (Toplevel.make_state NONE);
-  in Toplevel.end_theory end_pos end_state end;
-
-
-(* register theory *)
-
-fun register_thy theory =
-  let
-    val name = Context.theory_long_name theory;
-    val {master, ...} = Resources.check_thy (Resources.master_directory theory) name;
-    val imports = Resources.imports_of theory;
-  in
-    change_thys (fn thys =>
-      let
-        val thys' = remove name thys;
-        val _ = writeln ("Registering theory " ^ quote name);
-      in update (make_deps master imports) theory thys' end)
-  end;
-
-
-(* finish all theories *)
-
-fun finish () = change_thys (String_Graph.map (fn _ => fn (_, entry) => (NONE, entry)));
+fun use_theories qualifier imports =
+  schedule_theories (#2 (require_thys [] qualifier Path.current imports String_Graph.empty));
 
 end;
-
-fun use_thy name = Runtime.toplevel_program (fn () => Thy_Info.use_thy name);

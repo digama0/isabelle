@@ -11,13 +11,12 @@ sig
   val empty_gram: gram
   val make_gram: Syntax_Ext.xprod list -> Syntax_Ext.xprod list -> gram option -> gram
   val pretty_gram: gram -> Pretty.T list
-  datatype parsetree =
-    Node of string * parsetree list |
+  datatype tree =
+    Markup of {markup: Markup.T list, range: Position.range} * tree list |
+    Node of {nonterm: string, const: string, range: Position.range} * tree list |
     Tip of Lexicon.token
-  exception PARSETREE of parsetree
-  val pretty_parsetree: parsetree -> Pretty.T
-  val parse: gram -> string -> Lexicon.token list -> parsetree list
-  val branching_level: int Config.T
+  val pretty_tree: tree -> Pretty.T list
+  val parse: gram -> string -> Lexicon.token list -> tree list
 end;
 
 structure Parser: PARSER =
@@ -32,11 +31,15 @@ type nt = int;
 
 type tags = nt Symtab.table;
 val tags_empty: tags = Symtab.empty;
+fun tags_size (tags: tags) = Symtab.size tags;
 fun tags_content (tags: tags) = sort_by #1 (Symtab.dest tags);
 fun tags_lookup (tags: tags) = Symtab.lookup tags;
 fun tags_insert tag (tags: tags) = Symtab.update_new tag tags;
-fun tags_name (tags: tags) =
-  the o Inttab.lookup (Inttab.build (Symtab.fold (Inttab.update_new o swap) tags));
+
+type names = string Inttab.table;
+val names_empty: names = Inttab.empty;
+fun make_names (tags: tags): names = Inttab.build (Symtab.fold (Inttab.update_new o swap) tags);
+fun the_name (names: names) = the o Inttab.lookup names;
 
 type nts = Bitset.T;
 val nts_empty: nts = Bitset.empty;
@@ -51,7 +54,7 @@ fun nts_is_unique (nts: nts) = Bitset.is_unique nts;
 
 (* tokens *)
 
-structure Tokens = Set(type key = Lexicon.token val ord = Lexicon.tokens_match_ord);
+structure Tokens = Set(type key = Lexicon.token val ord = Lexicon.token_type_ord);
 
 fun tokens_find P tokens = Tokens.get_first (fn tok => if P tok then SOME tok else NONE) tokens;
 fun tokens_add (nt: nt, tokens) = if Tokens.is_empty tokens then I else cons (nt, tokens);
@@ -61,10 +64,27 @@ fun tokens_add (nt: nt, tokens) = if Tokens.is_empty tokens then I else cons (nt
 
 datatype symb =
   Terminal of Lexicon.token |
-  Nonterminal of nt * int;  (*(tag, prio)*)
+  Nonterminal of nt * int |  (*(tag, precedence)*)
+  Bg of Markup.T list | En;  (*markup block*)
+
+type prod = symb list * string * int;  (*rhs, name, precedence*)
+
+fun make_chain_prod from : prod = ([Nonterminal (from, ~1)], "", ~1);
+
+fun dest_chain_prod (([Nonterminal (from, ~1)], _, ~1): prod) = SOME from
+  | dest_chain_prod _ = NONE;
+
+val no_prec = ~1;
+
+fun upto_prec min max p =
+  (min = no_prec orelse p >= min) andalso (max = no_prec orelse p <= max);
+
+fun until_prec min max p =
+  (min = no_prec orelse p >= min) andalso (max = no_prec orelse p < max);
+
 
 structure Prods = Table(Tokens.Key);
-type prods = (symb list * string * int) list Prods.table;  (*start_token ~> [(rhs, name, prio)]*)
+type prods = prod list Prods.table;
 
 val prods_empty: prods = Prods.empty;
 fun prods_lookup (prods: prods) = Prods.lookup_list prods;
@@ -83,14 +103,17 @@ fun chains_all_succs (chains: chains) = Int_Graph.all_succs chains;
 val chains_empty: chains = Int_Graph.empty;
 fun chains_member (chains: chains) = Int_Graph.is_edge chains;
 fun chains_declare nt : chains -> chains = Int_Graph.default_node (nt, ());
+
+fun chains_declares (Nonterminal (nt, _)) = chains_declare nt
+  | chains_declares _ = I;
+
 fun chains_insert (from, to) =
   chains_declare from #> chains_declare to #> Int_Graph.add_edge (from, to);
 
 datatype gram =
   Gram of
-   {nt_count: int,
-    prod_count: int,
-    tags: tags,
+   {tags: tags,
+    names: names,
     chains: chains,
     lambdas: nts,
     prods: nt_gram Vector.vector};
@@ -109,21 +132,16 @@ fun get_start tks =
     SOME tk => tk
   | NONE => unknown_start);
 
-fun add_production array_prods (lhs, new_prod as (rhs, _, pri)) (chains, lambdas) =
+fun add_production array_prods (lhs, new_prod as (rhs, _, _) : prod) (chains, lambdas) =
   let
-    (*store chain if it does not already exist*)
-    val (chain, new_chain, chains') =
-      (case (pri, rhs) of
-        (~1, [Nonterminal (from, ~1)]) =>
+    val chain = dest_chain_prod new_prod;
+    val (new_chain, chains') =
+      (case chain of
+        SOME from =>
           if chains_member chains (from, lhs)
-          then (SOME from, false, chains)
-          else (SOME from, true, chains_insert (from, lhs) chains)
-      | _ =>
-        let
-          val chains' = chains
-            |> chains_declare lhs
-            |> fold (fn Nonterminal (nt, _) => chains_declare nt | _ => I) rhs;
-        in (NONE, false, chains') end);
+          then (false, chains)
+          else (true, chains_insert (from, lhs) chains)
+      | NONE => (false, chains |> chains_declare lhs |> fold chains_declares rhs));
 
     (*propagate new chain in lookahead and lambdas;
       added_starts is used later to associate existing
@@ -152,10 +170,11 @@ fun add_production array_prods (lhs, new_prod as (rhs, _, pri)) (chains, lambdas
 
     (*test if new production can produce lambda
       (rhs must either be empty or only consist of lambda NTs)*)
+    fun lambda_symb (Nonterminal (id, _)) = nts_member lambdas' id
+      | lambda_symb (Terminal _) = false
+      | lambda_symb _ = true;
     val new_lambdas =
-      if forall
-        (fn Nonterminal (id, _) => nts_member lambdas' id
-          | Terminal _ => false) rhs
+      if forall lambda_symb rhs
       then SOME (filter_out (nts_member lambdas') (chains_all_succs chains' [lhs]))
       else NONE;
     val lambdas'' = fold nts_insert (these new_lambdas) lambdas';
@@ -167,7 +186,8 @@ fun add_production array_prods (lhs, new_prod as (rhs, _, pri)) (chains, lambdas
       | lookahead_dependency lambdas (Nonterminal (nt, _) :: symbs) nts =
           if nts_member lambdas nt then
             lookahead_dependency lambdas symbs (nts_insert nt nts)
-          else (NONE, nts_insert nt nts);
+          else (NONE, nts_insert nt nts)
+      | lookahead_dependency lambdas (_ :: symbs) nts = lookahead_dependency lambdas symbs nts;
 
     (*get all known starting tokens for a nonterminal*)
     fun starts_for_nt nt = snd (fst (Array.nth array_prods nt));
@@ -388,27 +408,26 @@ fun add_production array_prods (lhs, new_prod as (rhs, _, pri)) (chains, lambdas
 
 (* pretty_gram *)
 
-fun pretty_gram (Gram {tags, prods, chains, ...}) =
+fun pretty_gram (Gram {tags, names, prods, chains, ...}) =
   let
-    val print_nt = tags_name tags;
+    val print_nt = the_name names;
     fun print_pri p = if p < 0 then "" else Symbol.make_sup ("(" ^ string_of_int p ^ ")");
 
     fun pretty_symb (Terminal tok) =
           if Lexicon.is_literal tok
-          then Pretty.quote (Pretty.keyword1 (Lexicon.str_of_token tok))
-          else Pretty.str (Lexicon.str_of_token tok)
-      | pretty_symb (Nonterminal (tag, p)) = Pretty.str (print_nt tag ^ print_pri p);
+          then [Pretty.quote (Pretty.keyword1 (Lexicon.str_of_token tok))]
+          else [Pretty.str (Lexicon.str_of_token tok)]
+      | pretty_symb (Nonterminal (tag, p)) = [Pretty.str (print_nt tag ^ print_pri p)]
+      | pretty_symb _ = [];
 
     fun pretty_const "" = []
       | pretty_const c = [Pretty.str ("\<^bold>\<Rightarrow> " ^ quote c)];
 
-    fun prod_of_chain from = ([Nonterminal (from, ~1)], "", ~1);
-
     fun pretty_prod (name, tag) =
-      (prods_content (#2 (Vector.nth prods tag)) @ map prod_of_chain (chains_preds chains tag))
+      (prods_content (#2 (Vector.nth prods tag)) @ map make_chain_prod (chains_preds chains tag))
       |> map (fn (symbs, const, p) =>
           Pretty.block (Pretty.breaks
-            (Pretty.str (name ^ print_pri p ^ " =") :: map pretty_symb symbs @ pretty_const const)));
+            (Pretty.str (name ^ print_pri p ^ " =") :: maps pretty_symb symbs @ pretty_const const)));
   in maps pretty_prod (tags_content tags) end;
 
 
@@ -417,241 +436,314 @@ fun pretty_gram (Gram {tags, prods, chains, ...}) =
 
 val empty_gram =
   Gram
-   {nt_count = 0,
-    prod_count = 0,
-    tags = tags_empty,
+   {tags = tags_empty,
+    names = names_empty,
     chains = chains_empty,
     lambdas = nts_empty,
     prods = Vector.fromList [nt_gram_empty]};
 
-fun extend_gram xprods (Gram {nt_count, prod_count, tags, chains, lambdas, prods}) =
+local
+
+fun make_tag s tags =
+  (case tags_lookup tags s of
+    SOME tag => (tag, tags)
+  | NONE =>
+      let val tag = tags_size tags
+      in (tag, tags_insert (s, tag) tags) end);
+
+fun make_arg (s, p) tags =
+  (case Lexicon.get_terminal s of
+    NONE =>
+      let val (tag, tags') = make_tag s tags;
+      in (Nonterminal (tag, p), tags') end
+  | SOME tok => (Terminal tok, tags));
+
+fun extend_gram xprods gram =
   let
-    (*Get tag for existing nonterminal or create a new one*)
-    fun get_tag nt_count tags nt =
-      (case tags_lookup tags nt of
-        SOME tag => (nt_count, tags, tag)
-      | NONE => (nt_count + 1, tags_insert (nt, nt_count) tags, nt_count));
+    fun make_symb (Syntax_Ext.Delim s) (syms, tags) =
+          (Terminal (Lexicon.literal s) :: syms, tags)
+      | make_symb (Syntax_Ext.Argument a) (syms, tags) =
+          let val (arg, tags') = make_arg a tags
+          in (arg :: syms, tags') end
+      | make_symb (Syntax_Ext.Bg {markup, ...}) (syms, tags) = (Bg markup :: syms, tags)
+      | make_symb (Syntax_Ext.En) (syms, tags) = (En :: syms, tags)
+      | make_symb _ res = res;
 
-    (*Convert symbols to the form used by the parser;
-      delimiters and predefined terms are stored as terminals,
-      nonterminals are converted to integer tags*)
-    fun symb_of [] nt_count tags result = (nt_count, tags, rev result)
-      | symb_of (Syntax_Ext.Delim s :: ss) nt_count tags result =
-          symb_of ss nt_count tags (Terminal (Lexicon.literal s) :: result)
-      | symb_of (Syntax_Ext.Argument (s, p) :: ss) nt_count tags result =
-          let
-            val (nt_count', tags', new_symb) =
-              (case Lexicon.get_terminal s of
-                NONE =>
-                  let val (nt_count', tags', s_tag) = get_tag nt_count tags s;
-                  in (nt_count', tags', Nonterminal (s_tag, p)) end
-              | SOME tk => (nt_count, tags, Terminal tk));
-          in symb_of ss nt_count' tags' (new_symb :: result) end
-      | symb_of (_ :: ss) nt_count tags result = symb_of ss nt_count tags result;
+    fun make_prod (Syntax_Ext.XProd (lhs, xsymbs, const, pri)) (result, tags) =
+      let
+        val (tag, tags') = make_tag lhs tags;
+        val (rev_symbs, tags'') = fold make_symb xsymbs ([], tags');
+      in ((tag, (rev rev_symbs, const, pri)) :: result, tags'') end;
 
-    (*Convert list of productions by invoking symb_of for each of them*)
-    fun prod_of [] nt_count prod_count tags result =
-          (nt_count, prod_count, tags, result)
-      | prod_of (Syntax_Ext.XProd (lhs, xsymbs, const, pri) :: ps)
-            nt_count prod_count tags result =
-          let
-            val (nt_count', tags', lhs_tag) = get_tag nt_count tags lhs;
-            val (nt_count'', tags'', prods) = symb_of xsymbs nt_count' tags' [];
-          in
-            prod_of ps nt_count'' (prod_count + 1) tags''
-              ((lhs_tag, (prods, const, pri)) :: result)
-          end;
 
-    val (nt_count', prod_count', tags', xprods') =
-      prod_of xprods nt_count prod_count tags [];
+    val Gram {tags, names = _, chains, lambdas, prods} = gram;
+
+    val (new_prods, tags') = fold make_prod xprods ([], tags);
 
     val array_prods' =
-      Array.tabulate (nt_count', fn i =>
-        if i < nt_count then Vector.nth prods i
+      Array.tabulate (tags_size tags', fn i =>
+        if i < Vector.length prods then Vector.nth prods i
         else nt_gram_empty);
 
     val (chains', lambdas') =
-      (chains, lambdas) |> fold (add_production array_prods') xprods';
+      (chains, lambdas) |> fold (add_production array_prods') new_prods;
   in
     Gram
-     {nt_count = nt_count',
-      prod_count = prod_count',
-      tags = tags',
+     {tags = tags',
+      names = make_names tags',
       chains = chains',
       lambdas = lambdas',
       prods = Array.vector array_prods'}
   end;
+
+in
 
 fun make_gram [] _ (SOME gram) = gram
   | make_gram new_xprods _ (SOME gram) = extend_gram new_xprods gram
   | make_gram [] [] NONE = empty_gram
   | make_gram new_xprods old_xprods NONE = extend_gram (new_xprods @ old_xprods) empty_gram;
 
+end;
+
 
 
 (** parser **)
 
-(* parsetree *)
+(* parse tree *)
 
-datatype parsetree =
-  Node of string * parsetree list |
+datatype tree =
+  Markup of {markup: Markup.T list, range: Position.range} * tree list |
+  Node of {nonterm: string, const: string, range: Position.range} * tree list |
   Tip of Lexicon.token;
 
-exception PARSETREE of parsetree;
+fun tree_range (Markup ({range, ...}, _)) = range
+  | tree_range (Node ({range, ...}, _)) = range
+  | tree_range (Tip tok) = Lexicon.range_of_token tok;
 
-fun pretty_parsetree parsetree =
+fun trees_range trees =
   let
-    fun pretty (Node (c, pts)) =
-          [Pretty.enclose "(" ")" (Pretty.breaks (Pretty.quote (Pretty.str c) :: maps pretty pts))]
-      | pretty (Tip tok) =
-          if Lexicon.valued_token tok then [Pretty.str (Lexicon.str_of_token tok)] else [];
-  in (case pretty parsetree of [prt] => prt | _ => raise PARSETREE parsetree) end;
+    fun first_pos [] = NONE
+      | first_pos (t :: rest) =
+          let val pos = #1 (tree_range t)
+          in if pos = Position.none then first_pos rest else SOME pos end;
+
+    fun last_pos [] res = res
+      | last_pos (t :: rest) res =
+          let
+            val end_pos = #2 (tree_range t);
+            val res' = if end_pos = Position.none then res else SOME end_pos;
+          in last_pos rest res' end;
+  in
+    (case first_pos trees of
+      NONE => Position.no_range
+    | SOME pos =>
+        (case last_pos trees NONE of
+          NONE => Position.no_range
+        | SOME end_pos => Position.range (pos, end_pos)))
+  end;
+
+fun pretty_tree (Markup (_, ts)) = maps pretty_tree ts
+  | pretty_tree (Node ({nonterm = nt, const = c, ...}, ts)) =
+      let
+        fun mark_const body =
+          if c = "" then body
+          else [Pretty.enclose "(" ")" (Pretty.breaks (Pretty.quote (Pretty.str c) :: body))];
+        fun mark_nonterm body =
+          if nt = "" then body
+          else [Pretty.markup_open (Markup.name nt Markup_Kind.markup_syntax) body];
+      in mark_nonterm (mark_const (maps pretty_tree ts))  end
+  | pretty_tree (Tip tok) =
+      if Lexicon.valued_token tok then [Pretty.str (Lexicon.str_of_token tok)] else [];
 
 
-(* parser state *)
+(* tree_op: bottom-up construction of markup *)
+
+datatype tree_op =
+  Markup_Push |
+  Markup_Pop of Markup.T list |
+  Node_Op of {nonterm: int, const: string} * tree_op list |
+  Tip_Op of Lexicon.token;
+
+local
+  fun drop_markup (Markup_Push :: ts) = drop_markup ts
+    | drop_markup (Markup_Pop _ :: ts) = drop_markup ts
+    | drop_markup ts = ts;
+in
+  fun tree_ops_ord arg =
+    if pointer_eq arg then EQUAL
+    else
+      (case apply2 drop_markup arg of
+        (Node_Op ({nonterm = nt, ...}, ts) :: rest, Node_Op ({nonterm = nt', ...}, ts') :: rest') =>
+          (case int_ord (nt, nt') of
+            EQUAL =>
+              (case tree_ops_ord (ts, ts') of
+                EQUAL => tree_ops_ord (rest, rest')
+              | ord => ord)
+          | ord => ord)
+      | (Tip_Op t :: rest, Tip_Op t' :: rest') =>
+          (case Lexicon.token_content_ord (t, t') of
+            EQUAL => tree_ops_ord (rest, rest')
+          | ord => ord)
+      | (Node_Op _ :: _, Tip_Op _ :: _) => LESS
+      | (Tip_Op _ :: _, Node_Op _ :: _) => GREATER
+      | ([], []) => EQUAL
+      | ([], _ :: _) => LESS
+      | (_ :: _, []) => GREATER
+      | _ => raise Match);
+end;
+
+fun make_tree names root tree_ops =
+  let
+    fun top [] = []
+      | top (xs :: _) = xs;
+
+    fun pop [] = []
+      | pop (_ :: xs) = xs;
+
+    fun make_markup markup ts =
+      Markup ({markup = markup, range = trees_range ts}, ts);
+
+    fun make_node {nonterm = nt, const} ts =
+      Node ({nonterm = the_name names nt, const = const, range = trees_range ts}, ts);
+
+    fun make body stack ops =
+      (case ops of
+        Markup_Push :: rest => make [] (body :: stack) rest
+      | Markup_Pop markup :: rest => make (make_markup markup body :: top stack) (pop stack) rest
+      | Node_Op (name, ts) :: rest => make (make_node name (make [] [] ts) :: body) stack rest
+      | Tip_Op tok :: rest => make (Tip tok :: body) stack rest
+      | [] => if null stack then body else raise Fail "Pending markup blocks");
+  in make_node {nonterm = root, const = ""} (make [] [] tree_ops) end;
+
+
+(* output *)
+
+abstype output = Output of int * tree_op list
+with
+
+val empty_output = Output (0, []);
+
+fun token_output tok (Output (n, ts)) = Output (n + 1, Tip_Op tok :: ts);
+fun node_output id (Output (n, ts)) = Output (n, [Node_Op (id, ts)]);
+
+fun push_output (Output (n, ts)) = Output (n, Markup_Push :: ts);
+fun pop_output markup (Output (n, ts)) = Output (n, Markup_Pop markup :: ts);
+
+fun append_output (Output (m, ss)) (Output (n, ts)) = Output (m + n, ss @ ts);
+
+val output_ord =
+  pointer_eq_ord (fn (Output (m, ss), Output (n, tt)) =>
+    (case int_ord (m, n) of EQUAL => tree_ops_ord (ss, tt) | ord => ord));
+
+fun output_tree names root (Output (_, ts)) = make_tree names root ts;
+
+end;
+
+structure Output = Table(type key = output val ord = output_ord);
+
+
+(* parse *)
 
 type state =
-  nt * int *    (*identification and production precedence*)
-  parsetree list *  (*already parsed nonterminals on rhs*)
-  symb list *       (*rest of rhs*)
-  string *          (*name of production*)
-  int;              (*index for previous state list*)
+  (nt * int *       (*identification and production precedence*)
+   string *         (*name of production*)
+   int) *           (*index for previous state list*)
+  symb list *       (*remaining input -- after "dot"*)
+  output;           (*accepted output -- before "dot"*)
 
+local
 
-(*Get all rhss with precedence >= min_prec*)
-fun get_RHS min_prec = filter (fn (_, _, prec: int) => prec >= min_prec);
-
-(*Get all rhss with precedence >= min_prec and < max_prec*)
-fun get_RHS' min_prec max_prec =
-  filter (fn (_, _, prec: int) => prec >= min_prec andalso prec < max_prec);
-
-(*Make states using a list of rhss*)
-fun mk_states i lhs_ID rhss =
-  let fun mk_state (rhs, id, prod_prec) = (lhs_ID, prod_prec, [], rhs, id, i);
-  in map mk_state rhss end;
-
-(*Add parse tree to list and eliminate duplicates
-  saving the maximum precedence*)
-fun conc (t: parsetree list, prec: int) [] = (NONE, [(t, prec)])
-  | conc (t, prec) ((t', prec') :: ts) =
-      if t = t' then
-        (SOME prec',
-          if prec' >= prec then (t', prec') :: ts
-          else (t, prec) :: ts)
-      else
-        let val (n, ts') = conc (t, prec) ts
-        in (n, (t', prec') :: ts') end;
-
-(*Update entry in used*)
-fun update_trees (A, t) used =
+fun update_output (A, (out, p)) used =
   let
-    val (i, ts) = the (Inttab.lookup used A);
-    val (n, ts') = conc t ts;
-  in (n, Inttab.update (A, (i, ts')) used) end;
+    val (i: int, output) = the (Inttab.lookup used A);
+    fun update output' = Inttab.update (A, (i, output'));
+  in
+    (case Output.lookup output out of
+      NONE => (no_prec, update (Output.make [(out, p)]) used)
+    | SOME q => (q, if p > q then update (Output.update (out, p) output) used else used))
+  end;
 
-(*Replace entry in used*)
-fun update_prec (A, prec) =
-  Inttab.map_entry A (fn (_, ts) => (prec, ts));
+val init_prec = (no_prec, Output.empty);
 
-fun getS A max_prec NONE Si =
-      filter
-        (fn (_, _, _, Nonterminal (B, prec) :: _, _, _) => A = B andalso prec <= max_prec
-          | _ => false) Si
-  | getS A max_prec (SOME min_prec) Si =
-      filter
-        (fn (_, _, _, Nonterminal (B, prec) :: _, _, _) =>
-            A = B andalso prec > min_prec andalso prec <= max_prec
-          | _ => false) Si;
+fun update_prec (A, p) used =
+  Inttab.map_default (A, init_prec) (fn (_, output) => (p, output)) used;
 
-fun get_states Estate j A max_prec =
-  filter
-    (fn (_, _, _, Nonterminal (B, prec) :: _, _, _) => A = B andalso prec <= max_prec
-      | _ => false)
-    (Array.nth Estate j);
+fun movedot_states out' A min max = build o fold
+  (fn ((info, Nonterminal (B, p) :: sa, out): state) =>
+      if A = B andalso upto_prec min max p then cons (info, sa, append_output out' out)
+      else I
+    | _ => I);
 
-
-fun movedot_term c (A, j, ts, Terminal a :: sa, id, i) =
-  if Lexicon.valued_token c orelse id <> ""
-  then (A, j, Tip c :: ts, sa, id, i)
-  else (A, j, ts, sa, id, i);
-
-fun movedot_nonterm tt (A, j, ts, Nonterminal _ :: sa, id, i) =
-  (A, j, tt @ ts, sa, id, i);
-
-fun movedot_lambda [] _ = []
-  | movedot_lambda ((t, ki) :: ts) (state as (B, j, tss, Nonterminal (A, k) :: sa, id, i)) =
-      if k <= ki then (B, j, t @ tss, sa, id, i) :: movedot_lambda ts state
-      else movedot_lambda ts state;
-
-
-(*trigger value for warnings*)
-val branching_level = Config.declare_int ("syntax_branching_level", \<^here>) (K 600);
-
-(*get all productions of a NT and NTs chained to it which can
-  be started by specified token*)
-fun prods_for (Gram {prods, chains, ...}) tk nt =
+fun process_states (Gram {prods = gram_prods, chains = gram_chains, ...}) stateset i c states0 =
   let
-    fun token_prods prods =
-      fold cons (prods_lookup prods tk) #>
-      fold cons (prods_lookup prods Lexicon.dummy);
-    fun nt_prods nt = #2 (Vector.nth prods nt);
-  in fold (token_prods o nt_prods) (chains_all_preds chains [nt]) [] end;
+    val get = Array.nth stateset;
+    val set = Array.upd stateset;
 
+    fun add_prods nt min max : state list -> state list =
+      let
+        fun add (rhs, id, prod_prec) =
+          if until_prec min max prod_prec
+          then cons ((nt, prod_prec, id, i), rhs, empty_output)
+          else I;
+        fun token_prods prods =
+          fold add (prods_lookup prods c) #>
+          fold add (prods_lookup prods Lexicon.dummy);
+        val nt_prods = #2 o Vector.nth gram_prods;
+      in fold (token_prods o nt_prods) (chains_all_preds gram_chains [nt]) end;
 
-fun PROCESSS gram Estate i c states =
-  let
-    fun processS _ [] (Si, Sii) = (Si, Sii)
-      | processS used (S :: States) (Si, Sii) =
-          (case S of
-            (_, _, _, Nonterminal (nt, min_prec) :: _, _, _) =>
+    fun process _ [] (Si, Sii) = (Si, Sii)
+      | process used ((S as (info, symbs, out)) :: states) (Si, Sii) =
+          (case symbs of
+            Nonterminal (nt, min_prec) :: sa =>
               let (*predictor operation*)
-                val (used', new_states) =
+                fun movedot_lambda (out', k) =
+                  if min_prec <= k then cons (info, sa, append_output out' out) else I;
+                val (used', states', used_trees) =
                   (case Inttab.lookup used nt of
-                    SOME (used_prec, l) => (*nonterminal has been processed*)
-                      if used_prec <= min_prec then
-                        (*wanted precedence has been processed*)
-                        (used, movedot_lambda l S)
-                      else (*wanted precedence hasn't been parsed yet*)
+                    SOME (used_prec, used_trees) =>
+                      if used_prec <= min_prec then (used, states, used_trees)
+                      else
                         let
-                          val tk_prods = prods_for gram c nt;
-                          val States' =
-                            mk_states i nt (get_RHS' min_prec used_prec tk_prods);
-                        in (update_prec (nt, min_prec) used, movedot_lambda l S @ States') end
-                  | NONE => (*nonterminal is parsed for the first time*)
+                          val used' = update_prec (nt, min_prec) used;
+                          val states' = states |> add_prods nt min_prec used_prec;
+                        in (used', states', used_trees) end
+                  | NONE =>
                       let
-                        val tk_prods = prods_for gram c nt;
-                        val States' = mk_states i nt (get_RHS min_prec tk_prods);
-                      in (Inttab.update (nt, (min_prec, [])) used, States') end);
-              in
-                processS used' (new_states @ States) (S :: Si, Sii)
-              end
-          | (_, _, _, Terminal a :: _, _, _) => (*scanner operation*)
-              processS used States
-                (S :: Si,
-                  if Lexicon.tokens_match_ord (a, c) = EQUAL then movedot_term c S :: Sii else Sii)
-          | (A, prec, ts, [], id, j) => (*completer operation*)
-              let val tt = if id = "" then ts else [Node (id, rev ts)] in
-                if j = i then (*lambda production?*)
-                  let
-                    val (prec', used') = update_trees (A, (tt, prec)) used;
-                    val Slist = getS A prec prec' Si;
-                    val States' = map (movedot_nonterm tt) Slist;
-                  in processS used' (States' @ States) (S :: Si, Sii) end
-                else
-                  let val Slist = get_states Estate j A prec
-                  in processS used (map (movedot_nonterm tt) Slist @ States) (S :: Si, Sii) end
-              end)
-  in processS Inttab.empty states ([], []) end;
+                        val used' = update_prec (nt, min_prec) used;
+                        val states' = states |> add_prods nt min_prec no_prec;
+                      in (used', states', Output.empty) end);
+                val states'' = states' |> Output.fold movedot_lambda used_trees;
+              in process used' states'' (S :: Si, Sii) end
+          | Terminal a :: sa => (*scanner operation*)
+              let
+                val Sii' =
+                  if is_equal (Lexicon.token_type_ord (a, c))
+                  then (*move dot*) (info, sa, token_output c out) :: Sii else Sii;
+              in process used states (S :: Si, Sii') end
+          | Bg markup :: sa => process used ((info, sa, pop_output markup out) :: states) (Si, Sii)
+          | En :: sa => process used ((info, sa, push_output out) :: states) (Si, Sii)
+          | [] => (*completer operation*)
+              let
+                val (A, p, id, j) = info;
+                val out' = node_output {nonterm = A, const = id} out;
+                val (used', states') =
+                  if j = i then (*lambda production?*)
+                    let val (q, used') = update_output (A, (out', p)) used
+                    in (used', movedot_states out' A q p Si) end
+                  else (used, movedot_states out' A no_prec p (get j));
+              in process used' (states' @ states) (S :: Si, Sii) end)
 
+    val (Si, Sii) = process Inttab.empty states0 ([], []);
+  in set i Si; set (i + 1) Sii end;
 
-fun produce gram stateset i indata prev_token =
+fun produce gram stateset i prev rest =
   (case Array.nth stateset i of
     [] =>
       let
-        val toks = if Lexicon.is_eof prev_token then indata else prev_token :: indata;
-        val pos = Position.here (Lexicon.pos_of_token prev_token);
+        val inp = if Lexicon.is_dummy prev then rest else prev :: rest;
+        val pos = Position.here (Lexicon.pos_of_token prev);
       in
-        if null toks then
+        if null inp then
           error ("Inner syntax error: unexpected end of input" ^ pos)
         else
           error ("Inner syntax error" ^ pos ^
@@ -661,47 +753,38 @@ fun produce gram stateset i indata prev_token =
                   Pretty.str "at", Pretty.brk 1,
                   Pretty.block
                    (Pretty.str "\"" ::
-                    Pretty.breaks (map (Pretty.str o Lexicon.str_of_token) (#1 (split_last toks))) @
+                    Pretty.breaks (map (Pretty.str o Lexicon.str_of_token) (#1 (split_last inp))) @
                     [Pretty.str "\""])])))
       end
-  | s =>
-      (case indata of
-        [] => s
-      | c :: cs =>
-          let
-            val (si, sii) = PROCESSS gram stateset i c s;
-            val _ = Array.upd stateset i si;
-            val _ = Array.upd stateset (i + 1) sii;
-          in produce gram stateset (i + 1) cs c end));
+  | states =>
+      (case rest of
+        [] => states
+      | c :: cs => (process_states gram stateset i c states; produce gram stateset (i + 1) c cs)));
 
+in
 
-fun get_trees states = map_filter (fn (_, _, [pt], _, _, _) => SOME pt | _ => NONE) states;
-
-fun earley (gram as Gram {tags, ...}) startsymbol indata =
+fun parse (gram as Gram {tags, names, ...}) root_name toks =
   let
-    val start_tag =
-      (case tags_lookup tags startsymbol of
+    val root =
+      (case tags_lookup tags root_name of
         SOME tag => tag
-      | NONE => error ("Inner syntax: bad grammar root symbol " ^ quote startsymbol));
-    val S0 = [(~1, 0, [], [Nonterminal (start_tag, 0), Terminal Lexicon.eof], "", 0)];
-    val s = length indata + 1;
-    val Estate = Array.array (s, []);
-    val _ = Array.upd Estate 0 S0;
-  in
-    get_trees (produce gram Estate 0 indata Lexicon.eof)
-  end;
+      | NONE => error ("Inner syntax: bad grammar root symbol " ^ quote root_name));
 
-
-fun parse gram start toks =
-  let
     val end_pos =
       (case try List.last toks of
         NONE => Position.none
       | SOME tok => Lexicon.end_pos_of_token tok);
-    val r =
-      (case earley gram start (toks @ [Lexicon.mk_eof end_pos]) of
-        [] => raise Fail "Inner syntax: no parse trees"
-      | pts => pts);
-  in r end;
+    val input = toks @ [Lexicon.mk_eof end_pos];
+
+    val S0: state = ((~1, 0, "", 0), [Nonterminal (root, 0), Terminal Lexicon.eof], empty_output);
+    val stateset = Array.array (length input + 1, []);
+    val _ = Array.upd stateset 0 [S0];
+
+    val result =
+      produce gram stateset 0 Lexicon.dummy input
+      |> map (output_tree names root o #3);
+  in if null result then raise Fail "Inner syntax: no parse trees" else result end;
+
+end;
 
 end;

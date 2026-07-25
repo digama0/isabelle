@@ -8,6 +8,7 @@ node or auxiliary file (blob).
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
@@ -18,7 +19,7 @@ import scala.annotation.tailrec
 
 import org.gjt.sp.jedit.View
 import org.gjt.sp.jedit.Buffer
-import org.gjt.sp.jedit.buffer.{BufferAdapter, BufferListener, JEditBuffer}
+import org.gjt.sp.jedit.buffer.{BufferListener, BufferAdapter, JEditBuffer}
 
 
 object Document_Model {
@@ -40,7 +41,7 @@ object Document_Model {
         (for {
           (node_name, model) <- models.iterator
           blob <- model.get_blob
-        } yield (node_name -> blob)).toMap)
+        } yield (node_name, blob)).toMap)
 
     def open_buffer(
       session: Session,
@@ -139,9 +140,10 @@ object Document_Model {
     GUI_Thread.require {}
 
     val models = state.value.models
-    for (name <- names.iterator; model <- models.get(name)) {
-      model match { case buffer_model: Buffer_Model => buffer_model.syntax_changed() case _ => }
-    }
+    for {
+      name <- names.iterator
+      case buffer_model: Buffer_Model <- models.get(name)
+    } buffer_model.syntax_changed()
   }
 
 
@@ -211,7 +213,7 @@ object Document_Model {
               case _ => (false, st)
             }
         })
-    if (changed) PIDE.editor.state_changed()
+    if (changed) JEdit_Editor.state_changed()
   }
 
   def view_node_required(
@@ -228,7 +230,7 @@ object Document_Model {
   def flush_edits(hidden: Boolean, purge: Boolean): (Document.Blobs, List[Document.Edit_Text]) = {
     GUI_Thread.require {}
 
-    state.change_result { st =>
+    state.change_result({ st =>
       val doc_blobs = st.document_blobs
 
       val buffer_edits =
@@ -270,10 +272,11 @@ object Document_Model {
         (for {
           (_, model) <- st1.file_models_iterator
           file <- model.file
-        } yield file.getParentFile).toSet)
+          dir <- proper_value(file.getParentFile)
+        } yield dir).toSet)
 
       ((doc_blobs, model_edits ::: purge_edits), st1)
-    }
+    })
   }
 
 
@@ -295,15 +298,6 @@ object Document_Model {
 
 
   /* HTTP preview */
-
-  def open_preview(view: View, plain_text: Boolean): Unit = {
-    Document_Model.get_model(view.getBuffer) match {
-      case Some(model) =>
-        val url = Preview_Service.server_url(plain_text, model.node_name)
-        PIDE.editor.hyperlink_url(url).follow(view)
-      case _ =>
-    }
-  }
 
   object Preview_Service extends HTTP.Service("preview") {
     service =>
@@ -338,6 +332,8 @@ object Document_Model {
 sealed abstract class Document_Model extends Document.Model {
   model =>
 
+  def gui_style: GUI.Style
+
 
   /* perspective */
 
@@ -352,17 +348,17 @@ sealed abstract class Document_Model extends Document.Model {
     if (JEdit_Options.continuous_checking() && is_theory) {
       val snapshot = Document_Model.snapshot(model)
 
-      val required = node_required || PIDE.editor.document_node_required(node_name)
+      val required = node_required || JEdit_Editor.document_node_required(node_name)
 
       val reparse = snapshot.node.load_commands_changed(doc_blobs)
       val perspective =
         if (hidden) Text.Perspective.empty
         else {
           val view_ranges = document_view_ranges(snapshot)
-          val load_ranges = snapshot.commands_loading_ranges(PIDE.editor.visible_node)
+          val load_ranges = snapshot.commands_loading_ranges(JEdit_Editor.visible_node)
           Text.Perspective(view_ranges ::: load_ranges)
         }
-      val overlays = PIDE.editor.node_overlays(node_name)
+      val overlays = JEdit_Editor.node_overlays(node_name)
 
       (reparse, Document.Node.Perspective(required, perspective, overlays))
     }
@@ -391,7 +387,7 @@ object File_Model {
   ): File_Model = {
     val node_name = content.node_name
 
-    val file = JEdit_Lib.check_file(node_name.node)
+    val file = JEdit_Lib.get_local_file(node_name.node)
     file.foreach(PIDE.plugin.file_watcher.register_parent(_))
 
     val node_required1 = node_required || File_Format.registry.is_theory(node_name)
@@ -407,11 +403,16 @@ case class File_Model(
   last_perspective: Document.Node.Perspective_Text.T,
   pending_edits: List[Text.Edit]
 ) extends Document_Model {
+  override def toString: String = "file " + quote(node_name.node)
+
+  override def gui_style: GUI.Style = GUI.Style_Plain
+
+
   /* content */
 
   def node_name: Document.Node.Name = content.node_name
 
-  def get_text(range: Text.Range): Option[String] =
+  override def get_text(range: Text.Range): Option[String] =
     range.try_substring(content.text)
 
 
@@ -431,11 +432,14 @@ case class File_Model(
 
   def node_position(offset: Text.Offset): Line.Node_Position =
     Line.Node_Position(node_name.node,
-      Line.Position.zero.advance(content.text.substring(0, offset)))
+      Line.Position.zero.advance(content.text.substring(0, offset).nn))
 
   def get_blob: Option[Document.Blobs.Item] =
     if (is_theory) None
-    else Some(Document.Blobs.Item(content.bytes, content.text, content.chunk, pending_edits.nonEmpty))
+    else {
+      val changed = pending_edits.nonEmpty
+      Some(Document.Blobs.Item(content.bytes, content.text, content.chunk, changed = changed))
+    }
 
   def untyped_data: AnyRef = content.data
 
@@ -489,9 +493,14 @@ class Buffer_Model private(
   val node_name: Document.Node.Name,
   val buffer: Buffer
 ) extends Document_Model {
+  override def toString: String = "buffer " + quote(node_name.node)
+
+  override def gui_style: GUI.Style = Isabelle_Encoding.gui_style(buffer = buffer)
+
+
   /* text */
 
-  def get_text(range: Text.Range): Option[String] =
+  override def get_text(range: Text.Range): Option[String] =
     JEdit_Lib.get_text(buffer, range)
 
 
@@ -565,8 +574,25 @@ class Buffer_Model private(
       }
 
       pending_edits ++= edits
-      PIDE.editor.invoke()
+      JEdit_Editor.invoke()
     }
+
+    val buffer_listener: BufferListener = JEdit_Lib.buffer_listener((_, e) => edit(List(e)))
+
+    def accessible_text_changed(offset: Text.Offset): Unit =
+      for (text_area <- JEdit_Lib.jedit_text_areas(buffer)) {
+        if (text_area.isInstanceOf[JEdit_Accessible.TextArea]) {
+          text_area.asInstanceOf[JEdit_Accessible.TextArea].accessible_text_changed(offset)
+        }
+      }
+
+    val accessible_buffer_listener: BufferListener =
+      new BufferAdapter {
+        override def contentInserted(buf: JEditBuffer, l: Int, offset: Int, m: Int, n: Int): Unit =
+          accessible_text_changed(offset)
+        override def contentRemoved(buf: JEditBuffer, l: Int, offset: Int, m: Int, n: Int): Unit =
+          accessible_text_changed(offset)
+      }
 
 
     // blob
@@ -587,8 +613,7 @@ class Buffer_Model private(
             blob = Some(x)
             x
           }
-        val changed = !is_stable
-        Some(Document.Blobs.Item(bytes, text, chunk, changed))
+        Some(Document.Blobs.Item(bytes, text, chunk, changed = !is_stable))
       }
     }
 
@@ -621,37 +646,13 @@ class Buffer_Model private(
   def untyped_data: AnyRef = buffer_state.untyped_data
 
 
-  /* buffer listener */
-
-  private val buffer_listener: BufferListener = new BufferAdapter {
-    override def contentInserted(
-      buffer: JEditBuffer,
-      start_line: Int,
-      offset: Int,
-      num_lines: Int,
-      length: Int
-    ): Unit = {
-      buffer_state.edit(List(Text.Edit.insert(offset, buffer.getText(offset, length))))
-    }
-
-    override def preContentRemoved(
-      buffer: JEditBuffer,
-      start_line: Int,
-      offset: Int,
-      num_lines: Int,
-      removed_length: Int
-    ): Unit = {
-      buffer_state.edit(List(Text.Edit.remove(offset, buffer.getText(offset, removed_length))))
-    }
-  }
-
-
   /* syntax */
 
   def syntax_changed(): Unit = {
     JEdit_Lib.buffer_line_manager(buffer).setFirstInvalidLineContext(0)
     for (text_area <- JEdit_Lib.jedit_text_areas(buffer)) {
-      Untyped.method(Class.forName("org.gjt.sp.jedit.textarea.TextArea"), "foldStructureChanged").
+      Untyped.method(
+          Classpath.the_class("org.gjt.sp.jedit.textarea.TextArea"), "foldStructureChanged").
         invoke(text_area)
     }
     buffer.invalidateCachedFoldLevels()
@@ -681,7 +682,8 @@ class Buffer_Model private(
             Text.Edit.replace(0, file_model.content.text, JEdit_Lib.buffer_text(buffer)))
     }
 
-    buffer.addBufferListener(buffer_listener)
+    buffer.addBufferListener(buffer_state.buffer_listener)
+    buffer.addBufferListener(buffer_state.accessible_buffer_listener)
     init_token_marker()
 
     this
@@ -691,7 +693,8 @@ class Buffer_Model private(
   /* exit */
 
   def exit(): File_Model = GUI_Thread.require {
-    buffer.removeBufferListener(buffer_listener)
+    buffer.removeBufferListener(buffer_state.buffer_listener)
+    buffer.removeBufferListener(buffer_state.accessible_buffer_listener)
     init_token_marker()
 
     File_Model.init(session,

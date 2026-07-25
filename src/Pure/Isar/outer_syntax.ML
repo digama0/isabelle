@@ -13,12 +13,8 @@ sig
     (Toplevel.transition -> Toplevel.transition) parser -> unit
   val maybe_begin_local_theory: command_keyword -> string ->
     (local_theory -> local_theory) parser -> (theory -> local_theory) parser -> unit
-  val local_theory': command_keyword -> string ->
-    (bool -> local_theory -> local_theory) parser -> unit
   val local_theory: command_keyword -> string ->
     (local_theory -> local_theory) parser -> unit
-  val local_theory_to_proof': command_keyword -> string ->
-    (bool -> local_theory -> Proof.state) parser -> unit
   val local_theory_to_proof: command_keyword -> string ->
     (local_theory -> Proof.state) parser -> unit
   val bootstrap: bool Config.T
@@ -95,7 +91,8 @@ fun help thy pats =
   dest_commands thy
   |> filter (fn (name, _) => forall (fn pat => match_string pat name) pats)
   |> map pretty_command
-  |> Pretty.writeln_chunks;
+  |> Pretty.chunks
+  |> Pretty.writeln;
 
 fun print_commands thy =
   let
@@ -105,7 +102,8 @@ fun print_commands thy =
   in
     [Pretty.strs ("keywords:" :: map quote minor),
       Pretty.big_list "commands:" (map pretty_command commands)]
-    |> Pretty.writeln_chunks
+    |> Pretty.chunks
+    |> Pretty.writeln
   end;
 
 
@@ -162,10 +160,7 @@ fun local_theory_command trans command_keyword comment parse =
     (Restricted_Parser (fn restricted =>
       Parse.opt_target -- parse >> (fn (target, f) => trans restricted target f)));
 
-val local_theory' =
-  local_theory_command (fn a => fn b => fn c => Toplevel.local_theory' a b c NONE);
 val local_theory = local_theory_command Toplevel.local_theory;
-val local_theory_to_proof' = local_theory_command Toplevel.local_theory_to_proof';
 val local_theory_to_proof = local_theory_command Toplevel.local_theory_to_proof;
 
 
@@ -227,9 +222,7 @@ fun parse_command thy markers =
     let
       val keywords = Thy_Header.get_keywords thy;
       val tr0 =
-        Toplevel.empty
-        |> Toplevel.name name
-        |> Toplevel.position pos
+        Toplevel.make name pos
         |> Keyword.is_proof_open keywords name ? Toplevel.skip_proof_open
         |> Keyword.is_proof_close keywords name ? Toplevel.skip_proof_close;
       val command_markers =
@@ -289,7 +282,13 @@ fun command_reports thy tok =
     let val name = Token.content_of tok in
       (case lookup_commands thy name of
         NONE => []
-      | SOME cmd => [((Token.pos_of tok, command_markup {def = false} (name, cmd)), "")])
+      | SOME cmd =>
+          let
+            val pos = Token.pos_of tok;
+            val markup =
+              command_markup {def = false} (name, cmd)
+              |> Markup.command_offset (Position.offset_of pos);
+          in [((pos, markup), "")] end)
     end
   else [];
 

@@ -7,17 +7,16 @@ GUI panel for graph layout.
 
 package isabelle.graphview
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
 import java.awt.{Dimension, Graphics2D, Point, Rectangle}
 import java.awt.geom.{AffineTransform, Point2D}
-import javax.imageio.ImageIO
-import javax.swing.{JScrollPane, JComponent, SwingUtilities}
-import javax.swing.border.EmptyBorder
+import javax.swing.{JScrollPane, SwingUtilities}
 
 import scala.swing.{BorderPanel, Button, CheckBox, Action, FileChooser, Panel, ScrollPane}
-import scala.swing.event.{Event, Key, MousePressed, MouseDragged, MouseClicked, MouseEvent}
+import scala.swing.event.{Event, Key, MousePressed, MouseDragged, MouseClicked}
 
 
 class Graph_Panel(val graphview: Graphview) extends BorderPanel {
@@ -82,8 +81,11 @@ class Graph_Panel(val graphview: Graphview) extends BorderPanel {
           case Some(node) =>
             graphview.model.full_graph.get_node(node) match {
               case Nil => null
-              case content =>
-                graphview.make_tooltip(graph_pane.peer, event.getX, event.getY, content)
+              case List(tip: XML.Elem) =>
+                graphview.make_tooltip(graph_pane.peer, event.getX, event.getY, tip)
+              case body =>
+                val tip = Pretty.block(body, indent = 0)
+                graphview.make_tooltip(graph_pane.peer, event.getX, event.getY, tip)
             }
           case None => null
         }
@@ -290,7 +292,8 @@ class Graph_Panel(val graphview: Graphview) extends BorderPanel {
         case FileChooser.Result.Approve =>
           try { Graph_File.write(chooser.selectedFile, graphview) }
           catch {
-            case ERROR(msg) => GUI.error_dialog(this.peer, "Error", GUI.scrollable_text(msg))
+            case ERROR(msg) =>
+              GUI.error_dialog(message = Seq(GUI.scrollable_text(msg)), parent = Some(this.peer))
           }
         case _ =>
       }
@@ -298,7 +301,7 @@ class Graph_Panel(val graphview: Graphview) extends BorderPanel {
     tooltip = "Save current graph layout as PNG or PDF"
   }
 
-  private val zoom = new GUI.Zoom { override def changed(): Unit = rescale(0.01 * factor) }
+  private val zoom = new GUI.Zoom { override def changed(): Unit = rescale(scale) }
 
   private val fit_window = new Button {
     action = Action("Fit to window") { fit_to_window() }

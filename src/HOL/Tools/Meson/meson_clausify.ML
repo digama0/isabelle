@@ -7,6 +7,7 @@ Transformation of HOL theorems into CNF forms.
 
 signature MESON_CLAUSIFY =
 sig
+  type clause_options = {new_skolem : bool, combs : bool, refl : bool}
   val new_skolem_var_prefix : string
   val new_nonskolem_var_prefix : string
   val is_zapped_var_name : string -> bool
@@ -15,12 +16,14 @@ sig
   val introduce_combinators_in_theorem : Proof.context -> thm -> thm
   val cluster_of_zapped_var_name : string -> (int * (int * int)) * bool
   val ss_only : thm list -> Proof.context -> Proof.context
-  val cnf_axiom : Meson.simp_options -> Proof.context -> bool -> bool -> int -> thm
+  val cnf_axiom : Meson.simp_options -> Proof.context -> clause_options -> int -> thm
     -> (thm * term) option * thm list
 end;
 
 structure Meson_Clausify : MESON_CLAUSIFY =
 struct
+
+type clause_options = {new_skolem : bool, combs : bool, refl : bool}
 
 (* the extra "Meson" helps prevent clashes (FIXME) *)
 val new_skolem_var_prefix = "MesonSK"
@@ -181,9 +184,6 @@ fun introduce_combinators_in_theorem ctxt th =
             (* A type variable of sort "{}" will make "abstraction" fail. *)
             TrueI)
 
-(*cterms are used throughout for efficiency*)
-val cTrueprop = Thm.cterm_of \<^theory_context>\<open>HOL\<close> HOLogic.Trueprop;
-
 (*Given an abstraction over n variables, replace the bound variables by free
   ones. Return the body, along with the list of free variables.*)
 fun c_variant_abs_multi (ct0, vars) =
@@ -197,7 +197,7 @@ fun c_variant_abs_multi (ct0, vars) =
 fun old_skolem_theorem_of_def ctxt rhs0 =
   let
     val rhs = rhs0 |> Type.legacy_freeze_thaw |> #1 |> Thm.cterm_of ctxt
-    val rhs' = rhs |> Thm.dest_comb |> snd
+    val rhs' = rhs |> Thm.dest_arg
     val (ch, frees) = c_variant_abs_multi (rhs', [])
     val (hilbert, cabs) = ch |> Thm.dest_comb |>> Thm.term_of
     val T =
@@ -205,10 +205,10 @@ fun old_skolem_theorem_of_def ctxt rhs0 =
         Const (_, Type (\<^type_name>\<open>fun\<close>, [_, T])) => T
       | _ => raise TERM ("old_skolem_theorem_of_def: expected \"Eps\"", [hilbert])
     val cex = Thm.cterm_of ctxt (HOLogic.exists_const T)
-    val ex_tm = Thm.apply cTrueprop (Thm.apply cex cabs)
+    val ex_tm = HOLogic.mk_judgment (Thm.apply cex cabs)
     val conc =
       Drule.list_comb (rhs, frees)
-      |> Drule.beta_conv cabs |> Thm.apply cTrueprop
+      |> Drule.beta_conv cabs |> HOLogic.mk_judgment
     fun tacf [prem] =
       rewrite_goals_tac ctxt @{thms skolem_def [abs_def]}
       THEN resolve_tac ctxt
@@ -295,7 +295,7 @@ fun zap pos ct =
         else Conv.all_conv
       | _ => Conv.all_conv)
 
-fun ss_only ths ctxt = clear_simpset (put_simpset HOL_basic_ss ctxt) addsimps ths
+fun ss_only ths ctxt = Simplifier.clear_simpset (put_simpset HOL_basic_ss ctxt) |> Simplifier.add_simps ths
 
 val cheat_choice =
   \<^prop>\<open>\<forall>x. \<exists>y. Q x y \<Longrightarrow> \<exists>f. \<forall>x. Q x (f x)\<close>
@@ -367,7 +367,7 @@ fun nnf_axiom simp_options choice_ths new_skolem ax_no th ctxt =
   end
 
 (* Convert a theorem to CNF, with additional premises due to skolemization. *)
-fun cnf_axiom simp_options ctxt0 new_skolem combinators ax_no th =
+fun cnf_axiom simp_options ctxt0 {new_skolem, combs, refl} ax_no th =
   let
     val choice_ths = Meson.choice_theorems (Proof_Context.theory_of ctxt0)
     val (opt, (nnf_th, ctxt1)) =
@@ -387,10 +387,10 @@ fun cnf_axiom simp_options ctxt0 new_skolem combinators ax_no th =
     (opt |> Option.map (I #>> singleton (Variable.export ctxt2 ctxt0)
                         ##> (Thm.term_of #> HOLogic.dest_Trueprop
                              #> singleton (Variable.export_terms ctxt2 ctxt0))),
-     cnf_ths |> map (combinators ? introduce_combinators_in_theorem ctxt2
+     cnf_ths |> map (combs ? introduce_combinators_in_theorem ctxt2
                      #> (case opt of SOME (_, ct) => intr_imp ct | NONE => I))
              |> Variable.export ctxt2 ctxt0
-             |> Meson.finish_cnf
+             |> Meson.finish_cnf refl
              |> map (Thm.close_derivation \<^here>))
   end
   handle THM _ => (NONE, [])

@@ -8,18 +8,6 @@ package isabelle
 
 
 object Component_Rsync {
-  /* resources */
-
-  def home: Path = Path.explode("$ISABELLE_RSYNC_HOME")
-
-  def local_program: Path = Path.explode("$ISABELLE_RSYNC")
-
-  def remote_program(directory: Components.Directory): Path = {
-    val platform = directory.ssh.isabelle_platform.ISABELLE_PLATFORM(apple = true)
-    directory.path + Path.basic(platform) + Path.basic("rsync")
-  }
-
-
   /* build rsync */
 
   val default_version = "3.2.7"
@@ -50,7 +38,7 @@ object Component_Rsync {
           .create(progress = progress)
           .write_platforms()
 
-      val platform_name = Isabelle_Platform.self.ISABELLE_PLATFORM(apple = true)
+      val platform_name = Isabelle_Platform.local.ISABELLE_PLATFORM(apple = true)
       val platform_dir =
         Isabelle_System.make_directory(component_dir.path + Path.basic(platform_name))
 

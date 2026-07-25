@@ -28,7 +28,7 @@ qualified primrec list_of :: "'a iarray \<Rightarrow> 'a list" where
 qualified definition of_fun :: "(nat \<Rightarrow> 'a) \<Rightarrow> nat \<Rightarrow> 'a iarray" where
 [simp]: "of_fun f n = IArray (map f [0..<n])"
 
-qualified definition sub :: "'a iarray \<Rightarrow> nat \<Rightarrow> 'a" (infixl "!!" 100) where
+qualified definition sub :: "'a iarray \<Rightarrow> nat \<Rightarrow> 'a" (infixl \<open>!!\<close> 100) where
 [simp]: "as !! n = IArray.list_of as ! n"
 
 qualified definition length :: "'a iarray \<Rightarrow> nat" where
@@ -177,7 +177,7 @@ text \<open>Note that arrays cannot be printed directly but only by turning them
 lists first. Arrays could be converted back into lists for printing if they
 were wrapped up in an additional constructor.\<close>
 
-code_reserved SML Vector
+code_reserved (SML) Vector
 
 code_printing
   type_constructor iarray \<rightharpoonup> (SML) "_ Vector.vector"
@@ -222,7 +222,7 @@ module IArray(IArray, tabulate, of_list, sub, length) where {
 
 }\<close> for type_constructor iarray constant IArray IArray.tabulate IArray.sub' IArray.length'
 
-code_reserved Haskell IArray_Impl
+code_reserved (Haskell) IArray_Impl
 
 code_printing
   type_constructor iarray \<rightharpoonup> (Haskell) "IArray.IArray _"

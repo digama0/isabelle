@@ -397,13 +397,13 @@ fun is_forall t =
 val nnf_simps = @{thms nnf_simps};
 
 fun weak_dnf_conv ctxt =
-  Simplifier.rewrite (put_simpset HOL_basic_ss ctxt addsimps @{thms weak_dnf_simps});
+  Simplifier.rewrite (put_simpset HOL_basic_ss ctxt |> Simplifier.add_simps @{thms weak_dnf_simps});
 
 val initial_ss =
-  simpset_of (put_simpset HOL_basic_ss \<^context>
-    addsimps nnf_simps
-    addsimps [not_all, not_ex]
-    addsimps map (fn th => th RS sym) (@{thms ex_simps} @ @{thms all_simps}));
+  HOL_basic_ss |> Simplifier.simpset_map \<^context>
+    (Simplifier.add_simps nnf_simps
+    #> Simplifier.add_simps [not_all, not_ex]
+    #> Simplifier.add_simps (map (fn th => th RS sym) @{thms ex_simps all_simps}));
 fun initial_conv ctxt =
   Simplifier.rewrite (put_simpset initial_ss ctxt);
 
@@ -455,8 +455,8 @@ fun prove_conj tab cjs =
 fun conj_ac_rule eq =
  let
   val (l,r) = Thm.dest_equals eq
-  val ctabl = mk_conj_tab (Thm.assume (Thm.apply \<^cterm>\<open>Trueprop\<close> l))
-  val ctabr = mk_conj_tab (Thm.assume (Thm.apply \<^cterm>\<open>Trueprop\<close> r))
+  val ctabl = mk_conj_tab (Thm.assume (HOLogic.mk_judgment l))
+  val ctabr = mk_conj_tab (Thm.assume (HOLogic.mk_judgment r))
   fun tabl c = the (Termtab.lookup ctabl (Thm.term_of c))
   fun tabr c = the (Termtab.lookup ctabr (Thm.term_of c))
   val thl  = prove_conj tabl (conjuncts r) |> implies_intr_hyps
@@ -485,7 +485,7 @@ fun choose v th th' = case Thm.concl_of th of
   | _ => error ""  (* FIXME ? *)
 
 fun simple_choose ctxt v th =
-   choose v (Thm.assume ((Thm.apply \<^cterm>\<open>Trueprop\<close> o mk_ex ctxt v)
+   choose v (Thm.assume ((HOLogic.mk_judgment o mk_ex ctxt v)
     (Thm.dest_arg (hd (Thm.chyps_of th))))) th
 
 
@@ -502,7 +502,7 @@ fun simple_choose ctxt v th =
   val (p0,q0) = Thm.dest_binop t
   val (vs',P) = strip_exists p0
   val (vs,_) = strip_exists q0
-   val th = Thm.assume (Thm.apply \<^cterm>\<open>Trueprop\<close> P)
+   val th = Thm.assume (HOLogic.mk_judgment P)
    val th1 = implies_intr_hyps (fold (simple_choose ctxt) vs' (fold mkexi vs th))
    val th2 = implies_intr_hyps (fold (simple_choose ctxt) vs (fold mkexi vs' th))
    val p = (Thm.dest_arg o Thm.dest_arg1 o Thm.cprop_of) th1
@@ -520,7 +520,8 @@ fun simple_choose ctxt v th =
  fun mk_exists ctxt v th = Drule.arg_cong_rule (ext ctxt (Thm.typ_of_cterm v))
    (Thm.abstract_rule (getname v) v th)
  fun simp_ex_conv ctxt =
-   Simplifier.rewrite (put_simpset HOL_basic_ss ctxt addsimps @{thms simp_thms(39)})
+   Simplifier.rewrite (put_simpset HOL_basic_ss ctxt
+     |> Simplifier.add_simps @{thms simp_thms(39)})
 
 fun free_in v t = Cterms.defined (Cterms.build (Drule.add_frees_cterm t)) v;
 
@@ -655,30 +656,30 @@ val holify_polynomial =
  in holify_polynomial
  end ;
 
-fun idom_rule ctxt = simplify (put_simpset HOL_basic_ss ctxt addsimps [idom_thm]);
+fun idom_rule ctxt = simplify (put_simpset HOL_basic_ss ctxt |> Simplifier.add_simp idom_thm);
 fun prove_nz n = eqF_elim (ring_eq_conv (Thm.mk_binop eq_tm (mk_const n) (mk_const @0)));
 val neq_01 = prove_nz @1;
 fun neq_rule n th = [prove_nz n, th] MRS neq_thm;
 fun mk_add th1 = Thm.combination (Drule.arg_cong_rule ring_add_tm th1);
 
 fun refute ctxt tm =
- if Thm.term_of tm aconv \<^Const>\<open>False\<close> then Thm.assume (Thm.apply \<^cterm>\<open>Trueprop\<close> tm) else
+ if Thm.term_of tm aconv \<^Const>\<open>False\<close> then Thm.assume (HOLogic.mk_judgment tm) else
  ((let
    val (nths0,eths0) =
     List.partition (is_neg o concl)
-     (HOLogic.conj_elims ctxt (Thm.assume (Thm.apply \<^cterm>\<open>Trueprop\<close> tm)))
+     (HOLogic.conj_elims (Thm.assume (HOLogic.mk_judgment tm)))
    val  nths = filter (is_eq o Thm.dest_arg o concl) nths0
    val eths = filter (is_eq o concl) eths0
   in
    if null eths then
     let
-      val th1 = end_itlist (fn th1 => fn th2 => idom_rule ctxt (HOLogic.conj_intr ctxt th1 th2)) nths
+      val th1 = end_itlist (fn th1 => fn th2 => idom_rule ctxt (HOLogic.conj_intr th1 th2)) nths
       val th2 =
         Conv.fconv_rule
           ((Conv.arg_conv #> Conv.arg_conv) (Conv.binop_conv ring_normalize_conv)) th1
       val conc = th2 |> concl |> Thm.dest_arg
       val (l,_) = conc |> dest_eq
-    in Thm.implies_intr (Thm.apply \<^cterm>\<open>Trueprop\<close> tm)
+    in Thm.implies_intr (HOLogic.mk_judgment tm)
                     (Thm.equal_elim (Drule.arg_cong_rule \<^cterm>\<open>Trueprop\<close> (eqF_intr th2))
                            (HOLogic.mk_obj_eq (Thm.reflexive l)))
     end
@@ -692,13 +693,13 @@ fun refute ctxt tm =
       end
      else
       let
-       val nth = end_itlist (fn th1 => fn th2 => idom_rule ctxt (HOLogic.conj_intr ctxt th1 th2)) nths
+       val nth = end_itlist (fn th1 => fn th2 => idom_rule ctxt (HOLogic.conj_intr th1 th2)) nths
        val (vars,pol::pols) =
           grobify_equations(list_mk_conj(Thm.dest_arg(concl nth)::map concl eths))
        val (deg,l,cert) = grobner_strong vars pols pol
        val th1 =
         Conv.fconv_rule ((Conv.arg_conv o Conv.arg_conv) (Conv.binop_conv ring_normalize_conv)) nth
-       val th2 = funpow deg (idom_rule ctxt o HOLogic.conj_intr ctxt th1) neq_01
+       val th2 = funpow deg (idom_rule ctxt o HOLogic.conj_intr th1) neq_01
       in (vars,l,cert,th2)
       end)
     val cert_pos = map (fn (i,p) => (i,filter (fn (c,_) => c > @0) p)) cert
@@ -713,12 +714,12 @@ fun refute ctxt tm =
               (nth eths i |> mk_meta_eq)) pols)
     val th1 = thm_fn herts_pos
     val th2 = thm_fn herts_neg
-    val th3 = HOLogic.conj_intr ctxt (HOLogic.mk_obj_eq (mk_add (Thm.symmetric th1) th2)) noteqth
+    val th3 = HOLogic.conj_intr (HOLogic.mk_obj_eq (mk_add (Thm.symmetric th1) th2)) noteqth
     val th4 =
       Conv.fconv_rule ((Conv.arg_conv o Conv.arg_conv o Conv.binop_conv) ring_normalize_conv)
         (neq_rule l th3)
     val (l, _) = dest_eq(Thm.dest_arg(concl th4))
-   in Thm.implies_intr (Thm.apply \<^cterm>\<open>Trueprop\<close> tm)
+   in Thm.implies_intr (HOLogic.mk_judgment tm)
                         (Thm.equal_elim (Drule.arg_cong_rule \<^cterm>\<open>Trueprop\<close> (eqF_intr th4))
                    (HOLogic.mk_obj_eq (Thm.reflexive l)))
    end
@@ -745,7 +746,7 @@ fun ring ctxt tm =
     val th2 = fold (fn v => fn th => (Thm.forall_intr v th) COMP allI) evs (th2b RS PFalse)
     val th3 =
       Thm.equal_elim
-        (Simplifier.rewrite (put_simpset HOL_basic_ss ctxt addsimps [not_ex RS sym])
+        (Simplifier.rewrite (put_simpset HOL_basic_ss ctxt |> Simplifier.add_simp (not_ex RS sym))
           (th2 |> Thm.cprop_of)) th2
     in specl (Cterms.list_set_rev avs)
              ([[[HOLogic.mk_obj_eq th1, th3 RS PFalse'] MRS trans] MRS PFalse] MRS @{thm notnotD})
@@ -776,16 +777,16 @@ val poly_eq_simproc =
   in
     Simplifier.cert_simproc (Thm.theory_of_thm idl_sub)
      {name = "poly_eq_simproc",
-      kind = Simproc,
+      kind = Simplifier.Simproc,
       lhss = [Thm.term_of (Thm.lhs_of idl_sub)],
       proc = Morphism.entity (fn _ => fn _ => proc),
       identifier = []}
   end;
 
 val poly_eq_ss =
-  simpset_of (put_simpset HOL_basic_ss \<^context>
-    addsimps @{thms simp_thms}
-    |> Simplifier.add_proc poly_eq_simproc)
+  HOL_basic_ss |> Simplifier.simpset_map \<^context>
+    (Simplifier.add_simps @{thms simp_thms}
+    #> Simplifier.add_proc poly_eq_simproc)
 
  local
   fun is_defined v t =
@@ -920,8 +921,9 @@ fun get_ring_ideal_convs ctxt form =
 
 fun presimplify ctxt add_thms del_thms =
   asm_full_simp_tac (put_simpset HOL_basic_ss ctxt
-    addsimps (Named_Theorems.get ctxt \<^named_theorems>\<open>algebra\<close>)
-    delsimps del_thms addsimps add_thms);
+    |> Simplifier.add_simps (Named_Theorems.get ctxt \<^named_theorems>\<open>algebra\<close>)
+    |> Simplifier.del_simps del_thms
+    |> Simplifier.add_simps add_thms);
 
 fun ring_tac add_ths del_ths ctxt =
   Object_Logic.full_atomize_tac ctxt

@@ -29,7 +29,7 @@ make the equations applicable to subterms. The last two rules are symmetry
 and transitivity.\<close>
 inductive_set
   exprel :: "(freeExp * freeExp) set"
-  and exp_rel :: "[freeExp, freeExp] => bool"  (infixl "\<sim>" 50)
+  and exp_rel :: "[freeExp, freeExp] => bool"  (infixl \<open>\<sim>\<close> 50)
   where
     "X \<sim> Y \<equiv> (X,Y) \<in> exprel"
   | ASSOC: "PLUS X (PLUS Y Z) \<sim> PLUS (PLUS X Y) Z"
@@ -50,6 +50,7 @@ lemma exprel_refl: "X \<sim> X"
 
 theorem equiv_exprel: "equiv UNIV exprel"
 proof (rule equivI)
+  show "exprel \<subseteq> UNIV \<times> UNIV" by simp
   show "refl exprel" by (simp add: refl_on_def exprel_refl)
   show "sym exprel" by (simp add: sym_def, blast intro: exprel.SYM)
   show "trans exprel" by (simp add: trans_def, blast intro: exprel.TRANS)

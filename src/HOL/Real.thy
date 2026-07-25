@@ -68,16 +68,7 @@ lemma vanishesD: "vanishes X \<Longrightarrow> 0 < r \<Longrightarrow> \<exists>
   unfolding vanishes_def by simp
 
 lemma vanishes_const [simp]: "vanishes (\<lambda>n. c) \<longleftrightarrow> c = 0"
-proof (cases "c = 0")
-  case True
-  then show ?thesis
-    by (simp add: vanishesI)    
-next
-  case False
-  then show ?thesis
-    unfolding vanishes_def
-    using zero_less_abs_iff by blast
-qed
+  by (metis abs_eq_0_iff less_imp_neq order_eq_refl vanishes_def zero_less_abs_iff)
 
 lemma vanishes_minus: "vanishes X \<Longrightarrow> vanishes (\<lambda>n. - X n)"
   unfolding vanishes_def by simp
@@ -123,11 +114,9 @@ proof (rule vanishesI)
   assume r: "0 < r"
   obtain a where a: "0 < a" "\<forall>n. \<bar>X n\<bar> < a"
     using X by blast
-  obtain b where b: "0 < b" "r = a * b"
-  proof
-    show "0 < r / a" using r a by simp
-    show "r = a * (r / a)" using a by simp
-  qed
+  then obtain b where b: "0 < b" "r = a * b"
+  by (metis divide_pos_pos less_numeral_extra(3) nonzero_mult_div_cancel_left r
+    times_divide_eq_right) 
   obtain k where k: "\<forall>n\<ge>k. \<bar>Y n\<bar> < b"
     using vanishesD [OF Y b(1)] ..
   have "\<forall>n\<ge>k. \<bar>X n * Y n\<bar> < r"
@@ -301,9 +290,7 @@ proof (rule cauchyI)
   obtain s where s: "0 < s" and r: "r = inverse b * s * inverse b"
   proof
     show "0 < b * r * b" by (simp add: \<open>0 < r\<close> b)
-    show "r = inverse b * (b * r * b) * inverse b"
-      using b by simp
-  qed
+  qed (use b in simp)
   obtain j where j: "\<forall>m\<ge>j. \<forall>n\<ge>j. \<bar>X m - X n\<bar> < s"
     using cauchyD [OF X s] ..
   have "\<forall>m\<ge>max i j. \<forall>n\<ge>max i j. \<bar>inverse (X m) - inverse (X n)\<bar> < r"
@@ -335,9 +322,7 @@ proof (rule vanishesI)
   proof
     show "0 < a * r * b"
       using a r b by simp
-    show "inverse a * (a * r * b) * inverse b = r"
-      using a r b by simp
-  qed
+  qed (use a r b in simp)
   obtain k where k: "\<forall>n\<ge>k. \<bar>X n - Y n\<bar> < s"
     using vanishesD [OF XY s] ..
   have "\<forall>n\<ge>max (max i j) k. \<bar>inverse (X n) - inverse (Y n)\<bar> < r"
@@ -533,13 +518,7 @@ proof -
     obtain j where j: "\<forall>n\<ge>j. \<bar>X n - Y n\<bar> < s"
       using vanishesD [OF XY s] ..
     have "\<forall>n\<ge>max i j. t < Y n"
-    proof clarsimp
-      fix n
-      assume n: "i \<le> n" "j \<le> n"
-      have "\<bar>X n - Y n\<bar> < s" and "r < X n"
-        using i j n by simp_all
-      then show "t < Y n" by (simp add: r)
-    qed
+      using i j r by fastforce
     then show ?thesis using t by blast
   qed
   fix X Y assume "realrel X Y"
@@ -664,7 +643,7 @@ qed
 instantiation real :: floor_ceiling
 begin
 
-definition [code del]: "\<lfloor>x::real\<rfloor> = (THE z. of_int z \<le> x \<and> x < of_int (z + 1))"
+definition [code drop]: "\<lfloor>x::real\<rfloor> = (THE z. of_int z \<le> x \<and> x < of_int (z + 1))"
 
 instance
 proof
@@ -776,13 +755,8 @@ proof -
   obtain b where b: "P b"
   proof
     show "P (of_int \<lceil>z\<rceil>)"
-    unfolding P_def of_rat_of_int_eq
-    proof
-      fix y assume "y \<in> S"
-      then have "y \<le> z" using z by simp
-      also have "z \<le> of_int \<lceil>z\<rceil>" by (rule le_of_int_ceiling)
-      finally show "y \<le> of_int \<lceil>z\<rceil>" .
-    qed
+      unfolding P_def of_rat_of_int_eq
+      using ceiling_le_iff ceiling_mono z by blast
   qed
 
   define avg where "avg x y = x/2 + y/2" for x y :: rat
@@ -858,8 +832,7 @@ proof -
     fix x
     assume "x \<in> S"
     then show "x \<le> Real B"
-      using PB [unfolded P_def] \<open>cauchy B\<close>
-      by (simp add: le_RealI)
+      using PB P_def \<open>cauchy B\<close> le_RealI by force
   qed
   moreover have "\<forall>z. (\<forall>x\<in>S. x \<le> z) \<longrightarrow> Real A \<le> z"
     by (meson PA Real_leI P_def \<open>cauchy A\<close> le_cases order.trans)
@@ -986,12 +959,7 @@ declare of_int_1_less_iff [algebra, presburger]
 declare of_int_1_le_iff [algebra, presburger]
 
 lemma int_less_real_le: "n < m \<longleftrightarrow> real_of_int n + 1 \<le> real_of_int m"
-proof -
-  have "(0::real) \<le> 1"
-    by (metis less_eq_real_def zero_less_one)
-  then show ?thesis
-    by (metis floor_of_int less_floor_iff)
-qed
+  by (metis floor_of_int less_floor_iff)
 
 lemma int_le_real_less: "n \<le> m \<longleftrightarrow> real_of_int n < real_of_int m + 1"
   by (meson int_less_real_le not_le)
@@ -1020,8 +988,7 @@ proof (cases "x = 0")
 qed simp
 
 lemma real_of_int_div3: "real_of_int n / real_of_int x - real_of_int (n div x) \<le> 1"
-  apply (simp add: algebra_simps)
-  by (metis add.commute floor_correct floor_divide_of_int_eq less_eq_real_def of_int_1 of_int_add)
+  by (metis add.commute diff_le_eq floor_divide_of_int_eq less_floor_iff linorder_not_le nle_le)
 
 lemma real_of_int_div4: "real_of_int (n div x) \<le> real_of_int n / real_of_int x"
   using real_of_int_div2 [of n x] by simp
@@ -1060,39 +1027,44 @@ lemma real_binomial_eq_mult_binomial_Suc:
 
 subsection \<open>The Archimedean Property of the Reals\<close>
 
-lemma real_arch_inverse: "0 < e \<longleftrightarrow> (\<exists>n::nat. n \<noteq> 0 \<and> 0 < inverse (real n) \<and> inverse (real n) < e)"
-  using reals_Archimedean[of e] less_trans[of 0 "1 / real n" e for n::nat]
+text \<open>Not actually the reals any more!\<close>
+lemma real_arch_inverse:
+  fixes e::"'a::archimedean_field"
+  shows "0 < e \<longleftrightarrow> (\<exists>n::nat. n \<noteq> 0 \<and> 0 < inverse (real n) \<and> inverse (of_nat n) < e)"
+  using reals_Archimedean[of e] less_trans[of 0 "1 / of_nat n" e for n::nat]
   by (auto simp add: field_simps cong: conj_cong simp del: of_nat_Suc)
 
-lemma reals_Archimedean3: "0 < x \<Longrightarrow> \<forall>y. \<exists>n. y < real n * x"
+lemma reals_Archimedean3:
+  fixes x::"'a::archimedean_field"
+  shows "0 < x \<Longrightarrow> \<forall>y. \<exists>n. y < of_nat n * x"
   by (auto intro: ex_less_of_nat_mult)
 
 lemma real_archimedian_rdiv_eq_0:
-  assumes x0: "x \<ge> 0"
-    and c: "c \<ge> 0"
-    and xc: "\<And>m::nat. m > 0 \<Longrightarrow> real m * x \<le> c"
+  fixes x::"'a::archimedean_field"
+  assumes "x \<ge> 0" and "\<And>m::nat. m > 0 \<Longrightarrow> of_nat m * x \<le> c"
   shows "x = 0"
-  by (metis reals_Archimedean3 dual_order.order_iff_strict le0 le_less_trans not_le x0 xc)
+  by (metis (no_types, opaque_lifting) reals_Archimedean3 order.order_iff_strict le0 le_less_trans not_le assms)
 
-lemma inverse_Suc: "inverse (Suc n) > 0"
+lemma inverse_Suc: "inverse (of_nat (Suc n)) > (0::'a::archimedean_field)"
   using of_nat_0_less_iff positive_imp_inverse_positive zero_less_Suc by blast
 
 lemma Archimedean_eventually_inverse:
-  fixes \<epsilon>::real shows "(\<forall>\<^sub>F n in sequentially. inverse (real (Suc n)) < \<epsilon>) \<longleftrightarrow> 0 < \<epsilon>"
+  fixes \<epsilon>::"'a::archimedean_field" shows "(\<forall>\<^sub>F n in sequentially. inverse (of_nat (Suc n)) < \<epsilon>) \<longleftrightarrow> 0 < \<epsilon>"
   (is "?lhs=?rhs")
 proof
   assume ?lhs
   then show ?rhs
-    unfolding eventually_at_top_dense using inverse_Suc order_less_trans by blast
+    unfolding eventually_at_top_dense
+    by (metis (no_types, lifting) gt_ex inverse_Suc nat.distinct(1) real_arch_inverse)
 next
   assume ?rhs
-  then obtain N where "inverse (Suc N) < \<epsilon>"
+  then obtain N where "inverse (of_nat (Suc N)) < \<epsilon>"
     using reals_Archimedean by blast
-  moreover have "inverse (Suc n) \<le> inverse (Suc N)" if "n \<ge> N" for n
-    using inverse_Suc that by fastforce
-  ultimately show ?lhs
-    unfolding eventually_sequentially
-    using order_le_less_trans by blast
+  then have "inverse (of_nat (Suc n)) < \<epsilon>" if "n \<ge> N" for n
+    using that Suc_le_mono inverse_Suc inverse_less_imp_less
+    by (meson inverse_positive_iff_positive linorder_not_less of_nat_less_iff order_le_less_trans)
+  then show ?lhs
+    unfolding eventually_sequentially by blast
 qed
 
 (*HOL Light's FORALL_POS_MONO_1_EQ*)
@@ -1102,13 +1074,8 @@ lemma Inter_eq_Inter_inverse_Suc:
   shows "\<Inter> (A ` {0<..}) = (\<Inter>n. A(inverse(Suc n)))"
 proof 
   have "x \<in> A \<epsilon>"
-    if x: "\<forall>n. x \<in> A (inverse (Suc n))" and "\<epsilon>>0" for x and \<epsilon> :: real
-  proof -
-    obtain n where "inverse (Suc n) < \<epsilon>"
-      using \<open>\<epsilon>>0\<close> reals_Archimedean by blast
-    with assms x show ?thesis
-      by blast
-  qed
+    if "\<forall>n. x \<in> A (inverse (Suc n))" and "\<epsilon>>0" for x and \<epsilon> :: real
+    by (meson assms in_mono reals_Archimedean that)
   then show "(\<Inter>n. A(inverse(Suc n))) \<subseteq> (\<Inter>\<epsilon>\<in>{0<..}. A \<epsilon>)"
     by auto    
 qed (use inverse_Suc in fastforce)
@@ -1202,12 +1169,7 @@ proof -
   qed
   moreover
   have "?gcd' = 1"
-  proof -
-    have "?gcd * ?gcd' = gcd (?gcd * ?k) (?gcd * ?l)"
-      by (rule gcd_mult_distrib_nat)
-    with gcd_k gcd_l have "?gcd * ?gcd' = ?gcd" by simp
-    with gcd show ?thesis by auto
-  qed
+    using \<open>n \<noteq> 0\<close> coprime_iff_gcd_eq_1 div_gcd_coprime by blast
   then have "coprime ?k ?l"
     by (simp only: coprime_iff_gcd_eq_1)
   ultimately show ?thesis ..
@@ -1249,6 +1211,11 @@ lemma of_rat_dense:
   shows "\<exists>q :: rat. x < of_rat q \<and> of_rat q < y"
   using Rats_dense_in_real [OF \<open>x < y\<close>]
   by (auto elim: Rats_cases)
+
+lemma le_iff_forall_rat_less_imp:
+  fixes x y :: real
+  shows "x \<le> y \<longleftrightarrow> (\<forall>q \<in> \<rat>. y < q \<longrightarrow> x < q)"
+  by (meson Rats_dense_in_real less_asym less_le_trans not_less)
 
 
 subsection \<open>Numerals and Arithmetic\<close>
@@ -1299,6 +1266,28 @@ lemma realpow_square_minus_le [simp]: "- u\<^sup>2 \<le> x\<^sup>2"
   for u x :: real
   by (auto simp add: power2_eq_square)
 
+text \<open>The geometric sum formula for natural numbers\<close>
+lemma
+  fixes a k :: nat
+  assumes "a > 1" 
+  shows geometric_sum_nat_aux: "(a - 1) * (\<Sum>i<k. a ^ i) = a ^ k - 1"
+    and geometric_sum_nat_dvd: "a - 1 dvd a ^ k - 1"
+    and geometric_sum_nat:     "(\<Sum>i<k. a ^ i) = (a ^ k - 1) div (a - 1)"
+proof -
+  have "(real a - 1) * (\<Sum>i<k. real a ^ i) = real a ^ k - 1"
+    by (simp add: power_diff_1_eq)
+  also have "(real a - 1) * (\<Sum>i<k. real a ^ i) = real ((a - 1) * (\<Sum>i<k. a ^ i))" 
+    using assms by simp
+  also have "real a ^ k - 1 = real (a ^ k - 1)" 
+    using assms by auto
+  finally show *: "(a - 1) * (\<Sum>i<k. a ^ i) = a ^ k - 1" 
+    by (subst (asm) of_nat_eq_iff)
+  show "a - 1 dvd a ^ k - 1"
+    by (metis "*" dvd_triv_left)
+  from assms show "(\<Sum>i<k. a ^ i) = (a ^ k - 1) div (a - 1)"
+    by (metis "*" div_mult_self1_is_m zero_less_diff) 
+qed
+
 
 subsection \<open>Density of the Reals\<close>
 
@@ -1319,69 +1308,67 @@ subsection \<open>Archimedean properties and useful consequences\<close>
 
 text\<open>Bernoulli's inequality\<close>
 proposition Bernoulli_inequality:
-  fixes x :: real
+  fixes x :: "'a :: linordered_field"
   assumes "-1 \<le> x"
-    shows "1 + n * x \<le> (1 + x) ^ n"
+    shows "1 + of_nat n * x \<le> (1 + x) ^ n"
 proof (induct n)
   case 0
   then show ?case by simp
 next
   case (Suc n)
-  have "1 + Suc n * x \<le> 1 + (Suc n)*x + n * x^2"
-    by (simp add: algebra_simps)
-  also have "... = (1 + x) * (1 + n*x)"
+  have "1 + of_nat (Suc n) * x \<le> 1 + of_nat(Suc n) * x + of_nat n * x^2"
+    by simp
+  also have "... = (1 + x) * (1 + of_nat n * x)"
     by (auto simp: power2_eq_square algebra_simps)
-  also have "... \<le> (1 + x) ^ Suc n"
+  also have "\<dots> \<le> (1 + x) ^ Suc n"
     using Suc.hyps assms mult_left_mono by fastforce
   finally show ?case .
 qed
 
 corollary Bernoulli_inequality_even:
-  fixes x :: real
+  fixes x :: "'a :: linordered_field"
   assumes "even n"
-    shows "1 + n * x \<le> (1 + x) ^ n"
+    shows "1 + of_nat n * x \<le> (1 + x) ^ n"
 proof (cases "-1 \<le> x \<or> n=0")
   case True
   then show ?thesis
     by (auto simp: Bernoulli_inequality)
 next
   case False
-  then have "real n \<ge> 1"
+  then have "of_nat n \<ge> (1::'a)"
     by simp
-  with False have "n * x \<le> -1"
-    by (metis linear minus_zero mult.commute mult.left_neutral mult_left_mono_neg neg_le_iff_le order_trans zero_le_one)
-  then have "1 + n * x \<le> 0"
+  with False have "of_nat n * x \<le> -1"
+    by (meson le_minus_one_simps(1) mult_le_cancel_right2 nle_le order.order_iff_strict order.trans) 
+  then have "1 + of_nat n * x \<le> 0"
     by auto
   also have "... \<le> (1 + x) ^ n"
-    using assms
-    using zero_le_even_power by blast
+    using assms zero_le_even_power by blast
   finally show ?thesis .
 qed
 
-corollary real_arch_pow:
-  fixes x :: real
+corollary arch_pow:
+  fixes x :: "'a :: archimedean_field"
   assumes x: "1 < x"
   shows "\<exists>n. y < x^n"
 proof -
   from x have x0: "x - 1 > 0"
     by arith
   from reals_Archimedean3[OF x0, rule_format, of y]
-  obtain n :: nat where n: "y < real n * (x - 1)" by metis
+  obtain n :: nat where n: "y < of_nat n * (x - 1)" by metis
   from x0 have x00: "x- 1 \<ge> -1" by arith
   from Bernoulli_inequality[OF x00, of n] n
   have "y < x^n" by auto
   then show ?thesis by metis
 qed
 
-corollary real_arch_pow_inv:
-  fixes x y :: real
-  assumes y: "y > 0"
-    and x1: "x < 1"
+corollary arch_pow_inv:
+  fixes x y :: "'a :: archimedean_field"
+  assumes y: "y > 0" and x1: "x < 1"
   shows "\<exists>n. x^n < y"
 proof (cases "x > 0")
   case True
   with x1 have ix: "1 < 1/x" by (simp add: field_simps)
-  from real_arch_pow[OF ix, of "1/y"]
+  from arch_pow[OF ix, of "1/y"]
   obtain n where n: "1/y < (1/x)^n" by blast
   then show ?thesis using y \<open>x > 0\<close>
     by (auto simp add: field_simps)
@@ -1392,28 +1379,28 @@ next
 qed
 
 lemma forall_pos_mono:
-  "(\<And>d e::real. d < e \<Longrightarrow> P d \<Longrightarrow> P e) \<Longrightarrow>
-    (\<And>n::nat. n \<noteq> 0 \<Longrightarrow> P (inverse (real n))) \<Longrightarrow> (\<And>e. 0 < e \<Longrightarrow> P e)"
+  "(\<And>d e :: 'a :: archimedean_field. d < e \<Longrightarrow> P d \<Longrightarrow> P e) \<Longrightarrow>
+    (\<And>n::nat. n \<noteq> 0 \<Longrightarrow> P (inverse (of_nat n))) \<Longrightarrow> (\<And>e. 0 < e \<Longrightarrow> P e)"
   by (metis real_arch_inverse)
 
 lemma forall_pos_mono_1:
-  "(\<And>d e::real. d < e \<Longrightarrow> P d \<Longrightarrow> P e) \<Longrightarrow>
-    (\<And>n. P (inverse (real (Suc n)))) \<Longrightarrow> 0 < e \<Longrightarrow> P e"
+  "(\<And>d e :: 'a :: archimedean_field. d < e \<Longrightarrow> P d \<Longrightarrow> P e) \<Longrightarrow>
+    (\<And>n. P (inverse (of_nat (Suc n)))) \<Longrightarrow> 0 < e \<Longrightarrow> P e"
   using reals_Archimedean by blast
 
 lemma Archimedean_eventually_pow:
-  fixes x::real
+  fixes x :: "'a :: archimedean_field"
   assumes "1 < x"
   shows "\<forall>\<^sub>F n in sequentially. b < x ^ n"
 proof -
   obtain N where "\<And>n. n\<ge>N \<Longrightarrow> b < x ^ n"
-    by (metis assms le_less order_less_trans power_strict_increasing_iff real_arch_pow)
+    by (metis assms le_less order_less_trans power_strict_increasing_iff arch_pow)
   then show ?thesis
     using eventually_sequentially by blast
 qed
 
 lemma Archimedean_eventually_pow_inverse:
-  fixes x::real
+  fixes x :: "'a :: archimedean_field"
   assumes "\<bar>x\<bar> < 1" "\<epsilon> > 0"
   shows "\<forall>\<^sub>F n in sequentially. \<bar>x^n\<bar> < \<epsilon>"
 proof (cases "x = 0")
@@ -1428,6 +1415,17 @@ next
     by eventually_elim (metis \<open>\<epsilon> > 0\<close> inverse_less_imp_less power_abs power_inverse)
 qed
 
+lemma power_tends_to_zero_sequentially: 
+  fixes b :: "'a :: archimedean_field"
+  assumes "c > 0" "0 < b" "b < 1"
+  shows "\<forall>\<^sub>F n in sequentially. b ^ n < c"
+proof -
+  have "b ^ n < b ^ m" if "m < n" for m n
+    by (simp add: assms that)
+  then show ?thesis
+    using arch_pow_inv [of c b] assms
+    by (metis (no_types, lifting) order.strict_trans eventually_at_top_dense)
+qed
 
 subsection \<open>Floor and Ceiling Functions from the Reals to the Integers\<close>
 

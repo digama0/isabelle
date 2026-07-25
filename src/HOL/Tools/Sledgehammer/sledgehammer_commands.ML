@@ -25,6 +25,7 @@ open Sledgehammer_Fact
 open Sledgehammer_ATP_Systems
 open Sledgehammer_Prover
 open Sledgehammer_Prover_SMT
+open Sledgehammer_Prover_Tactic
 open Sledgehammer_Prover_Minimize
 open Sledgehammer_MaSh
 open Sledgehammer
@@ -71,9 +72,11 @@ val default_default_params =
    ("compress", "smart"),
    ("try0", "true"),
    ("smt_proofs", "true"),
+   ("instantiate", "smart"),
    ("minimize", "true"),
-   ("slices", string_of_int (12 * Multithreading.max_threads ())),
-   ("preplay_timeout", "1")]
+   ("slices", string_of_int (24 * Multithreading.max_threads ())),
+   ("preplay_timeout", "1"),
+   ("cache_dir", "")]
 
 val alias_params =
   [("prover", ("provers", [])), (* undocumented *)
@@ -94,7 +97,8 @@ val negated_alias_params =
    ("no_isar_proofs", "isar_proofs"),
    ("dont_minimize", "minimize"),
    ("dont_try0", "try0"),
-   ("no_smt_proofs", "smt_proofs")]
+   ("no_smt_proofs", "smt_proofs"),
+   ("dont_instantiate", "instantiate")]
 
 val property_dependent_params = ["provers", "timeout"]
 
@@ -154,7 +158,7 @@ fun normalize_raw_param ctxt =
 
 (* Ensures that type encodings such as "mono_native?" and "poly_guards!!" are
    read correctly. *)
-val implode_param = strip_spaces_except_between_idents o space_implode " "
+val implode_param = strip_spaces_except_between_idents o implode_space
 
 (* FIXME: use "Generic_Data" *)
 structure Data = Theory_Data
@@ -166,9 +170,14 @@ structure Data = Theory_Data
 
 (* The first ATP of the list is used by Auto Sledgehammer. *)
 fun default_provers_param_value ctxt =
-  \<comment> \<open>see also \<^system_option>\<open>sledgehammer_provers\<close>\<close>
-  filter (is_prover_installed ctxt) (smts ctxt @ local_atps)
-  |> implode_param
+  let
+    val try0_provers = Try0.get_all_proof_method_names ()
+    \<comment> \<open>see also \<^system_option>\<open>sledgehammer_provers\<close>\<close>
+    and installed_provers =
+      filter (is_prover_installed ctxt) (default_smt_solvers ctxt @ local_atps)
+  in
+    implode_param (installed_provers @ try0_provers)
+  end
 
 fun set_default_raw_param param thy =
   let val ctxt = Proof_Context.init_global thy in
@@ -264,11 +273,14 @@ fun extract_params mode default_params override_params =
     val compress = Option.map (curry Real.max 1.0) (lookup_option lookup_real "compress")
     val try0 = lookup_bool "try0"
     val smt_proofs = lookup_bool "smt_proofs"
+    val instantiate = lookup_option lookup_bool "instantiate"
     val minimize = mode <> Auto_Try andalso lookup_bool "minimize"
     val slices = if mode = Auto_Try then 1 else Int.max (1, lookup_int "slices")
     val timeout = lookup_time "timeout"
     val preplay_timeout = lookup_time "preplay_timeout"
     val expect = lookup_string "expect"
+    val cache_dir = Option.mapPartial
+      (fn str => if str = "" then NONE else SOME (Path.explode str)) (lookup "cache_dir")
   in
     {debug = debug, verbose = verbose, overlord = overlord, spy = spy, provers = provers,
      abduce = abduce, falsify = falsify, type_enc = type_enc, strict = strict,
@@ -277,15 +289,15 @@ fun extract_params mode default_params override_params =
      fact_thresholds = fact_thresholds, max_mono_iters = max_mono_iters,
      max_new_mono_instances = max_new_mono_instances, max_proofs = max_proofs,
      isar_proofs = isar_proofs, compress = compress, try0 = try0, smt_proofs = smt_proofs,
-     minimize = minimize, slices = slices, timeout = timeout, preplay_timeout = preplay_timeout,
-     expect = expect}
+     instantiate = instantiate, minimize = minimize, slices = slices, timeout = timeout,
+     preplay_timeout = preplay_timeout, expect = expect, cache_dir = cache_dir}
   end
 
 fun get_params mode = extract_params mode o default_raw_params
 fun default_params thy = get_params Normal thy o map (apsnd single)
 
 val silence_state =
-  Proof.map_contexts (Try0.silence_methods false #> Config.put SMT_Config.verbose false)
+  Proof.map_contexts (Try0_HOL.silence_methods #> Config.put SMT_Config.verbose false)
 
 (* Sledgehammer the given subgoal *)
 

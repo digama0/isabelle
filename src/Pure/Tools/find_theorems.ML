@@ -345,7 +345,7 @@ fun nicer_name ((a, x), i) ((b, y), j) =
         (case qual_ord (x, y) of EQUAL => txt_ord (x, y) | ord => ord)
       | ord => ord)
     | ord => ord)
-  | ord => ord) <> GREATER;
+  | ord => ord) |> is_less_equal;
 
 fun rem_cdups nicer xs =
   let
@@ -481,7 +481,7 @@ fun pretty_theorems state opt_limit rem_dups raw_criteria =
             (if returned < found
              then " (" ^ string_of_int returned ^ " displayed)"
              else ""));
-    val position_markup = Position.markup (Position.thread_data ()) Markup.position;
+    val position_markup = Position.markup (Position.thread_data ());
   in
     Pretty.block
       (Pretty.fbreaks
@@ -536,7 +536,7 @@ fun proof_state st =
 
 val _ =
   Query_Operation.register {name = "find_theorems", pri = Task_Queue.urgent_pri}
-    (fn {state = st, args, writeln_result, ...} =>
+    (fn {state = st, args, writelns_result, ...} =>
       if can Toplevel.context_of st then
         let
           val [limit_arg, allow_dups_arg, query_arg] = args;
@@ -544,7 +544,7 @@ val _ =
           val opt_limit = Int.fromString limit_arg;
           val rem_dups = allow_dups_arg = "false";
           val criteria = read_query Position.none query_arg;
-        in writeln_result (Pretty.string_of (pretty_theorems state opt_limit rem_dups criteria)) end
+        in writelns_result (Pretty.strings_of (pretty_theorems state opt_limit rem_dups criteria)) end
       else error "Unknown context");
 
 end;

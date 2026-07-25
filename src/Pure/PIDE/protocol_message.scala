@@ -34,29 +34,24 @@ object Protocol_Message {
   }
 
 
+  /* message serial */
+
+  def get_serial(msg: XML.Elem): Long =
+    Markup.Serial.get(msg.markup.properties)
+
+  def provide_serial(msg: XML.Elem): XML.Elem =
+    if (get_serial(msg) != 0L) msg
+    else msg.copy(markup = msg.markup.update_properties(Markup.Serial(Document_ID.make())))
+
+
   /* inlined reports */
 
-  private val report_elements =
-    Markup.Elements(Markup.REPORT, Markup.NO_REPORT)
+  val report_elements: Markup.Elements = Markup.Elements(Markup.REPORT)
+  val no_report_elements: Markup.Elements = Markup.Elements(Markup.NO_REPORT)
+  val any_report_elements: Markup.Elements = Markup.Elements(Markup.REPORT, Markup.NO_REPORT)
 
   def clean_reports(body: XML.Body): XML.Body =
-    body filter {
-      case XML.Wrapped_Elem(Markup(name, _), _, _) => !report_elements(name)
-      case XML.Elem(Markup(name, _), _) => !report_elements(name)
-      case _ => true
-    } map {
-      case XML.Wrapped_Elem(markup, body, ts) => XML.Wrapped_Elem(markup, body, clean_reports(ts))
-      case XML.Elem(markup, ts) => XML.Elem(markup, clean_reports(ts))
-      case t => t
-    }
-
-  def expose_no_reports(body: XML.Body): XML.Body =
-    body flatMap {
-      case XML.Wrapped_Elem(markup, body, ts) => List(XML.Wrapped_Elem(markup, body, expose_no_reports(ts)))
-      case XML.Elem(Markup(Markup.NO_REPORT, _), ts) => ts
-      case XML.Elem(markup, ts) => List(XML.Elem(markup, expose_no_reports(ts)))
-      case t => List(t)
-    }
+    XML.filter_elements(body, remove = any_report_elements)
 
   def reports(props: Properties.T, body: XML.Body): List[XML.Elem] =
     body flatMap {
@@ -68,4 +63,14 @@ object Protocol_Message {
       case XML.Elem(_, ts) => reports(props, ts)
       case XML.Text(_) => Nil
     }
+
+
+  /* clean output */
+
+  def clean_output(xml: XML.Body): XML.Body =
+    XML.filter_elements(xml, remove = report_elements, expose = no_report_elements)
+
+  def clean_output(msg: String): String =
+    try { XML.content(clean_output(YXML.parse_body(YXML.Source(msg)))) }
+    catch { case ERROR(_) => msg }
 }

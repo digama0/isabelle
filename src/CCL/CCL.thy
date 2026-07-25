@@ -27,18 +27,18 @@ instance i :: prog ..
 
 consts
   (*** Evaluation Judgement ***)
-  Eval      ::       "[i,i]\<Rightarrow>prop"          (infixl "\<longlongrightarrow>" 20)
+  Eval      ::       "[i,i]\<Rightarrow>prop"          (infixl \<open>\<longlongrightarrow>\<close> 20)
 
   (*** Bisimulations for pre-order and equality ***)
-  po          ::       "['a,'a]\<Rightarrow>o"           (infixl "[=" 50)
+  po          ::       "['a,'a]\<Rightarrow>o"           (infixl \<open>[=\<close> 50)
 
   (*** Term Formers ***)
   true        ::       "i"
   false       ::       "i"
-  pair        ::       "[i,i]\<Rightarrow>i"             ("(1<_,/_>)")
-  lambda      ::       "(i\<Rightarrow>i)\<Rightarrow>i"            (binder "lam " 55)
+  pair        ::       "[i,i]\<Rightarrow>i"             (\<open>(\<open>indent=1 notation=\<open>mixfix pair\<close>\<close><_,/_>)\<close>)
+  lambda      ::       "(i\<Rightarrow>i)\<Rightarrow>i"            (binder \<open>lam \<close> 55)
   "case"      ::       "[i,i,i,[i,i]\<Rightarrow>i,(i\<Rightarrow>i)\<Rightarrow>i]\<Rightarrow>i"
-  "apply"     ::       "[i,i]\<Rightarrow>i"             (infixl "`" 56)
+  "apply"     ::       "[i,i]\<Rightarrow>i"             (infixl \<open>`\<close> 56)
   bot         ::       "i"
 
   (******* EVALUATION SEMANTICS *******)
@@ -207,7 +207,7 @@ ML \<open>
       CHANGED (REPEAT (assume_tac ctxt i ORELSE
         resolve_tac ctxt @{thms iffI allI conjI} i ORELSE
         eresolve_tac ctxt inj_lemmas i ORELSE
-        asm_simp_tac (ctxt addsimps rews) i))
+        asm_simp_tac (ctxt |> Simplifier.add_simps rews) i))
     end;
 \<close>
 
@@ -279,7 +279,7 @@ fun mk_dstnct_thms ctxt defs inj_rls xs =
       Goal.prove_global thy [] [] (Syntax.read_prop ctxt s)
         (fn _ =>
           rewrite_goals_tac ctxt defs THEN
-          simp_tac (ctxt addsimps (rls @ inj_rls)) 1)
+          simp_tac (ctxt |> Simplifier.add_simps (rls @ inj_rls)) 1)
   in map (mk_dstnct_thm ccl_dstncts) (mk_dstnct_rls thy xs) end
 
 fun mkall_dstnct_thms ctxt defs i_rls xss = maps (mk_dstnct_thms ctxt defs i_rls) xss

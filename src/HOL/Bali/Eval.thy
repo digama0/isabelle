@@ -125,19 +125,19 @@ text \<open>To avoid redundancy and to reduce the number of rules, there is only
 \<close>
 
 abbreviation
-  dummy_res :: "vals" ("\<diamondsuit>")
+  dummy_res :: "vals" (\<open>\<diamondsuit>\<close>)
   where "\<diamondsuit> == In1 Unit"
 
 abbreviation (input)
-  val_inj_vals ("\<lfloor>_\<rfloor>\<^sub>e" 1000)
+  val_inj_vals (\<open>\<lfloor>_\<rfloor>\<^sub>e\<close> 1000)
   where "\<lfloor>e\<rfloor>\<^sub>e == In1 e"
 
 abbreviation (input)
-  var_inj_vals  ("\<lfloor>_\<rfloor>\<^sub>v" 1000)
+  var_inj_vals  (\<open>\<lfloor>_\<rfloor>\<^sub>v\<close> 1000)
   where "\<lfloor>v\<rfloor>\<^sub>v == In2 v"
 
 abbreviation (input)
-  lst_inj_vals  ("\<lfloor>_\<rfloor>\<^sub>l" 1000)
+  lst_inj_vals  (\<open>\<lfloor>_\<rfloor>\<^sub>l\<close> 1000)
   where "\<lfloor>es\<rfloor>\<^sub>l == In3 es"
 
 definition undefined3 :: "('al + 'ar, 'b, 'c) sum3 \<Rightarrow> vals" where
@@ -170,7 +170,7 @@ apply (simp (no_asm))
 done
 
 definition
-  fits :: "prog \<Rightarrow> st \<Rightarrow> val \<Rightarrow> ty \<Rightarrow> bool" ("_,_\<turnstile>_ fits _"[61,61,61,61]60)
+  fits :: "prog \<Rightarrow> st \<Rightarrow> val \<Rightarrow> ty \<Rightarrow> bool" (\<open>_,_\<turnstile>_ fits _\<close>[61,61,61,61]60)
   where "G,s\<turnstile>a' fits T = ((\<exists>rt. T=RefT rt) \<longrightarrow> a'=Null \<or> G\<turnstile>obj_ty(lookup_obj s a')\<preceq>T)"
 
 lemma fits_Null [simp]: "G,s\<turnstile>Null fits T"
@@ -194,7 +194,7 @@ apply  simp_all
 done
 
 definition
-  catch :: "prog \<Rightarrow> state \<Rightarrow> qtname \<Rightarrow> bool" ("_,_\<turnstile>catch _"[61,61,61]60) where
+  catch :: "prog \<Rightarrow> state \<Rightarrow> qtname \<Rightarrow> bool" (\<open>_,_\<turnstile>catch _\<close>[61,61,61]60) where
   "G,s\<turnstile>catch C = (\<exists>xc. abrupt s=Some (Xcpt xc) \<and> 
                         G,store s\<turnstile>Addr (the_Loc xc) fits Class C)"
 
@@ -469,7 +469,7 @@ definition
 subsubsection "evaluation judgments"
 
 inductive
-  halloc :: "[prog,state,obj_tag,loc,state]\<Rightarrow>bool" ("_\<turnstile>_ \<midarrow>halloc _\<succ>_\<rightarrow> _"[61,61,61,61,61]60) for G::prog
+  halloc :: "[prog,state,obj_tag,loc,state]\<Rightarrow>bool" (\<open>_\<turnstile>_ \<midarrow>halloc _\<succ>_\<rightarrow> _\<close>[61,61,61,61,61]60) for G::prog
 where \<comment> \<open>allocating objects on the heap, cf. 12.5\<close>
 
   Abrupt: 
@@ -481,7 +481,7 @@ where \<comment> \<open>allocating objects on the heap, cf. 12.5\<close>
             \<Longrightarrow>
             G\<turnstile>Norm s \<midarrow>halloc oi\<succ>a\<rightarrow> (x,init_obj G oi' (Heap a) s)"
 
-inductive sxalloc :: "[prog,state,state]\<Rightarrow>bool" ("_\<turnstile>_ \<midarrow>sxalloc\<rightarrow> _"[61,61,61]60) for G::prog
+inductive sxalloc :: "[prog,state,state]\<Rightarrow>bool" (\<open>_\<turnstile>_ \<midarrow>sxalloc\<rightarrow> _\<close>[61,61,61]60) for G::prog
 where \<comment> \<open>allocating exception objects for
   standard exceptions (other than OutOfMemory)\<close>
 
@@ -498,12 +498,12 @@ where \<comment> \<open>allocating exception objects for
 
 
 inductive
-  eval :: "[prog,state,term,vals,state]\<Rightarrow>bool" ("_\<turnstile>_ \<midarrow>_\<succ>\<rightarrow> '(_, _')"  [61,61,80,0,0]60)
-  and exec ::"[prog,state,stmt      ,state]\<Rightarrow>bool"("_\<turnstile>_ \<midarrow>_\<rightarrow> _"   [61,61,65,   61]60)
-  and evar ::"[prog,state,var  ,vvar,state]\<Rightarrow>bool"("_\<turnstile>_ \<midarrow>_=\<succ>_\<rightarrow> _"[61,61,90,61,61]60)
-  and eval'::"[prog,state,expr ,val ,state]\<Rightarrow>bool"("_\<turnstile>_ \<midarrow>_-\<succ>_\<rightarrow> _"[61,61,80,61,61]60)
+  eval :: "[prog,state,term,vals,state]\<Rightarrow>bool" (\<open>_\<turnstile>_ \<midarrow>_\<succ>\<rightarrow> '(_, _')\<close>  [61,61,80,0,0]60)
+  and exec ::"[prog,state,stmt      ,state]\<Rightarrow>bool"(\<open>_\<turnstile>_ \<midarrow>_\<rightarrow> _\<close>   [61,61,65,   61]60)
+  and evar ::"[prog,state,var  ,vvar,state]\<Rightarrow>bool"(\<open>_\<turnstile>_ \<midarrow>_=\<succ>_\<rightarrow> _\<close>[61,61,90,61,61]60)
+  and eval'::"[prog,state,expr ,val ,state]\<Rightarrow>bool"(\<open>_\<turnstile>_ \<midarrow>_-\<succ>_\<rightarrow> _\<close>[61,61,80,61,61]60)
   and evals::"[prog,state,expr list ,
-                    val  list ,state]\<Rightarrow>bool"("_\<turnstile>_ \<midarrow>_\<doteq>\<succ>_\<rightarrow> _"[61,61,61,61,61]60)
+                    val  list ,state]\<Rightarrow>bool"(\<open>_\<turnstile>_ \<midarrow>_\<doteq>\<succ>_\<rightarrow> _\<close>[61,61,61,61,61]60)
   for G::prog
 where
 
@@ -774,7 +774,7 @@ done
 
 declare not_None_eq [simp del] (* IntDef.Zero_def [simp del] *)
 declare split_paired_All [simp del] split_paired_Ex [simp del]
-setup \<open>map_theory_simpset (fn ctxt => ctxt delloop "split_all_tac")\<close>
+setup \<open>Simplifier.map_theory_simpset (Simplifier.del_loop "split_all_tac")\<close>
 
 inductive_cases eval_cases: "G\<turnstile>s \<midarrow>t\<succ>\<rightarrow> (v, s')"
 
@@ -812,7 +812,7 @@ inductive_cases eval_elim_cases [cases set]:
         "G\<turnstile>Norm s \<midarrow>In1r (Init C)                       \<succ>\<rightarrow> (x, s')"
 declare not_None_eq [simp]  (* IntDef.Zero_def [simp] *)
 declare split_paired_All [simp] split_paired_Ex [simp]
-declaration \<open>K (Simplifier.map_ss (fn ss => ss addloop ("split_all_tac", split_all_tac)))\<close>
+declaration \<open>K (Simplifier.map_simpset (Simplifier.add_loop ("split_all_tac", split_all_tac)))\<close>
 declare if_split     [split] if_split_asm     [split] 
         option.split [split] option.split_asm [split]
 
@@ -888,12 +888,12 @@ valid evaluation of these terms
 
 lemma eval_Callee: "G\<turnstile>Norm s\<midarrow>Callee l e-\<succ>v\<rightarrow> s' = False"
 proof -
-  { fix s t v s'
-    assume eval: "G\<turnstile>s \<midarrow>t\<succ>\<rightarrow> (v,s')" and
-         normal: "normal s" and
-         callee: "t=In1l (Callee l e)"
-    then have "False" by induct auto
-  }  
+  have False
+    if eval: "G\<turnstile>s \<midarrow>t\<succ>\<rightarrow> (v,s')"
+    and normal: "normal s"
+    and callee: "t=In1l (Callee l e)"
+    for s t v s'
+    using that by induct auto
   then show ?thesis
     by (cases s') fastforce
 qed
@@ -901,36 +901,36 @@ qed
 
 lemma eval_InsInitE: "G\<turnstile>Norm s\<midarrow>InsInitE c e-\<succ>v\<rightarrow> s' = False"
 proof -
-  { fix s t v s'
-    assume eval: "G\<turnstile>s \<midarrow>t\<succ>\<rightarrow> (v,s')" and
-         normal: "normal s" and
-         callee: "t=In1l (InsInitE c e)"
-    then have "False" by induct auto
-  }
+  have "False"
+    if eval: "G\<turnstile>s \<midarrow>t\<succ>\<rightarrow> (v,s')"
+    and normal: "normal s"
+    and callee: "t=In1l (InsInitE c e)"
+    for s t v s'
+    using that by induct auto
   then show ?thesis
     by (cases s') fastforce
 qed
 
 lemma eval_InsInitV: "G\<turnstile>Norm s\<midarrow>InsInitV c w=\<succ>v\<rightarrow> s' = False"
 proof -
-  { fix s t v s'
-    assume eval: "G\<turnstile>s \<midarrow>t\<succ>\<rightarrow> (v,s')" and
-         normal: "normal s" and
-         callee: "t=In2 (InsInitV c w)"
-    then have "False" by induct auto
-  }  
+  have "False"
+    if eval: "G\<turnstile>s \<midarrow>t\<succ>\<rightarrow> (v,s')"
+    and normal: "normal s"
+    and callee: "t=In2 (InsInitV c w)"
+    for s t v s'
+    using that by induct auto
   then show ?thesis
     by (cases s') fastforce
 qed
 
 lemma eval_FinA: "G\<turnstile>Norm s\<midarrow>FinA a c\<rightarrow> s' = False"
 proof -
-  { fix s t v s'
-    assume eval: "G\<turnstile>s \<midarrow>t\<succ>\<rightarrow> (v,s')" and
-         normal: "normal s" and
-         callee: "t=In1r (FinA a c)"
-    then have "False" by induct auto
-  }  
+  have "False"
+    if eval: "G\<turnstile>s \<midarrow>t\<succ>\<rightarrow> (v,s')"
+    and normal: "normal s"
+    and callee: "t=In1r (FinA a c)"
+    for s t v s'
+    using that by induct auto
   then show ?thesis
     by (cases s') fastforce 
 qed

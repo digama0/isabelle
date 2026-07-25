@@ -18,10 +18,10 @@ text \<open>
 
 locale seminorm =
   fixes V :: "'a::{minus, plus, zero, uminus} set"
-  fixes norm :: "'a \<Rightarrow> real"    ("\<parallel>_\<parallel>")
-  assumes ge_zero [iff?]: "x \<in> V \<Longrightarrow> 0 \<le> \<parallel>x\<parallel>"
-    and abs_homogenous [iff?]: "x \<in> V \<Longrightarrow> \<parallel>a \<cdot> x\<parallel> = \<bar>a\<bar> * \<parallel>x\<parallel>"
-    and subadditive [iff?]: "x \<in> V \<Longrightarrow> y \<in> V \<Longrightarrow> \<parallel>x + y\<parallel> \<le> \<parallel>x\<parallel> + \<parallel>y\<parallel>"
+  fixes norm :: "'a \<Rightarrow> real"    (\<open>\<parallel>_\<parallel>\<close>)
+  assumes ge_zero [intro?]: "x \<in> V \<Longrightarrow> 0 \<le> \<parallel>x\<parallel>"
+    and abs_homogenous [intro?]: "x \<in> V \<Longrightarrow> \<parallel>a \<cdot> x\<parallel> = \<bar>a\<bar> * \<parallel>x\<parallel>"
+    and subadditive [intro?]: "x \<in> V \<Longrightarrow> y \<in> V \<Longrightarrow> \<parallel>x + y\<parallel> \<le> \<parallel>x\<parallel> + \<parallel>y\<parallel>"
 
 declare seminorm.intro [intro?]
 
@@ -101,8 +101,8 @@ proof -
   interpret normed_vectorspace E norm by fact
   show ?thesis
   proof
-    show "vectorspace F" by (rule vectorspace) unfold_locales
-  next
+    show "vectorspace F"
+      by (rule vectorspace) unfold_locales
     have "Normed_Space.norm E norm" ..
     with subset show "Normed_Space.norm F norm"
       by (simp add: norm_def seminorm_def norm_axioms_def)

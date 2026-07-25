@@ -1753,7 +1753,8 @@ lemma proper_map_prod:
     (prod_topology X Y) = trivial_topology \<or> proper_map X X' f \<and> proper_map Y Y' g"
    (is "?lhs \<longleftrightarrow> _ \<or> ?rhs")
 proof (cases "(prod_topology X Y) = trivial_topology")
-  case True then show ?thesis by auto
+  case True
+  then show ?thesis by auto
 next
   case False
   then have ne: "topspace X \<noteq> {}" "topspace Y \<noteq> {}"
@@ -1805,8 +1806,9 @@ next
     qed
   qed
   moreover
-  { assume R: ?rhs
-    then have fgim: "f \<in> topspace X \<rightarrow> topspace X'" "g \<in> topspace Y \<rightarrow> topspace Y'" 
+  have ?lhs if R: ?rhs
+  proof -
+    from that have fgim: "f \<in> topspace X \<rightarrow> topspace X'" "g \<in> topspace Y \<rightarrow> topspace Y'" 
           and cm: "closed_map X X' f" "closed_map Y Y' g"
       by (auto simp: proper_map_def closed_map_imp_subset_topspace)
     have "closed_map (prod_topology X Y) (prod_topology X' Y') h"
@@ -1855,9 +1857,9 @@ next
       show ?thesis
         using R that by (simp add: eq compactin_Times proper_map_def)
     qed
-    ultimately have ?lhs
-      by (auto simp: h_def proper_map_def) 
-  }
+    ultimately show ?thesis
+      by (auto simp: h_def proper_map_def)
+  qed
   ultimately show ?thesis using False by metis
 qed
 
@@ -3266,6 +3268,11 @@ next
                      "\<not> disjnt V {x. x \<in> topspace X \<and> f x = b}" 
      for a b U V
     proof -
+      have closedin_topspace: "closedin X {x \<in> topspace X. f x \<in> {y..z}}" for y z
+        using closed_real_atLeastAtMost[unfolded closed_closedin]
+          \<open>continuous_map X euclideanreal f\<close>[unfolded continuous_map_closedin]
+        by blast
+
       have "\<forall>y. connectedin X {x. x \<in> topspace X \<and> f x = y}"
         using R monotone_map by fastforce
       then have **: False if "p \<in> U \<and> q \<in> V \<and> f p = f q \<and> f q \<in> K" for p q
@@ -3280,7 +3287,7 @@ next
         define W where "W \<equiv> {x \<in> topspace X. f x \<in> {a..b}}"
         have "closedin X W"
           unfolding W_def
-          by (metis (no_types) assms closed_real_atLeastAtMost closed_closedin continuous_map_closedin)
+          using closedin_topspace .
         show ?thesis
         proof (rule * [OF 1 , of "U \<inter> W" "V \<inter> W"])
           show "closedin X (U \<inter> W)" "closedin X (V \<inter> W)"
@@ -3307,7 +3314,7 @@ next
         define W where "W \<equiv> {x \<in> topspace X. f x \<in> {b..a}}"
         have "closedin X W"
           unfolding W_def
-          by (metis (no_types) assms closed_real_atLeastAtMost closed_closedin continuous_map_closedin)
+          using closedin_topspace .
         show ?thesis
         proof (rule * [OF 3, of "V \<inter> W" "U \<inter> W"])
           show "closedin X (U \<inter> W)" "closedin X (V \<inter> W)"
@@ -4737,7 +4744,7 @@ proof -
     then have XKD: "compactin (subtopology X K) D"
       by (simp add: K closedin_compact_space compact_space_subtopology)
     then show "compactin X D"
-      using compactin_subtopology_imp_compact by blast
+      by (simp add: compactin_subtopology)
     show "connectedin X D"
       using D connectedin_connected_components_of connectedin_subtopology by blast
     have "K \<noteq> topspace X"

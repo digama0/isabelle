@@ -63,18 +63,18 @@ sig
   val lfp_rec_sugar_interpretation: string ->
     (BNF_FP_Rec_Sugar_Util.fp_rec_sugar -> local_theory -> local_theory) -> theory -> theory
 
-  val primrec: bool -> rec_option list -> (binding * typ option * mixfix) list ->
+  val primrec: {verbose: bool} -> rec_option list -> (binding * typ option * mixfix) list ->
     Specification.multi_specs -> local_theory ->
     (term list * thm list * thm list list) * local_theory
-  val primrec_cmd: bool -> rec_option list -> (binding * string option * mixfix) list ->
+  val primrec_cmd: {verbose: bool} -> rec_option list -> (binding * string option * mixfix) list ->
     Specification.multi_specs_cmd -> local_theory ->
     (term list * thm list * thm list list) * local_theory
-  val primrec_global: bool -> rec_option list -> (binding * typ option * mixfix) list ->
+  val primrec_global: {verbose: bool} -> rec_option list -> (binding * typ option * mixfix) list ->
     Specification.multi_specs -> theory -> (term list * thm list * thm list list) * theory
-  val primrec_overloaded: bool -> rec_option list -> (string * (string * typ) * bool) list ->
+  val primrec_overloaded: {verbose: bool} -> rec_option list -> (string * (string * typ) * bool) list ->
     (binding * typ option * mixfix) list ->
     Specification.multi_specs -> theory -> (term list * thm list * thm list list) * theory
-  val primrec_simple: bool -> ((binding * typ) * mixfix) list -> term list -> local_theory ->
+  val primrec_simple: {verbose: bool} -> ((binding * typ) * mixfix) list -> term list -> local_theory ->
     ((string list * (binding -> binding) list)
      * (term list * thm list * (int list list * thm list list))) * local_theory
 end;
@@ -391,10 +391,11 @@ fun build_rec_arg ctxt (funs_data : eqn_data list list) has_call (ctr_spec : rec
         |> map_filter (try (apsnd (fn Nested_Rec p => p)));
 
       fun ensure_unique frees t =
-        if member (op =) frees t then Free (the_single (Term.variant_frees t [dest_Free t])) else t;
+        if member (op =) frees t then Free (the_single (Term.variant_bounds t [dest_Free t])) else t;
 
       val args = replicate n_args ("", dummyT)
-        |> Term.rename_wrt_term t
+        |> Term.variant_bounds t
+        |> rev
         |> map Free
         |> fold (fn (ctr_arg_idx, (arg_idx, _)) =>
             nth_map arg_idx (K (nth ctr_args ctr_arg_idx)))
@@ -655,10 +656,9 @@ fun gen_primrec old_primrec prep_spec int opts raw_fixes raw_specs lthy =
     |> primrec_simple0 int plugins nonexhaustive transfer fixes (map snd specs)
     |-> (fn {prefix = (names, qualifys), types, result = (ts, defs, (jss, simpss))} =>
       Spec_Rules.add spec_name (Spec_Rules.equational_primrec types) ts (flat simpss)
+      #> plugins code_plugin ? Code.declare_default_eqns (map (rpair true) (flat simpss))
       #> Local_Theory.notes (mk_notes jss names qualifys simpss)
-      #-> (fn notes =>
-        plugins code_plugin ? Code.declare_default_eqns (map (rpair true) (maps snd notes))
-        #> pair (ts, defs, map_filter (fn ("", _) => NONE | (_, thms) => SOME thms) notes)))
+      #>> (fn notes => (ts, defs, map_filter (fn ("", _) => NONE | (_, thms) => SOME thms) notes)))
   end
   handle OLD_PRIMREC () =>
     old_primrec int raw_fixes raw_specs lthy
@@ -686,6 +686,6 @@ val _ = Outer_Syntax.local_theory \<^command_keyword>\<open>primrec\<close>
   "define primitive recursive functions"
   ((Scan.optional (\<^keyword>\<open>(\<close> |-- Parse.!!! (Parse.list1 rec_option_parser)
       --| \<^keyword>\<open>)\<close>) []) -- Parse_Spec.specification
-    >> (fn (opts, (fixes, specs)) => snd o primrec_cmd true opts fixes specs));
+    >> (fn (opts, (fixes, specs)) => snd o primrec_cmd {verbose = true} opts fixes specs));
 
 end;

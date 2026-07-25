@@ -27,9 +27,15 @@ object Symbol {
 
   private val static_spaces = space * 4000
 
+  def is_static_spaces(s: String): Boolean = {
+    val n = s.length
+    n == 0 || n <= static_spaces.length && s(0) == space_char && s.forall(_ == space_char)
+  }
+
   def spaces(n: Int): String = {
     require(n >= 0, "negative spaces")
-    if (n < static_spaces.length) static_spaces.substring(0, n)
+    if (n == 0) ""
+    else if (n < static_spaces.length) static_spaces.slice(0, n)
     else space * n
   }
 
@@ -117,7 +123,7 @@ object Symbol {
       match_length(i) match {
         case 0 => ""
         case 1 => char_symbol(text.charAt(i))
-        case n => text.subSequence(i, i + n).toString
+        case n => Library.make_string(text, i, i + n)
       }
   }
 
@@ -150,12 +156,12 @@ object Symbol {
     cat_lines(split_lines(text).dropWhile(all_blank).reverse.dropWhile(all_blank).reverse)
 
 
-  /* decoding offsets */
+  /* recoding offsets */
 
   object Index {
     private sealed case class Entry(chr: Int, sym: Int)
 
-    val empty: Index = new Index(Nil)
+    val empty: Index = new Index(0, Array())
 
     def apply(text: CharSequence): Index = {
       val matcher = new Matcher(text)
@@ -168,14 +174,15 @@ object Symbol {
         sym += 1
         if (n > 1) buf += Entry(chr, sym)
       }
-      if (buf.isEmpty) empty else new Index(buf.toList)
+      if (buf.isEmpty) empty
+      else {
+        val entries = buf.toList
+        new Index(entries.hashCode, entries.toArray)
+      }
     }
   }
 
-  final class Index private(entries: List[Index.Entry]) {
-    private val hash: Int = entries.hashCode
-    private val index: Array[Index.Entry] = entries.toArray
-
+  final class Index private(hash: Int, private val index: Array[Index.Entry]) {
     def decode(symbol_offset: Offset): Text.Offset = {
       val sym = symbol_offset - 1
       val end = index.length
@@ -194,12 +201,32 @@ object Symbol {
     }
     def decode(symbol_range: Range): Text.Range = symbol_range.map(decode)
 
+    def encode(offset: Text.Offset): Symbol.Offset = {
+      val chr = offset
+      val end = index.length
+      @tailrec def bisect(a: Int, b: Int): Int = {
+        if (a < b) {
+          val c = (a + b) / 2
+          if (chr < index(c).chr) bisect(a, c)
+          else if (c + 1 == end || chr < index(c + 1).chr) c
+          else bisect(c + 1, b)
+        }
+        else -1
+      }
+      val i = bisect(0, end)
+      if (i < 0) chr + 1
+      else index(i).sym + chr + 1 - index(i).chr
+    }
+    def encode(range: Text.Range): Range = range.map(encode)
+
     override def hashCode: Int = hash
     override def equals(that: Any): Boolean =
       that match {
         case other: Index => index.sameElements(other.index)
         case _ => false
       }
+
+    override def toString: String = index.mkString("Symbol.Index(", ", ", ")")
   }
 
 
@@ -334,7 +361,7 @@ object Symbol {
         props match {
           case Code(s) =>
             try {
-              val code = Integer.decode(s).intValue
+              val code = Integer.decode(s).nn.intValue
               if (code >= 128) Some(code) else err("Illegal ASCII code")
             }
             catch { case _: NumberFormatException => err("Bad code") }
@@ -383,11 +410,11 @@ object Symbol {
           props match {
             case Nil => Nil
             case _ :: Nil => err()
-            case Key(x) :: y :: rest => (x -> y.replace('\u2423', ' ')) :: read_props(rest)
+            case Key(x) :: y :: rest => (x -> y.replacing("\u2423" -> " ")) :: read_props(rest)
             case _ => err()
           }
         }
-        decl.split("\\s+").toList match {
+        Word.explode(decl) match {
           case sym :: props if sym.length > 1 && !is_malformed(sym) =>
             (sym, read_props(props))
           case _ => err()
@@ -519,6 +546,12 @@ object Symbol {
     val close_decoded: Symbol = decode(close)
 
 
+    /* brackets */
+
+    val open_brackets_decoded = decode(open_brackets)
+    val close_brackets_decoded = decode(close_brackets)
+
+
     /* control symbols */
 
     val control_decoded: Set[Symbol] =
@@ -623,6 +656,15 @@ object Symbol {
   def is_symbolic_char(sym: Symbol): Boolean = symbols.sym_chars.contains(sym)
 
 
+  /* brackets */
+
+  val open_brackets = """([{\<guillemotleft>\<open>\<langle>\<lceil>\<lfloor>\<lparr>\<lbrakk>\<lbrace>\<llangle>\<lblot>"""
+  val close_brackets = """)]}\<guillemotright>\<close>\<rangle>\<rceil>\<rfloor>\<rparr>\<rbrakk>\<rbrace>\<rrangle>\<rblot>"""
+
+  def open_brackets_decoded = symbols.open_brackets_decoded
+  def close_brackets_decoded = symbols.close_brackets_decoded
+
+
   /* control symbols */
 
   val control_prefix = "\\<^"
@@ -630,7 +672,7 @@ object Symbol {
 
   def control_name(sym: Symbol): Option[String] =
     if (is_control_encoded(sym))
-      Some(sym.substring(control_prefix.length, sym.length - control_suffix.length))
+      Some(sym.slice(control_prefix.length, sym.length - control_suffix.length))
     else None
 
   def is_control_encoded(sym: Symbol): Boolean =
@@ -673,8 +715,10 @@ object Symbol {
     def apply(str: String): Double =
       (for (s <- iterator(str)) yield {
         val sym = encode(s)
-        if (sym.startsWith("\\<long") || sym.startsWith("\\<Long")) 2
-        else if (is_printable(sym)) 1
+        if (sym.startsWith("\\<longlonglong")) 4
+        else if (sym.startsWith("\\<longlong")) 3
+        else if (sym.startsWith("\\<long") || sym.startsWith("\\<Long")) 2
+        else if (is_blank(sym) || is_printable(sym)) 1
         else 0
       }).sum
   }

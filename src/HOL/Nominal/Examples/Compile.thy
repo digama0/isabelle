@@ -13,11 +13,11 @@ nominal_datatype data =
 
 nominal_datatype ty = 
     Data "data"
-  | Arrow "ty" "ty" ("_\<rightarrow>_" [100,100] 100)
+  | Arrow "ty" "ty" (\<open>_\<rightarrow>_\<close> [100,100] 100)
 
 nominal_datatype trm = 
   Var "name"
-  | Lam "\<guillemotleft>name\<guillemotright>trm" ("Lam [_]._" [100,100] 100)
+  | Lam "\<guillemotleft>name\<guillemotright>trm" (\<open>Lam [_]._\<close> [100,100] 100)
   | App "trm" "trm"
   | Const "nat"
   | Pr "trm" "trm"
@@ -26,24 +26,24 @@ nominal_datatype trm =
   | InL "trm"
   | InR "trm"
   | Case "trm" "\<guillemotleft>name\<guillemotright>trm" "\<guillemotleft>name\<guillemotright>trm" 
-          ("Case _ of inl _ \<rightarrow> _ | inr _ \<rightarrow> _" [100,100,100,100,100] 100)
+          (\<open>Case _ of inl _ \<rightarrow> _ | inr _ \<rightarrow> _\<close> [100,100,100,100,100] 100)
 
 nominal_datatype dataI = OneI | NatI
 
 nominal_datatype tyI = 
     DataI "dataI"
-  | ArrowI "tyI" "tyI" ("_\<rightarrow>_" [100,100] 100)
+  | ArrowI "tyI" "tyI" (\<open>_\<rightarrow>_\<close> [100,100] 100)
 
 nominal_datatype trmI = 
     IVar "name"
-  | ILam "\<guillemotleft>name\<guillemotright>trmI" ("ILam [_]._" [100,100] 100)
+  | ILam "\<guillemotleft>name\<guillemotright>trmI" (\<open>ILam [_]._\<close> [100,100] 100)
   | IApp "trmI" "trmI"
   | IUnit
   | INat "nat"
   | ISucc "trmI"
-  | IAss "trmI" "trmI" ("_\<mapsto>_" [100,100] 100)
+  | IAss "trmI" "trmI" (\<open>_\<leadsto>_\<close> [100,100] 100)
   | IRef "trmI" 
-  | ISeq "trmI" "trmI" ("_;;_" [100,100] 100)
+  | ISeq "trmI" "trmI" (\<open>_;;_\<close> [100,100] 100)
   | Iif "trmI" "trmI" "trmI"
 
 text \<open>valid contexts\<close>
@@ -57,7 +57,7 @@ where
 text \<open>typing judgements for trms\<close>
 
 inductive 
-  typing :: "(name\<times>ty) list\<Rightarrow>trm\<Rightarrow>ty\<Rightarrow>bool" (" _ \<turnstile> _ : _ " [80,80,80] 80)
+  typing :: "(name\<times>ty) list\<Rightarrow>trm\<Rightarrow>ty\<Rightarrow>bool" (\<open> _ \<turnstile> _ : _ \<close> [80,80,80] 80)
 where
   t0[intro]: "\<lbrakk>valid \<Gamma>; (x,\<tau>)\<in>set \<Gamma>\<rbrakk>\<Longrightarrow> \<Gamma> \<turnstile> Var x : \<tau>"
 | t1[intro]: "\<lbrakk>\<Gamma> \<turnstile> e1 : \<tau>1\<rightarrow>\<tau>2; \<Gamma> \<turnstile> e2 : \<tau>1\<rbrakk>\<Longrightarrow> \<Gamma> \<turnstile> App e1 e2 : \<tau>2"
@@ -75,7 +75,7 @@ where
 text \<open>typing judgements for Itrms\<close>
 
 inductive 
-  Ityping :: "(name\<times>tyI) list\<Rightarrow>trmI\<Rightarrow>tyI\<Rightarrow>bool" (" _ I\<turnstile> _ : _ " [80,80,80] 80)
+  Ityping :: "(name\<times>tyI) list\<Rightarrow>trmI\<Rightarrow>tyI\<Rightarrow>bool" (\<open> _ I\<turnstile> _ : _ \<close> [80,80,80] 80)
 where
   t0[intro]: "\<lbrakk>valid \<Gamma>; (x,\<tau>)\<in>set \<Gamma>\<rbrakk>\<Longrightarrow> \<Gamma> I\<turnstile> IVar x : \<tau>"
 | t1[intro]: "\<lbrakk>\<Gamma> I\<turnstile> e1 : \<tau>1\<rightarrow>\<tau>2; \<Gamma> I\<turnstile> e2 : \<tau>1\<rbrakk>\<Longrightarrow> \<Gamma> I\<turnstile> IApp e1 e2 : \<tau>2"
@@ -84,14 +84,14 @@ where
 | t4[intro]: "valid \<Gamma> \<Longrightarrow> \<Gamma> I\<turnstile> INat(n) : DataI(NatI)"
 | t5[intro]: "\<Gamma> I\<turnstile> e : DataI(NatI) \<Longrightarrow> \<Gamma> I\<turnstile> ISucc(e) : DataI(NatI)"
 | t6[intro]: "\<lbrakk>\<Gamma> I\<turnstile> e : DataI(NatI)\<rbrakk> \<Longrightarrow> \<Gamma> I\<turnstile> IRef e : DataI (NatI)"
-| t7[intro]: "\<lbrakk>\<Gamma> I\<turnstile> e1 : DataI(NatI); \<Gamma> I\<turnstile> e2 : DataI(NatI)\<rbrakk> \<Longrightarrow> \<Gamma> I\<turnstile> e1\<mapsto>e2 : DataI(OneI)"
+| t7[intro]: "\<lbrakk>\<Gamma> I\<turnstile> e1 : DataI(NatI); \<Gamma> I\<turnstile> e2 : DataI(NatI)\<rbrakk> \<Longrightarrow> \<Gamma> I\<turnstile> e1\<leadsto>e2 : DataI(OneI)"
 | t8[intro]: "\<lbrakk>\<Gamma> I\<turnstile> e1 : DataI(NatI); \<Gamma> I\<turnstile> e2 : \<tau>\<rbrakk> \<Longrightarrow> \<Gamma> I\<turnstile> e1;;e2 : \<tau>"
 | t9[intro]: "\<lbrakk>\<Gamma> I\<turnstile> e: DataI(NatI); \<Gamma> I\<turnstile> e1 : \<tau>; \<Gamma> I\<turnstile> e2 : \<tau>\<rbrakk> \<Longrightarrow> \<Gamma> I\<turnstile> Iif e e1 e2 : \<tau>"
 
 text \<open>capture-avoiding substitution\<close>
 
 class subst =
-  fixes subst :: "'a \<Rightarrow> name \<Rightarrow> 'a \<Rightarrow> 'a"  ("_[_::=_]" [100,100,100] 100)
+  fixes subst :: "'a \<Rightarrow> name \<Rightarrow> 'a \<Rightarrow> 'a"  (\<open>_[_::=_]\<close> [100,100,100] 100)
 
 instantiation trm :: subst
 begin
@@ -169,7 +169,7 @@ lemma Isubst_fresh:
 text \<open>big-step evaluation for trms\<close>
 
 inductive 
-  big :: "trm\<Rightarrow>trm\<Rightarrow>bool" ("_ \<Down> _" [80,80] 80)
+  big :: "trm\<Rightarrow>trm\<Rightarrow>bool" (\<open>_ \<Down> _\<close> [80,80] 80)
 where
   b0[intro]: "Lam [x].e \<Down> Lam [x].e"
 | b1[intro]: "\<lbrakk>e1\<Down>Lam [x].e; e2\<Down>e2'; e[x::=e2']\<Down>e'\<rbrakk> \<Longrightarrow> App e1 e2 \<Down> e'"
@@ -183,7 +183,7 @@ where
 | b9[intro]: "\<lbrakk>e\<Down>InR e'; e2[x::=e']\<Down>e''\<rbrakk> \<Longrightarrow> Case e of inl x1 \<rightarrow> e1 | inr x2 \<rightarrow> e2 \<Down> e''"
 
 inductive 
-  Ibig :: "((nat\<Rightarrow>nat)\<times>trmI)\<Rightarrow>((nat\<Rightarrow>nat)\<times>trmI)\<Rightarrow>bool" ("_ I\<Down> _" [80,80] 80)
+  Ibig :: "((nat\<Rightarrow>nat)\<times>trmI)\<Rightarrow>((nat\<Rightarrow>nat)\<times>trmI)\<Rightarrow>bool" (\<open>_ I\<Down> _\<close> [80,80] 80)
 where
   m0[intro]: "(m,ILam [x].e) I\<Down> (m,ILam [x].e)"
 | m1[intro]: "\<lbrakk>(m,e1)I\<Down>(m',ILam [x].e); (m',e2)I\<Down>(m'',e3); (m'',e[x::=e3])I\<Down>(m''',e4)\<rbrakk> 
@@ -192,7 +192,7 @@ where
 | m3[intro]: "(m,INat(n))I\<Down>(m,INat(n))"
 | m4[intro]: "(m,e)I\<Down>(m',INat(n)) \<Longrightarrow> (m,ISucc(e))I\<Down>(m',INat(n+1))"
 | m5[intro]: "(m,e)I\<Down>(m',INat(n)) \<Longrightarrow> (m,IRef(e))I\<Down>(m',INat(m' n))"
-| m6[intro]: "\<lbrakk>(m,e1)I\<Down>(m',INat(n1)); (m',e2)I\<Down>(m'',INat(n2))\<rbrakk> \<Longrightarrow> (m,e1\<mapsto>e2)I\<Down>(m''(n1:=n2),IUnit)"
+| m6[intro]: "\<lbrakk>(m,e1)I\<Down>(m',INat(n1)); (m',e2)I\<Down>(m'',INat(n2))\<rbrakk> \<Longrightarrow> (m,e1\<leadsto>e2)I\<Down>(m''(n1:=n2),IUnit)"
 | m7[intro]: "\<lbrakk>(m,e1)I\<Down>(m',IUnit); (m',e2)I\<Down>(m'',e)\<rbrakk> \<Longrightarrow> (m,e1;;e2)I\<Down>(m'',e)"
 | m8[intro]: "\<lbrakk>(m,e)I\<Down>(m',INat(n)); n\<noteq>0; (m',e1)I\<Down>(m'',e)\<rbrakk> \<Longrightarrow> (m,Iif e e1 e2)I\<Down>(m'',e)"
 | m9[intro]: "\<lbrakk>(m,e)I\<Down>(m',INat(0)); (m',e2)I\<Down>(m'',e)\<rbrakk> \<Longrightarrow> (m,Iif e e1 e2)I\<Down>(m'',e)"
@@ -210,17 +210,17 @@ where
        (let limit = IRef(INat 0) in 
         let v1 = (trans e1) in 
         let v2 = (trans e2) in 
-        (((ISucc limit)\<mapsto>v1);;(ISucc(ISucc limit)\<mapsto>v2));;(INat 0 \<mapsto> ISucc(ISucc(limit))))"
+        (((ISucc limit)\<leadsto>v1);;(ISucc(ISucc limit)\<leadsto>v2));;(INat 0 \<leadsto> ISucc(ISucc(limit))))"
 | "trans (Fst e) = IRef (ISucc (trans e))"
 | "trans (Snd e) = IRef (ISucc (ISucc (trans e)))"
 | "trans (InL e) = 
         (let limit = IRef(INat 0) in 
          let v = (trans e) in 
-         (((ISucc limit)\<mapsto>INat(0));;(ISucc(ISucc limit)\<mapsto>v));;(INat 0 \<mapsto> ISucc(ISucc(limit))))"
+         (((ISucc limit)\<leadsto>INat(0));;(ISucc(ISucc limit)\<leadsto>v));;(INat 0 \<leadsto> ISucc(ISucc(limit))))"
 | "trans (InR e) = 
         (let limit = IRef(INat 0) in 
          let v = (trans e) in 
-         (((ISucc limit)\<mapsto>INat(1));;(ISucc(ISucc limit)\<mapsto>v));;(INat 0 \<mapsto> ISucc(ISucc(limit))))"
+         (((ISucc limit)\<leadsto>INat(1));;(ISucc(ISucc limit)\<leadsto>v));;(INat 0 \<leadsto> ISucc(ISucc(limit))))"
 | "\<lbrakk>x2\<noteq>x1; x1\<sharp>e; x1\<sharp>e2; x2\<sharp>e; x2\<sharp>e1\<rbrakk> \<Longrightarrow> 
    trans (Case e of inl x1 \<rightarrow> e1 | inr x2 \<rightarrow> e2) =
        (let v = (trans e) in

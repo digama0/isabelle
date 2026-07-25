@@ -6,21 +6,20 @@ GUI panel for status of theories.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
-import scala.swing.{ListView, Alignment, Label, CheckBox, BorderPanel, BoxPanel, Orientation,
-  Component}
-import scala.swing.event.{MouseClicked, MouseMoved}
+import scala.swing.{ListView, Alignment, Label, CheckBox, BorderPanel, Component}
+import scala.swing.event.{MousePressed, MouseMoved}
 
-import java.awt.{BorderLayout, Graphics2D, Color, Point, Dimension}
-import javax.swing.border.{BevelBorder, SoftBevelBorder}
+import java.awt.{Graphics2D, Color, Point, Dimension}
 import javax.swing.{JList, BorderFactory, UIManager}
 
 import org.gjt.sp.jedit.View
 
 
-class Theories_Status(view: View, document: Boolean = false) {
+class Theories_Status(editor_context: JEdit_Editor.Context, document: Boolean = false) {
   /* component state -- owned by GUI thread */
 
   private var nodes_status = Document_Status.Nodes_Status.empty
@@ -28,20 +27,19 @@ class Theories_Status(view: View, document: Boolean = false) {
   private var document_required = Set.empty[Document.Node.Name]
 
   private def is_loaded_theory(name: Document.Node.Name): Boolean =
-    PIDE.resources.session_base.loaded_theory(name)
+    PIDE.resources.loaded_theory(name)
 
-  private def overall_node_status(name: Document.Node.Name): Document_Status.Overall_Node_Status = {
-    if (is_loaded_theory(name)) Document_Status.Overall_Node_Status.ok
-    else nodes_status.overall_node_status(name)
-  }
+  private def overall_status(name: Document.Node.Name): Document_Status.Overall_Status =
+    if (is_loaded_theory(name)) Document_Status.Overall_Status.ok
+    else nodes_status.overall_status(name)
 
   private def init_state(): Unit = GUI_Thread.require {
     if (document) {
-      nodes_required = PIDE.editor.document_required().toSet
+      nodes_required = JEdit_Editor.document_required().toSet
     }
     else {
       nodes_required = Document_Model.nodes_required()
-      document_required = PIDE.editor.document_required().toSet
+      document_required = JEdit_Editor.document_required().toSet
     }
   }
 
@@ -89,8 +87,8 @@ class Theories_Status(view: View, document: Boolean = false) {
 
       val label_geometry = new Geometry
       val label: Label = new Label {
-        background = view.getTextArea.getPainter.getBackground
-        foreground = view.getTextArea.getPainter.getForeground
+        background = editor_context.text_area_painter.getBackground
+        foreground = editor_context.text_area_painter.getForeground
         opaque = false
         xAlignment = Alignment.Leading
 
@@ -105,10 +103,10 @@ class Theories_Status(view: View, document: Boolean = false) {
             case Some(node_status) =>
               val segments =
                 List(
-                  (node_status.unprocessed, PIDE.options.color_value("unprocessed1_color")),
-                  (node_status.running, PIDE.options.color_value("running_color")),
-                  (node_status.warned, PIDE.options.color_value("warning_color")),
-                  (node_status.failed, PIDE.options.color_value("error_color"))
+                  (node_status.unprocessed, Color_Value.option(PIDE.options, "unprocessed1_color")),
+                  (node_status.running, Color_Value.option(PIDE.options, "running_color")),
+                  (node_status.warned, Color_Value.option(PIDE.options, "warning_color")),
+                  (node_status.failed, Color_Value.option(PIDE.options, "error_color"))
                 ).filter(_._1 > 0)
 
               segments.foldLeft(size.width - 2) {
@@ -120,7 +118,7 @@ class Theories_Status(view: View, document: Boolean = false) {
 
             case None =>
               if (!is_loaded_theory(node_name)) {
-                paint_segment(0, size.width, PIDE.options.color_value("unprocessed1_color"))
+                paint_segment(0, size.width, Color_Value.option(PIDE.options, "unprocessed1_color"))
               }
           }
           super.paintComponent(gfx)
@@ -130,16 +128,16 @@ class Theories_Status(view: View, document: Boolean = false) {
       }
 
       def label_border(name: Document.Node.Name): Unit = {
-        val st = overall_node_status(name)
+        val st = overall_status(name)
         val color =
           st match {
-            case Document_Status.Overall_Node_Status.ok =>
-              PIDE.options.color_value("ok_color")
-            case Document_Status.Overall_Node_Status.failed =>
-              PIDE.options.color_value("failed_color")
+            case Document_Status.Overall_Status.ok =>
+              Color_Value.option(PIDE.options, "ok_color")
+            case Document_Status.Overall_Status.failed =>
+              Color_Value.option(PIDE.options, "failed_color")
             case _ => label.foreground
           }
-        val thickness1 = if (st == Document_Status.Overall_Node_Status.pending) 1 else 3
+        val thickness1 = if (st == Document_Status.Overall_Status.pending) 1 else 3
         val thickness2 = 4 - thickness1
 
         label.border =
@@ -190,33 +188,37 @@ class Theories_Status(view: View, document: Boolean = false) {
     listenTo(mouse.clicks)
     listenTo(mouse.moves)
     reactions += {
-      case MouseClicked(_, point, _, clicks, _) =>
-        val index = peer.locationToIndex(point)
+      case mouse: MousePressed =>
+        val index = peer.locationToIndex(mouse.point)
         if (index >= 0) {
           val index_location = peer.indexToLocation(index)
-          if (node_renderer.in_required(index_location, point)) {
-            if (clicks == 1) {
+          if (node_renderer.in_required(index_location, mouse.point)) {
+            if (mouse.clicks == 1) {
               val name = listData(index)
-              if (document) PIDE.editor.document_select(Set(name.theory), toggle = true)
+              if (document) JEdit_Editor.document_select(Set(name.theory), toggle = true)
               else Document_Model.node_required(name, toggle = true)
             }
           }
-          else if (clicks == 2) PIDE.editor.goto_file(true, view, listData(index).node)
+          else if (mouse.clicks == 2) {
+            JEdit_Editor.navigator_recording(editor_context) {
+              JEdit_Editor.goto_file(editor_context, listData(index).node, focus = true)
+            }
+          }
         }
-      case MouseMoved(_, point, _) =>
-        val index = peer.locationToIndex(point)
+      case mouse: MouseMoved =>
+        val index = peer.locationToIndex(mouse.point)
         val index_location = peer.indexToLocation(index)
-        if (index >= 0 && node_renderer.in_required(index_location, point)) {
+        if (index >= 0 && node_renderer.in_required(index_location, mouse.point)) {
           tooltip =
             if (document) "Mark for inclusion in document"
             else "Mark as required for continuous checking"
         }
-        else if (index >= 0 && node_renderer.in_label(index_location, point)) {
+        else if (index >= 0 && node_renderer.in_label(index_location, mouse.point)) {
           val name = listData(index)
-          val st = overall_node_status(name)
+          val st = overall_status(name)
           tooltip =
             "theory " + quote(name.theory) +
-              (if (st == Document_Status.Overall_Node_Status.ok) "" else " (" + st + ")")
+              (if (st == Document_Status.Overall_Status.ok) "" else " (" + st + ")")
         }
         else tooltip = null
     }
@@ -238,23 +240,25 @@ class Theories_Status(view: View, document: Boolean = false) {
 
     val snapshot = PIDE.session.snapshot()
 
-    val (nodes_status_changed, nodes_status1) =
-      nodes_status.update(
+    val now = Date.now()
+
+    val nodes_status1 =
+      nodes_status.update_nodes(now,
         PIDE.resources, snapshot.state, snapshot.version, domain = domain, trim = trim)
 
-    nodes_status = nodes_status1
-    if (nodes_status_changed || force) {
+    if (force || nodes_status1 != nodes_status) {
       gui.listData =
-        if (document) {
-          nodes_status1.present(domain = Some(PIDE.editor.document_theories())).map(_._1)
-        }
+        if (document) JEdit_Editor.document_theories()
         else {
           (for {
-            (name, node_status) <- nodes_status1.present().iterator
-            if !node_status.is_empty && !node_status.is_suppressed && node_status.total > 0
+            name <- snapshot.version.nodes.topological_order.iterator
+            node_status = nodes_status1(name)
+            if !node_status.is_empty && !node_status.suppressed && node_status.total > 0
           } yield name).toList
         }
     }
+
+    nodes_status = nodes_status1
   }
 
 

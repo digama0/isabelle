@@ -151,18 +151,20 @@ sig
   val add_frees: term -> (string * typ) list -> (string * typ) list
   val add_const_names: term -> string list -> string list
   val add_consts: term -> (string * typ) list -> (string * typ) list
+  val declare_tfree_namesT: typ -> Name.context -> Name.context
+  val declare_tfree_names: term -> Name.context -> Name.context
+  val declare_tvar_namesT: (int -> bool) -> typ -> Name.context -> Name.context
+  val declare_tvar_names: (int -> bool) -> term -> Name.context -> Name.context
+  val declare_free_names: term -> Name.context -> Name.context
+  val declare_var_names: (int -> bool) -> term -> Name.context -> Name.context
+  val variant_bounds: term -> (string * 'a) list -> (string * 'a) list
   val hidden_polymorphism: term -> (indexname * sort) list
-  val declare_typ_names: typ -> Name.context -> Name.context
-  val declare_term_names: term -> Name.context -> Name.context
-  val declare_term_frees: term -> Name.context -> Name.context
-  val variant_frees: term -> (string * 'a) list -> (string * 'a) list
   val smash_sortsT_same: sort -> typ Same.operation
   val smash_sortsT: sort -> typ -> typ
   val smash_sorts: sort -> term -> term
   val strip_sortsT_same: typ Same.operation
   val strip_sortsT: typ -> typ
   val strip_sorts: term -> term
-  val rename_wrt_term: term -> (string * 'a) list -> (string * 'a) list
   val eq_ix: indexname * indexname -> bool
   val eq_tvar: (indexname * sort) * (indexname * sort) -> bool
   val eq_var: (indexname * typ) * (indexname * typ) -> bool
@@ -183,7 +185,6 @@ sig
   val maxidx_term: term -> int -> int
   val could_beta_contract: term -> bool
   val could_eta_contract: term -> bool
-  val could_beta_eta_contract: term -> bool
   val used_free: string -> term -> bool
   exception USED_FREE of string * term
   val dest_abs_fresh: string -> term -> (string * typ) * term
@@ -575,6 +576,15 @@ val add_frees = fold_aterms (fn Free v => insert (op =) v | _ => I);
 val add_const_names = fold_aterms (fn Const (c, _) => insert (op =) c | _ => I);
 val add_consts = fold_aterms (fn Const c => insert (op =) c | _ => I);
 
+(*renaming variables*)
+val declare_tfree_namesT = fold_atyps (fn TFree (a, _) => Name.declare a | _ => I);
+val declare_tfree_names = fold_types declare_tfree_namesT;
+fun declare_tvar_namesT pred = fold_atyps (fn TVar ((a, i), _) => pred i ? Name.declare a | _ => I);
+val declare_tvar_names = fold_types o declare_tvar_namesT;
+val declare_free_names = fold_aterms (fn Free (x, _) => Name.declare x | _ => I);
+fun declare_var_names pred = fold_aterms (fn Var ((x, i), _) => pred i ? Name.declare x | _ => I);
+fun variant_bounds t = Name.variant_names_build (declare_free_names t);
+
 (*extra type variables in a term, not covered by its type*)
 fun hidden_polymorphism t =
   let
@@ -583,26 +593,6 @@ fun hidden_polymorphism t =
     val extra_tvars = fold_types (fold_atyps
       (fn TVar v => if member (op =) tvarsT v then I else insert (op =) v | _ => I)) t [];
   in extra_tvars end;
-
-
-(* renaming variables *)
-
-val declare_typ_names = fold_atyps (fn TFree (a, _) => Name.declare a | _ => I);
-
-fun declare_term_names tm =
-  fold_aterms
-    (fn Const (a, _) => Name.declare (Long_Name.base_name a)
-      | Free (a, _) => Name.declare a
-      | _ => I) tm #>
-  fold_types declare_typ_names tm;
-
-val declare_term_frees = fold_aterms (fn Free (x, _) => Name.declare x | _ => I);
-
-fun variant_frees t frees =
-  fst (fold_map Name.variant (map fst frees) (declare_term_names t Name.context)) ~~
-    map snd frees;
-
-fun rename_wrt_term t frees = rev (variant_frees t frees);  (*reversed result!*)
 
 
 (* sorts *)
@@ -813,7 +803,7 @@ val betapplys = Library.foldl betapply;
   of bound variables and implicit eta-expansion*)
 fun strip_abs_eta k t =
   let
-    val used = fold_aterms declare_term_frees t Name.context;
+    val used = Name.build_context (fold_aterms declare_free_names t);
     fun strip_abs t (0, used) = (([], t), (0, used))
       | strip_abs (Abs (v, T, t)) (k, used) =
           let
@@ -1045,12 +1035,6 @@ fun could_eta_contract (Abs (_, _, _ $ Bound 0)) = true
   | could_eta_contract (t $ u) = could_eta_contract t orelse could_eta_contract u
   | could_eta_contract _ = false;
 
-fun could_beta_eta_contract (Abs _ $ _) = true
-  | could_beta_eta_contract (Abs (_, _, _ $ Bound 0)) = true
-  | could_beta_eta_contract (Abs (_, _, b)) = could_beta_eta_contract b
-  | could_beta_eta_contract (t $ u) = could_beta_eta_contract t orelse could_beta_eta_contract u
-  | could_beta_eta_contract _ = false;
-
 
 (* dest abstraction *)
 
@@ -1081,7 +1065,7 @@ fun dest_abs_global t =
     Abs (x, T, b) =>
       if used_free x b then
         let
-          val used = Name.build_context (declare_term_frees b);
+          val used = Name.build_context (declare_free_names b);
           val x' = #1 (Name.variant x used);
         in subst_abs (x', T) b end
       else subst_abs (x, T) b

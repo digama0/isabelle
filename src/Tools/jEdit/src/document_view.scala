@@ -7,16 +7,19 @@ Document view connected to jEdit text area.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
 import java.awt.Graphics2D
 import java.awt.event.KeyEvent
+import java.awt.geom.AffineTransform
 import javax.swing.event.{CaretListener, CaretEvent}
 
 import org.gjt.sp.jedit.jEdit
 import org.gjt.sp.jedit.options.GutterOptionPane
-import org.gjt.sp.jedit.textarea.{JEditTextArea, TextArea, TextAreaExtension, TextAreaPainter}
+import org.gjt.sp.jedit.textarea.{JEditTextArea, TextArea, TextAreaExtension, TextAreaPainter,
+  Gutter}
 
 
 object Document_View {
@@ -53,8 +56,8 @@ object Document_View {
   def rendering(doc_view: Document_View): JEdit_Rendering = {
     val model = doc_view.model
     val snapshot = Document_Model.snapshot(model)
-    val options = PIDE.options.value
-    JEdit_Rendering(snapshot, model, options)
+    val options = PIDE.options
+    new JEdit_Rendering(snapshot, model, options)
   }
 
   def get_rendering(text_area: TextArea): Option[JEdit_Rendering] = get(text_area).map(rendering)
@@ -65,10 +68,11 @@ class Document_View(val model: Buffer_Model, val text_area: JEditTextArea) {
 
   private val session = model.session
 
+  val editor_context: JEdit_Editor.Static_Context = JEdit_Editor.Context(text_area)
+
   val rich_text_area: Rich_Text_Area =
-    new Rich_Text_Area(text_area.getView, text_area,
-      () => Document_View.rendering(doc_view), () => (), () => None,
-      () => delay_caret_update.invoke(), caret_visible = true, enable_hovering = false)
+    new Rich_Text_Area(editor_context, () => Document_View.rendering(doc_view),
+      caret_update = () => delay_caret_update.invoke(), caret_visible = true)
 
 
   /* perspective */
@@ -79,7 +83,7 @@ class Document_View(val model: Buffer_Model, val text_area: JEditTextArea) {
     val active_command = {
       val view = text_area.getView
       if (view != null && view.getTextArea == text_area) {
-        PIDE.editor.current_command(view, snapshot) match {
+        JEdit_Editor.current_command(editor_context, snapshot) match {
           case Some(command) =>
             snapshot.node.command_start(command) match {
               case Some(start) => List(snapshot.convert(command.core_range + start))
@@ -91,7 +95,7 @@ class Document_View(val model: Buffer_Model, val text_area: JEditTextArea) {
       else Nil
     }
 
-    val buffer_range = JEdit_Lib.buffer_range(model.buffer)
+    val buffer_range = editor_context.buffer_range
     val visible_lines =
       (for {
         i <- (0 until text_area.getVisibleLines).iterator
@@ -118,7 +122,7 @@ class Document_View(val model: Buffer_Model, val text_area: JEditTextArea) {
       line_height: Int
     ): Unit = {
       // no robust_body
-      PIDE.editor.invoke_generated()
+      JEdit_Editor.invoke_generated()
     }
   }
 
@@ -140,9 +144,19 @@ class Document_View(val model: Buffer_Model, val text_area: JEditTextArea) {
         GUI_Thread.assert {}
 
         val gutter = text_area.getGutter
-        val sel_width = GutterOptionPane.getSelectionAreaWidth
-        val border_width = jEdit.getIntegerProperty("view.gutter.borderWidth", 3)
-        val FOLD_MARKER_SIZE = 12
+        val gutter_width = gutter.getWidth
+        val gutter_insets = gutter.getBorder.getBorderInsets(gutter)
+
+        val skip_left = gutter_insets.left + Gutter.FOLD_MARKER_SIZE
+        val skip_right = gutter_insets.right
+        val icon_width = gutter_width - skip_left - skip_right
+        val icon_height = line_height
+
+        def scale(a: Int, b: Int): Double = 0.95 * a.toDouble / b.toDouble
+
+        val gutter_icons =
+          !gutter.isExpanded &&
+            gutter.isSelectionAreaEnabled && icon_width >= 12 && icon_height >= 12
 
         val buffer = model.buffer
         JEdit_Lib.buffer_lock(buffer) {
@@ -155,19 +169,27 @@ class Document_View(val model: Buffer_Model, val text_area: JEditTextArea) {
               rendering.gutter_content(line_range) match {
                 case Some((icon, color)) =>
                   // icons within selection area
-                  if (!gutter.isExpanded &&
-                      gutter.isSelectionAreaEnabled && sel_width >= 12 && line_height >= 12) {
-                    val x0 =
-                      (FOLD_MARKER_SIZE + sel_width - border_width - icon.getIconWidth) max 10
-                    val y0 =
-                      y + i * line_height + (((line_height - icon.getIconHeight) / 2) max 0)
-                    icon.paintIcon(gutter, gfx, x0, y0)
+                  if (gutter_icons && icon.getIconWidth > 0 && icon.getIconHeight > 0) {
+                    val w0 = icon.getIconWidth
+                    val h0 = icon.getIconHeight
+                    val s = Math.min(scale(icon_width, w0), scale(icon_height, h0))
+
+                    val w = (s * w0).ceil
+                    val h = (s * h0).ceil
+                    val x0 = skip_left + (((icon_width - w) / 2) max 0)
+                    val y0 = y + i * line_height + (((icon_height - h) / 2) max 0)
+
+                    val tr0 = gfx.getTransform
+                    val tr = new AffineTransform(tr0); tr.translate(x0, y0); tr.scale(s, s)
+                    gfx.setTransform(tr)
+                    icon.paintIcon(gutter, gfx, 0, 0)
+                    gfx.setTransform(tr0)
                   }
-                  // background
+                  // background only
                   else {
                     val y0 = y + i * line_height
                     gfx.setColor(color)
-                    gfx.fillRect(0, y0, gutter.getWidth, line_height)
+                    gfx.fillRect(0, y0, gutter_width, line_height)
                   }
                 case None =>
               }
@@ -184,7 +206,7 @@ class Document_View(val model: Buffer_Model, val text_area: JEditTextArea) {
   private val key_listener =
     JEdit_Lib.key_listener(
       key_pressed = { (evt: KeyEvent) =>
-        if (evt.getKeyCode == KeyEvent.VK_ESCAPE && Isabelle.dismissed_popups(text_area.getView)) {
+        if (GUI.plain_enter(evt) && Isabelle.dismissed_popups(text_area.getView)) {
           evt.consume()
         }
       }
@@ -194,7 +216,7 @@ class Document_View(val model: Buffer_Model, val text_area: JEditTextArea) {
   /* caret handling */
 
   private val delay_caret_update =
-    Delay.last(PIDE.session.input_delay, gui = true) {
+    GUI.Delay.last(PIDE.session.input_delay) {
       session.caret_focus.post(Session.Caret_Focus)
       JEdit_Lib.invalidate_screen(text_area)
     }
@@ -213,7 +235,7 @@ class Document_View(val model: Buffer_Model, val text_area: JEditTextArea) {
   /* main */
 
   private val main =
-    Session.Consumer[Any](getClass.getName) {
+    Session.Consumer[Session.Raw_Edits | Session.Commands_Changed](this.class_name) {
       case _: Session.Raw_Edits =>
         text_overview.foreach(_.invoke())
 

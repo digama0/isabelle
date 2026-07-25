@@ -1,16 +1,17 @@
 /*  Title:      Pure/General/http.scala
     Author:     Makarius
+    Author:     Fabian Huch, TU München
 
 HTTP client and server support.
 */
 
 package isabelle
 
+import scala.language.unsafeNulls
 
 import java.io.{File => JFile}
 import java.nio.file.Files
 import java.net.{InetSocketAddress, URI, HttpURLConnection}
-import java.util.HexFormat
 import com.sun.net.httpserver.{HttpExchange, HttpHandler, HttpServer}
 
 
@@ -21,9 +22,24 @@ object HTTP {
     val mime_type_bytes: String = "application/octet-stream"
     val mime_type_text: String = "text/plain; charset=utf-8"
     val mime_type_html: String = "text/html; charset=utf-8"
+    val mime_type_css: String = "text/css; charset=utf-8"
+    val mime_type_js: String = "text/javascript; charset=utf-8"
 
     val default_mime_type: String = mime_type_bytes
-    val default_encoding: String = UTF8.charset.name
+    val default_encoding: String = UTF8.charset_name
+
+    def file_mime_type(file: JFile): String =
+      proper_value(Files.probeContentType(file.java_path)).getOrElse(default_mime_type)
+
+    def bytes_mime_type(bytes: Bytes, ext: String = ""): String =
+      if (ext.isEmpty) default_mime_type
+      else {
+        Isabelle_System.with_tmp_file("tmp", ext = ext) { tmp_path =>
+          val n = if (bytes.size < 4096) bytes.size.toInt else 4096
+          Bytes.write(tmp_path, bytes.slice(0, n))
+          file_mime_type(tmp_path.file)
+        }
+      }
 
     def apply(
         bytes: Bytes,
@@ -35,8 +51,8 @@ object HTTP {
 
     def read(file: JFile): Content = {
       val bytes = Bytes.read(file)
-      val file_name = file.getName
-      val mime_type = Option(Files.probeContentType(file.toPath)).getOrElse(default_mime_type)
+      val file_name = file.file_name
+      val mime_type = file_mime_type(file)
       apply(bytes, file_name = file_name, mime_type = mime_type)
     }
 
@@ -90,7 +106,7 @@ object HTTP {
         val stop = Time.now()
 
         val file_name = Url.file_name(Url(connection.getURL.toURI))
-        val mime_type = Option(connection.getContentType).getOrElse(Content.default_mime_type)
+        val mime_type = proper_value(connection.getContentType).getOrElse(Content.default_mime_type)
         val encoding =
           (connection.getContentEncoding, mime_type) match {
             case (enc, _) if enc != null => enc
@@ -184,7 +200,7 @@ object HTTP {
 
     def uri_path: Option[Path] =
       for {
-        s <- Option(uri.getPath).flatMap(Library.try_unprefix(root, _))
+        s <- proper_value(uri.getPath).flatMap(Library.try_unprefix(root, _))
         if Path.is_wellformed(s)
         p = Path.explode(s) if p.all_basic
       } yield p
@@ -224,8 +240,8 @@ object HTTP {
     def write(http: HttpExchange, code: Int, is_head: Boolean = false): Unit = {
       http.getResponseHeaders.set("Content-Type", content_type)
       if (is_head) {
-        val encoded_digest = Base64.encode(HexFormat.of().parseHex(SHA1.digest(output).toString))
-        http.getResponseHeaders.set("Content-Digest", "sha=:" + encoded_digest + ":")
+        val digest_base64 = SHA1.digest(output).base64
+        http.getResponseHeaders.set("Content-Digest", "sha=:" + digest_base64 + ":")
       }
       http.sendResponseHeaders(code, if (is_head) -1 else output.size)
       if (!is_head) using(http.getResponseBody)(output.write_stream)
@@ -237,6 +253,9 @@ object HTTP {
 
   abstract class Service(val name: String, method: String = "GET") {
     override def toString: String = name
+
+    def index_path(prefix: String = name, index: String = ""): String =
+      Url.index_path(prefix = prefix, index = index)
 
     def apply(request: Request): Option[Response]
 
@@ -251,16 +270,52 @@ object HTTP {
         val request = new Request(server_name, name, uri, input)
         Exn.result(apply(request)) match {
           case Exn.Res(Some(response)) =>
-            response.write(http, 200, is_head)
+            response.write(http, 200, is_head = is_head)
           case Exn.Res(None) =>
-            Response.empty.write(http, 404, is_head)
+            Response.empty.write(http, 404, is_head = is_head)
           case Exn.Exn(ERROR(msg)) =>
-            Response.text(Output.error_message_text(msg)).write(http, 500, is_head)
+            Response.text(Output.error_message_text(msg)).write(http, 500, is_head = is_head)
           case Exn.Exn(exn) => throw exn
         }
       }
       else Response.empty.write(http, 400)
     }
+  }
+
+
+  /* REST service (via JSON) */
+
+  abstract class REST_Service(
+    name: String,
+    progress: Progress = new Progress,
+    method: String = "POST"
+  ) extends Service(name, method = method) {
+    def handle(body: JSON.T): Option[JSON.T]
+
+    def apply(request: Request): Option[Response] =
+      try {
+        for {
+          json <-
+            Exn.capture(JSON.parse(request.input.text)) match {
+              case Exn.Res(json) => Some(json)
+              case _ =>
+                progress.echo("Could not parse: " + quote(request.input.text), verbose = true)
+                None
+            }
+          res <-
+            handle(json) match {
+              case Some(res) => Some(res)
+              case None =>
+                progress.echo("Invalid request: " + JSON.Format(json), verbose = true)
+                None
+            }
+        } yield Response(Bytes(JSON.Format(res)), content_type = "application/json")
+      }
+      catch { case exn: Throwable =>
+        val uuid = UUID.random()
+        progress.echo_error_message("Server error <" + uuid + ">: " + exn)
+        Some(Response.text("internal server error: " + uuid))
+      }
   }
 
 
@@ -299,7 +354,8 @@ object HTTP {
   /** Isabelle services **/
 
   def isabelle_services: List[Service] =
-    List(Welcome_Service, Fonts_Service, PDFjs_Service, Docs_Service)
+    List(Welcome_Service, Fonts_Service, CSS_Service, PDFjs_Service, Docs_Service,
+      Browser_Info_Service)
 
 
   /* welcome */
@@ -336,6 +392,20 @@ object HTTP {
   }
 
 
+  /* css */
+
+  object CSS_Service extends CSS()
+
+  class CSS(name: String = "isabelle.css", fonts: String = Fonts_Service.name)
+    extends Service(name) {
+    private lazy val css =
+      HTML.fonts_css(fonts + "/" + _) + "\n\n" + File.read(HTML.isabelle_css)
+
+    def apply(request: Request): Option[Response] =
+      Some(Response(Bytes(css), Content.mime_type_css))
+  }
+
+
   /* pdfjs */
 
   object PDFjs_Service extends PDFjs()
@@ -349,6 +419,13 @@ object HTTP {
       } yield Response.read(path)
   }
 
+  def pdfjs_demo(server_url: String): Process_Result = {
+    val url = server_url + "/docs/web/viewer.html?file=system.pdf"
+    val env = Isabelle_System.Settings.env(List("URL" -> url))
+    val script = """isabelle electron "$ISABELLE_HOME/src/Tools/Electron/test""""
+    Isabelle_System.bash(script, env = env)
+  }
+
 
   /* docs */
 
@@ -360,13 +437,44 @@ object HTTP {
     // example: .../docs/web/viewer.html?file=system.pdf
     def doc_request(request: Request): Option[Response] =
       for {
-        p <- request.uri_path if p.is_pdf
+        p <- request.uri_path if File.is_pdf(p)
         s = p.implode if s.startsWith("web/")
         name = p.base.split_ext._1.implode
-        doc <- doc_contents.docs.find(_.name == name)
-      } yield Response.read(doc.path)
+        entry <- doc_contents.entries(name = _ == name, pdf = true).headOption
+      } yield Response.read(entry.path)
 
     override def apply(request: Request): Option[Response] =
       doc_request(request) orElse super.apply(request)
+  }
+
+
+  /* browser info */
+
+  object Browser_Info_Service extends Browser_Info()
+
+  class Browser_Info(
+    name: String = "browser_info",
+    database: Path = Path.explode("$ISABELLE_BROWSER_INFO_LIBRARY"),
+    compress_cache: Compress.Cache = Compress.Cache.none
+  ) extends Service(name) {
+
+    override def apply(request: Request): Option[Response] = {
+      val entry_name = request.uri_path.map(_.implode).getOrElse("")
+
+      val proper_response =
+        for (entry <- File_Store.database_entry(database, entry_name))
+        yield {
+          val bytes = entry.content(compress_cache = compress_cache)
+          val mime_type = Content.bytes_mime_type(bytes, ext = Url.get_ext(entry_name))
+          Response.content(HTTP.Content(bytes, mime_type = mime_type))
+        }
+
+      def error_response: Response = {
+        val msg = "Cannot access database " + database.expand + " entry " + quote(entry_name)
+        HTTP.Response.text(Output.error_message_text(msg))
+      }
+
+      Some(proper_response getOrElse error_response)
+    }
   }
 }

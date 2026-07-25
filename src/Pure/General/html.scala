@@ -7,11 +7,27 @@ HTML presentation elements.
 package isabelle
 
 
+import java.awt.Color
+
 import org.jsoup.nodes.{Entities => Jsoup_Entities, Document => Jsoup_Document}
 import org.jsoup.Jsoup
 
 
 object HTML {
+  /* spaces (non-breaking) */
+
+  val space = "\u00a0"
+
+  private val static_spaces = space * 100
+
+  def spaces(n: Int): String = {
+    require(n >= 0, "negative spaces")
+    if (n == 0) ""
+    else if (n < static_spaces.length) static_spaces.slice(0, n)
+    else space * n
+  }
+
+
   /* attributes */
 
   class Attribute(val name: String, value: String) {
@@ -83,19 +99,32 @@ object HTML {
   def link(path: Path, body: XML.Body): XML.Elem = link(path.implode, body)
 
   def image(src: String, alt: String = ""): XML.Elem =
-    XML.Elem(Markup("img", List("src" -> src) ::: proper_string(alt).map("alt" -> _).toList), Nil)
+    XML.elem(Markup("img", List("src" -> src) ::: proper_string(alt).map("alt" -> _).toList))
 
   def source(body: XML.Body): XML.Elem = pre("source", body)
   def source(src: String): XML.Elem = source(text(src))
 
   def style(s: String): XML.Elem = XML.elem("style", text(s))
   def style_file(href: String): XML.Elem =
-    XML.Elem(Markup("link", List("rel" -> "stylesheet", "type" -> "text/css", "href" -> href)), Nil)
+    XML.elem(Markup("link", List("rel" -> "stylesheet", "type" -> "text/css", "href" -> href)))
   def style_file(path: Path): XML.Elem = style_file(Url.print_file(path.file))
 
   def script(s: String): XML.Elem = XML.elem("script", List(raw(text(s))))
   def script_file(href: String): XML.Elem = XML.Elem(Markup("script", List("src" -> href)), Nil)
   def script_file(path: Path): XML.Elem = script_file(Url.print_file(path.file))
+
+  def color(c: Color): String = {
+    val r = Value.Int.obj(c.getRed)
+    val g = Value.Int.obj(c.getGreen)
+    val b = Value.Int.obj(c.getBlue)
+    c.getAlpha match {
+      case 255 => Library.format("rgb(%d,%d,%d)", r, g, b)
+      case a => Library.format("rgba(%d,%d,%d,%.2f)", r, g, b, Value.Double.obj(a.toDouble / 255))
+    }
+  }
+
+  def color_property(c: Color): String = "color: " + color(c)
+  def background_property(c: Color): String = "background: " + color(c)
 
 
   /* href */
@@ -107,13 +136,7 @@ object HTML {
           val path = location.expand
           if (path.is_absolute) Exn.error("Relative href location expected: " + path) else path
         case Some(base_dir) =>
-          val path1 = base_dir.absolute_file.toPath
-          val path2 = location.absolute_file.toPath
-          try { File.path(path1.relativize(path2).toFile) }
-          catch {
-            case _: IllegalArgumentException =>
-              Exn.error("Failed to relativize href location " + path2 + " with wrt. base " + path1)
-          }
+          File.the_relative_path(base_dir, location, permissive = true)
       }
     if (path.is_current) "" else path.implode
   }
@@ -271,11 +294,11 @@ object HTML {
   /* input */
 
   def input_raw(text: String): XML.Elem = raw(HTML.text(input(text)))
-  def input(text: String): String = Jsoup_Entities.unescape(text)
+  def input(text: String): String = Jsoup_Entities.unescape(text).nn
   def raw(body: XML.Body): XML.Elem = XML.elem(Markup.RAW_HTML, body)
 
-  def parse_document(html: String): Jsoup_Document = Jsoup.parse(html)
-  def get_document(url: String): Jsoup_Document = Jsoup.connect(url).get()
+  def parse_document(html: String): Jsoup_Document = Jsoup.parse(html).nn
+  def get_document(url: String): Jsoup_Document = Jsoup.connect(url).nn.get().nn
 
 
   /* messages */

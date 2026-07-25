@@ -8,12 +8,12 @@ and automated termination proofs.
 signature FUNCTION_FUN =
 sig
   val fun_config : Function_Common.function_config
-  val add_fun : (binding * typ option * mixfix) list ->
+  val add_fun : {verbose: bool} -> (binding * typ option * mixfix) list ->
     Specification.multi_specs -> Function_Common.function_config ->
     local_theory -> Proof.context
-  val add_fun_cmd : (binding * string option * mixfix) list ->
+  val add_fun_cmd : {verbose: bool} -> (binding * string option * mixfix) list ->
     Specification.multi_specs_cmd -> Function_Common.function_config ->
-    bool -> local_theory -> Proof.context
+    local_theory -> Proof.context
 end
 
 structure Function_Fun : FUNCTION_FUN =
@@ -66,8 +66,7 @@ fun mk_catchall fixes arity_of =
         val n = arity_of fname
         val (argTs, rT) = chop n (binder_types fT)
           |> apsnd (fn Ts => Ts ---> body_type fT)
-
-        val qs = map Free (Name.invent Name.context "a" n ~~ argTs)
+        val qs = map Free (Name.invent_names_global "a" argTs)
       in
         HOLogic.mk_eq(list_comb (Free (fname, fT), qs),
           Const (\<^const_name>\<open>undefined\<close>, rT))
@@ -165,15 +164,15 @@ fun gen_add_fun add lthy =
     |> prove_termination |> snd
   end
 
-fun add_fun a b c = gen_add_fun (Function.add_function a b c)
-fun add_fun_cmd a b c int = gen_add_fun (fn tac => Function.add_function_cmd a b c tac int)
+fun add_fun verbose a b c = gen_add_fun (Function.add_function verbose a b c)
+fun add_fun_cmd verbose a b c = gen_add_fun (fn tac => Function.add_function_cmd verbose a b c tac)
 
 
 
 val _ =
-  Outer_Syntax.local_theory' \<^command_keyword>\<open>fun\<close>
+  Outer_Syntax.local_theory \<^command_keyword>\<open>fun\<close>
     "define general recursive functions (short version)"
     (function_parser fun_config
-      >> (fn (config, (fixes, specs)) => add_fun_cmd fixes specs config))
+      >> (fn (config, (fixes, specs)) => add_fun_cmd {verbose = true} fixes specs config))
 
 end

@@ -31,6 +31,7 @@ sig
   val dest_ctyp: ctyp -> ctyp list
   val dest_ctypN: int -> ctyp -> ctyp
   val make_ctyp: ctyp -> ctyp list -> ctyp
+  val maxidx_of_ctyp: ctyp -> int
   (*certified terms*)
   val term_of: cterm -> term
   val typ_of_cterm: cterm -> typ
@@ -49,6 +50,7 @@ sig
   val dest_abs_fresh: string -> cterm -> cterm * cterm
   val dest_abs_global: cterm -> cterm * cterm
   val rename_tvar: indexname -> ctyp -> ctyp
+  val free: string * ctyp -> cterm
   val var: indexname * ctyp -> cterm
   val apply: cterm -> cterm -> cterm
   val lambda_name: string * cterm -> cterm -> cterm
@@ -59,8 +61,10 @@ sig
   val first_order_match: cterm * cterm -> ctyp TVars.table * cterm Vars.table
   (*theorems*)
   val fold_terms: {hyps: bool} -> (term -> 'a -> 'a) -> thm -> 'a -> 'a
-  val fold_atomic_ctyps: {hyps: bool} -> (typ -> bool) -> (ctyp -> 'a -> 'a) -> thm -> 'a -> 'a
-  val fold_atomic_cterms: {hyps: bool} -> (term -> bool) -> (cterm -> 'a -> 'a) -> thm -> 'a -> 'a
+  val fold_atomic_ctyps: {hyps: bool} ->
+    ('a -> typ -> bool) -> (ctyp -> 'a -> 'a) -> thm -> 'a -> 'a
+  val fold_atomic_cterms: {hyps: bool} ->
+    ('a -> term -> bool) -> (cterm -> 'a -> 'a) -> thm -> 'a -> 'a
   val terms_of_tpairs: (term * term) list -> term list
   val full_prop_of: thm -> term
   val theory_id: thm -> Context.theory_id
@@ -75,13 +79,17 @@ sig
   val tpairs_of: thm -> (term * term) list
   val concl_of: thm -> term
   val prems_of: thm -> term list
+  val take_prems_of: int -> thm -> term list
   val nprems_of: thm -> int
   val no_prems: thm -> bool
+  val one_prem: thm -> bool
+  val prem_of: thm -> int -> term
   val major_prem_of: thm -> term
   val cprop_of: thm -> cterm
   val cprem_of: thm -> int -> cterm
   val cconcl_of: thm -> cterm
   val cprems_of: thm -> cterm list
+  val take_cprems_of: int -> thm -> cterm list
   val chyps_of: thm -> cterm list
   val thm_ord: thm ord
   exception CONTEXT of string * ctyp list * cterm list * thm list * Context.generic option
@@ -138,10 +146,11 @@ sig
   val add_oracle: binding * ('a -> cterm) -> theory -> (string * ('a -> thm)) * theory
   val oracle_space: theory -> Name_Space.T
   val pretty_oracle: Proof.context -> string -> Pretty.T
-  val extern_oracles: bool -> Proof.context -> (Markup.T * xstring) list
+  val extern_oracles: bool -> Proof.context -> (Markup.T list * xstring) list
   val check_oracle: Proof.context -> xstring * Position.T -> string
   (*inference rules*)
-  val assume: cterm -> thm
+  val assume: cterm -> thm  (*exception THM*)
+  val assume_cterm: cterm -> thm  (*exception CTERM*)
   val implies_intr: cterm -> thm -> thm
   val implies_elim: thm -> thm -> thm
   val forall_intr: cterm -> thm -> thm
@@ -201,6 +210,8 @@ struct
 datatype ctyp = Ctyp of {cert: Context.certificate, T: typ, maxidx: int, sorts: sort Ord_List.T};
 
 fun typ_of (Ctyp {T, ...}) = T;
+
+fun maxidx_of_ctyp (Ctyp {maxidx, ...}) = maxidx;
 
 fun global_ctyp_of thy raw_T =
   let
@@ -340,6 +351,9 @@ fun rename_tvar (a, i) (Ctyp {cert, T, maxidx, sorts}) =
     val _ = if i < 0 then raise TYPE ("rename_tvar: bad index", [TVar ((a, i), S)], []) else ();
   in Ctyp {cert = cert, T = TVar ((a, i), S), maxidx = Int.max (i, maxidx), sorts = sorts} end;
 
+fun free (x, Ctyp {cert, T, maxidx, sorts}) =
+  Cterm {cert = cert, t = Free (x, T), T = T, maxidx = maxidx, sorts = sorts};
+
 fun var ((x, i), Ctyp {cert, T, maxidx, sorts}) =
   if i < 0 then raise TERM ("var: bad index", [Var ((x, i), T)])
   else Cterm {cert = cert, t = Var ((x, i), T), T = T, maxidx = Int.max (i, maxidx), sorts = sorts};
@@ -457,13 +471,15 @@ fun fold_terms h f (Thm (_, {tpairs, prop, hyps, ...})) =
   fold (fn (t, u) => f t #> f u) tpairs #> f prop #> #hyps h ? fold f hyps;
 
 fun fold_atomic_ctyps h g f (th as Thm (_, {cert, maxidx, shyps, ...})) =
-  let fun ctyp T = Ctyp {cert = cert, T = T, maxidx = maxidx, sorts = shyps}
-  in (fold_terms h o fold_types o fold_atyps) (fn T => if g T then f (ctyp T) else I) th end;
+  let
+    fun ctyp T = Ctyp {cert = cert, T = T, maxidx = maxidx, sorts = shyps};
+    fun apply T a = if g a T then f (ctyp T) a else a;
+  in (fold_terms h o fold_types o fold_atyps) apply th end;
 
 fun fold_atomic_cterms h g f (th as Thm (_, {cert, maxidx, shyps, ...})) =
   let
     fun cterm t T = Cterm {cert = cert, t = t, T = T, maxidx = maxidx, sorts = shyps};
-    fun apply t T = if g t then f (cterm t T) else I;
+    fun apply t T a = if g a t then f (cterm t T) a else a;
   in
     (fold_terms h o fold_aterms)
       (fn t as Const (_, T) => apply t T
@@ -514,11 +530,16 @@ val tpairs_of = #tpairs o rep_thm;
 
 val concl_of = Logic.strip_imp_concl o prop_of;
 val prems_of = Logic.strip_imp_prems o prop_of;
+fun take_prems_of n = Logic.take_imp_prems n o prop_of;
 val nprems_of = Logic.count_prems o prop_of;
 val no_prems = Logic.no_prems o prop_of;
+val one_prem = Logic.one_prem o prop_of;
+
+fun prem_of th i =
+  Logic.nth_prem (i, prop_of th) handle TERM _ => raise THM ("prem_of", i, [th]);
 
 fun major_prem_of th =
-  (case prems_of th of
+  (case take_prems_of 1 th of
     prem :: _ => Logic.strip_assums_concl prem
   | [] => raise THM ("major_prem_of: rule with no premises", 0, [th]));
 
@@ -535,6 +556,10 @@ fun cconcl_of (th as Thm (_, {cert, maxidx, shyps, ...})) =
 fun cprems_of (th as Thm (_, {cert, maxidx, shyps, ...})) =
   map (fn t => Cterm {cert = cert, maxidx = maxidx, T = propT, sorts = shyps, t = t})
     (prems_of th);
+
+fun take_cprems_of n (th as Thm (_, {cert, maxidx, shyps, ...})) =
+  map (fn t => Cterm {cert = cert, maxidx = maxidx, T = propT, sorts = shyps, t = t})
+    (take_prems_of n th);
 
 fun chyps_of (Thm (_, {cert, shyps, hyps, ...})) =
   map (fn t => Cterm {cert = cert, maxidx = ~1, T = propT, sorts = shyps, t = t}) hyps;
@@ -1095,8 +1120,8 @@ fun strip_shyps thm =
                 SOME T' => T'
               | NONE => raise Fail "strip_shyps: bad type variable in proof term"));
         val map_ztyp =
-          #apply (ZTypes.unsynchronized_cache
-            (ZTerm.subst_type_same (ZTerm.ztyp_of o map_atyp o ZTerm.typ_of o ZTVar)));
+          ZTypes.apply_unsynchronized_cache
+            (ZTerm.subst_type_same (ZTerm.ztyp_of o map_atyp o ZTerm.typ_of o ZTVar));
 
         val zproof' = ZTerm.map_proof_types {hyps = true} map_ztyp zproof;
         val proof' = Proofterm.map_proof_types (Term.map_atyps_same map_atyp) proof;
@@ -1219,7 +1244,7 @@ fun pretty_oracle ctxt =
   Name_Space.pretty ctxt (oracle_space (Proof_Context.theory_of ctxt));
 
 fun extern_oracles verbose ctxt =
-  map #1 (Name_Space.markup_table verbose ctxt (get_oracles (Proof_Context.theory_of ctxt)));
+  map #1 (Name_Space.markups_table verbose ctxt (get_oracles (Proof_Context.theory_of ctxt)));
 
 fun check_oracle ctxt =
   Name_Space.check (Context.Proof ctxt) (get_oracles (Proof_Context.theory_of ctxt)) #> #1;
@@ -1257,6 +1282,10 @@ fun assume raw_ct =
           prop = prop})
       end
   end;
+
+fun assume_cterm A = assume A
+  handle THM (msg, _, _) => raise CTERM (msg, [A]);
+
 
 (*Implication introduction
     [A]
@@ -1859,10 +1888,9 @@ fun make_inst thy (v as (_, T)) (Cterm {t = u, T = U, maxidx, ...}) =
         Pretty.block [Syntax.pretty_term_global thy t, Pretty.str " ::",
           Pretty.brk 1, Syntax.pretty_typ_global thy ty];
       val msg =
-        Pretty.string_of (Pretty.block
-         [Pretty.str "instantiate: type conflict",
-          Pretty.fbrk, pretty_typing (Var v) T,
-          Pretty.fbrk, pretty_typing u U])
+        Pretty.string_of (Pretty.big_list "instantiate: type conflict"
+         [Pretty.item [pretty_typing (Var v) T],
+          Pretty.item [pretty_typing u U]]);
     in raise TYPE (msg, [T, U], [Var v, u]) end;
 
 fun prep_insts (instT, inst) (cert, sorts) =
@@ -2609,7 +2637,7 @@ fun standard_tvars thm =
   let
     val thy = theory_of_thm thm;
     val tvars = build_rev (Term.add_tvars (prop_of thm));
-    val names = Name.invent Name.context Name.aT (length tvars);
+    val names = Name.invent_global_types (length tvars);
     val tinst =
       map2 (fn (ai, S) => fn b => ((ai, S), global_ctyp_of thy (TVar ((b, 0), S)))) tvars names;
   in instantiate (TVars.make tinst, Vars.empty) thm end

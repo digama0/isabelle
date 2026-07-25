@@ -25,17 +25,20 @@ sig
   val implode: T -> string
   val explode: string -> T
   val explode_pos: string * Position.T -> T * Position.T
-  val decode: T XML.Decode.T
   val split: string -> T list
-  val pretty: T -> Pretty.T
+  val print_markup: T -> Markup.T * string
   val print: T -> string
   val dir: T -> T
   val base: T -> T
   val ext: string -> T -> T
   val platform_exe: T -> T
   val split_ext: T -> T * string
-  val exe: T -> T
+  val drop_ext: T -> T
+  val get_ext: T -> string
+  val is_xz: T -> bool
+  val is_zst: T -> bool
   val expand: T -> T
+  val absolute: T -> T
   val file_name: T -> string
   eqtype binding
   val binding: T * Position.T -> binding
@@ -186,18 +189,14 @@ fun split str =
   space_explode ":" str
   |> map_filter (fn s => if s = "" then NONE else SOME (explode_path s));
 
-val decode = XML.Decode.string #> explode_path;
-
 
 (* print *)
 
-fun pretty path =
+fun print_markup path =
   let val s = implode_path path
-  in Pretty.mark (Markup.path s) (Pretty.str (quote s)) end;
+  in (Markup.path s, quote s) end;
 
-val print = Pretty.unformatted_string_of o pretty;
-
-val _ = ML_system_pp (fn _ => fn _ => Pretty.to_polyml o pretty);
+val print = print_markup #-> Markup.markup;
 
 
 (* base element *)
@@ -218,7 +217,11 @@ val split_ext = split_path (fn (prfx, s) => apfst (append prfx)
     ([], _) => (Path [Basic s], "")
   | (cs, e) => (Path [Basic (implode (take (length cs - 1) cs))], implode e)));
 
-val exe = ML_System.platform_is_windows ? ext "exe";
+val drop_ext = #1 o split_ext;
+val get_ext = #2 o split_ext;
+
+fun is_xz path = get_ext path = "xz";
+fun is_zst path = get_ext path = "zst";
 
 
 (* expand variables *)
@@ -233,7 +236,19 @@ fun eval (Variable s) =
 
 val expand = rep #> maps eval #> norm #> Path;
 
-val file_name = implode_path o base o expand;
+val absolute =
+  expand #> (fn path =>
+    if is_absolute path then path
+    else append (explode_path (ML_System.standard_path (OS.FileSys.getDir ()))) path);
+
+fun file_name (Path (Basic b :: _)) = b
+  | file_name path =
+      let fun err bad = error ("Cannot determine file-name from " ^ print bad) in
+        (case try absolute path of
+          SOME (Path (Basic b :: _)) => b
+        | SOME p => err p
+        | NONE => err path)
+      end;
 
 
 (* binding: strictly monotonic path with position *)

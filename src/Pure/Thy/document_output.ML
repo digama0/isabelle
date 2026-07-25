@@ -16,6 +16,8 @@ sig
   type segment =
     {span: Command_Span.span, command: Toplevel.transition,
      prev_state: Toplevel.state, state: Toplevel.state}
+  val segment_eof: segment
+  val segment_stopper: segment Scan.stopper
   val present_thy: Options.T -> Keyword.keywords -> string -> segment list -> Latex.text
   val pretty_term: Proof.context -> term -> Pretty.T
   val pretty_thm: Proof.context -> thm -> Pretty.T
@@ -159,16 +161,27 @@ in
 
 fun output_token ctxt tok =
   let
+    val keywords = Thy_Header.get_keywords' ctxt;
+
     fun output antiq bg en =
       output_body ctxt antiq bg en (Input.source_explode (Token.input_of tok));
   in
     (case Token.kind_of tok of
       Token.Comment NONE => []
     | Token.Comment (SOME Comment.Marker) => []
-    | Token.Command => output false "\\isacommand{" "}"
+    | Token.Command =>
+        let
+          val name = (Token.content_of tok);
+          val bg =
+            if Keyword.is_theory_end keywords name then "\\isakeywordTWO{"
+            else if Keyword.is_proof_asm keywords name orelse
+              Keyword.is_proof_asm_goal keywords name then "\\isakeywordTHREE{"
+            else if Keyword.is_proof_asm_goal keywords name then "\\isakeywordTHREE{"
+            else "\\isakeywordONE{";
+        in output false bg "}" end
     | Token.Keyword =>
         if Symbol.is_ascii_identifier (Token.content_of tok)
-        then output false "\\isakeyword{" "}"
+        then output false "\\isakeywordTWO{" "}"
         else output false "" ""
     | Token.String => output false "{\\isachardoublequoteopen}" "{\\isachardoublequoteclose}"
     | Token.Alt_String => output false "{\\isacharbackquoteopen}" "{\\isacharbackquoteclose}"
@@ -360,6 +373,14 @@ type segment =
   {span: Command_Span.span, command: Toplevel.transition,
    prev_state: Toplevel.state, state: Toplevel.state};
 
+val segment_eof: segment =
+  {span = Command_Span.eof, command = Toplevel.empty,
+   prev_state = Toplevel.make_state NONE, state = Toplevel.make_state NONE};
+
+val segment_stopper =
+  Scan.stopper (K segment_eof) (Command_Span.is_eof o #span);
+
+
 local
 
 val markup_true = "\\isamarkuptrue%\n";
@@ -530,7 +551,7 @@ fun is_source ctxt =
 fun source ctxt embedded =
   Token.args_of_src
   #> map (token_source ctxt embedded #> Document_Antiquotation.prepare_lines ctxt)
-  #> space_implode " "
+  #> implode_space
   #> output_source ctxt
   #> isabelle ctxt;
 

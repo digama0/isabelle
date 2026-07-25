@@ -37,10 +37,12 @@ object Linear_Set extends IterableFactory[Linear_Set] {
 final class Linear_Set[A] private(
     start: Option[A],
     end: Option[A],
-    val nexts: Map[A, A], prevs: Map[A, A])
-  extends Iterable[A]
+    nexts: Map[A, A],
+    prevs: Map[A, A]
+) extends Iterable[A]
     with SetOps[A, Linear_Set, Linear_Set[A]]
     with IterableFactoryDefaults[A, Linear_Set] {
+
   /* relative addressing */
 
   def next(elem: A): Option[A] =
@@ -124,6 +126,10 @@ final class Linear_Set[A] private(
 
   def contains(elem: A): Boolean =
     nonEmpty && (end.get == elem || nexts.isDefinedAt(elem))
+
+  def unordered_iterator: Iterator[A] =
+    if (isEmpty) Iterator.empty
+    else start.iterator ++ nexts.valuesIterator
 
   private def make_iterator(from: Option[A]): Iterator[A] = new Iterator[A] {
     private var next_elem = from

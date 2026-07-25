@@ -32,7 +32,7 @@ default_sort \<open>term\<close>
 typedecl o
 
 judgment
-  Trueprop :: \<open>o \<Rightarrow> prop\<close>  (\<open>(_)\<close> 5)
+  Trueprop :: \<open>o \<Rightarrow> prop\<close>  (\<open>(\<open>notation=judgment\<close>_)\<close> 5)
 
 
 subsubsection \<open>Equality\<close>
@@ -82,7 +82,7 @@ subsubsection \<open>Definitions\<close>
 
 definition \<open>True \<equiv> False \<longrightarrow> False\<close>
 
-definition Not (\<open>\<not> _\<close> [40] 40)
+definition Not (\<open>(\<open>open_block notation=\<open>prefix \<not>\<close>\<close>\<not> _)\<close> [40] 40)
   where not_def: \<open>\<not> P \<equiv> P \<longrightarrow> False\<close>
 
 definition iff  (infixr \<open>\<longleftrightarrow>\<close> 25)
@@ -101,12 +101,11 @@ axiomatization where  \<comment> \<open>Reflection, admissible\<close>
 abbreviation not_equal :: \<open>['a, 'a] \<Rightarrow> o\<close>  (infixl \<open>\<noteq>\<close> 50)
   where \<open>x \<noteq> y \<equiv> \<not> (x = y)\<close>
 
-syntax "_Uniq" :: "pttrn \<Rightarrow> o \<Rightarrow> o"  ("(2\<exists>\<^sub>\<le>\<^sub>1 _./ _)" [0, 10] 10)
+syntax "_Uniq" :: "pttrn \<Rightarrow> o \<Rightarrow> o"  (\<open>(\<open>indent=2 notation=\<open>binder \<exists>\<^sub>\<le>\<^sub>1\<close>\<close>\<exists>\<^sub>\<le>\<^sub>1 _./ _)\<close> [0, 10] 10)
 syntax_consts "_Uniq" \<rightleftharpoons> Uniq
 translations "\<exists>\<^sub>\<le>\<^sub>1x. P" \<rightleftharpoons> "CONST Uniq (\<lambda>x. P)"
-
-print_translation \<open>
- [Syntax_Trans.preserve_binder_abs_tr' \<^const_syntax>\<open>Uniq\<close> \<^syntax_const>\<open>_Uniq\<close>]
+typed_print_translation \<open>
+  [(\<^const_syntax>\<open>Uniq\<close>, Syntax_Trans.preserve_binder_abs_tr' \<^syntax_const>\<open>_Uniq\<close>)]
 \<close> \<comment> \<open>to avoid eta-contraction of body\<close>
 
 
@@ -114,7 +113,7 @@ subsubsection \<open>Old-style ASCII syntax\<close>
 
 notation (ASCII)
   not_equal  (infixl \<open>~=\<close> 50) and
-  Not  (\<open>~ _\<close> [40] 40) and
+  Not  (\<open>(\<open>open_block notation=\<open>prefix ~\<close>\<close>~ _)\<close> [40] 40) and
   conj  (infixr \<open>&\<close> 35) and
   disj  (infixr \<open>|\<close> 30) and
   All  (binder \<open>ALL \<close> 10) and
@@ -743,11 +742,12 @@ definition Let :: \<open>['a::{}, 'a => 'b] \<Rightarrow> ('b::{})\<close>
   where \<open>Let(s, f) \<equiv> f(s)\<close>
 
 syntax
-  "_bind"       :: \<open>[pttrn, 'a] => letbind\<close>           (\<open>(2_ =/ _)\<close> 10)
+  "_bind"       :: \<open>[pttrn, 'a] => letbind\<close>  (\<open>(\<open>indent=2 notation=\<open>infix let binding\<close>\<close>_ =/ _)\<close> 10)
   ""            :: \<open>letbind => letbinds\<close>              (\<open>_\<close>)
   "_binds"      :: \<open>[letbind, letbinds] => letbinds\<close>  (\<open>_;/ _\<close>)
-  "_Let"        :: \<open>[letbinds, 'a] => 'a\<close>             (\<open>(let (_)/ in (_))\<close> 10)
-syntax_consts "_Let" \<rightleftharpoons> Let
+  "_Let"        :: \<open>[letbinds, 'a] => 'a\<close>  (\<open>(\<open>notation=\<open>mixfix let expression\<close>\<close>let (_)/ in (_))\<close> 10)
+syntax_consts
+  "_Let" \<rightleftharpoons> Let
 translations
   "_Let(_binds(b, bs), e)"  == "_Let(b, _Let(bs, e))"
   "let x = a in e"          == "CONST Let(a, \<lambda>x. e)"

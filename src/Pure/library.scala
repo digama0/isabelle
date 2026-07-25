@@ -7,6 +7,8 @@ Basic library.
 package isabelle
 
 
+import java.util.Locale
+
 import scala.annotation.tailrec
 import scala.collection.mutable
 import scala.util.matching.Regex
@@ -15,10 +17,13 @@ import scala.util.matching.Regex
 object Library {
   /* resource management */
 
-  def using[A <: AutoCloseable, B](a: A)(f: A => B): B = {
-    try { f(a) }
-    finally { if (a != null) a.close() }
-  }
+  def using[A <: AutoCloseable, B](x: A | Null)(f: A => B): B =
+    x match {
+      case null => throw new NullPointerException
+      case a =>
+        try { f(a.asInstanceOf[A]) }
+        finally { a.asInstanceOf[AutoCloseable].close() }
+    }
 
   def using_option[A <: AutoCloseable, B](opt: Option[A])(f: A => B): Option[B] =
     opt.map(a => using(a)(f))
@@ -27,7 +32,7 @@ object Library {
     try { f(opt) }
     finally {
       opt match {
-        case Some(a) if a != null => a.close()
+        case Some(a) => a.close()
         case _ =>
       }
     }
@@ -96,7 +101,7 @@ object Library {
 
       def next(): CharSequence =
         if (hasNext) {
-          val chunk = source.subSequence(start, stop)
+          val chunk = source.subSequence(start, stop).nn
           if (stop < length) { start = stop + 1; stop = end(start) }
           else { start = -1; stop = -1 }
           chunk
@@ -123,7 +128,7 @@ object Library {
 
       def next(): String =
         if (hasNext) {
-          val chunk = source.substring(start, stop)
+          val chunk = source.slice(start, stop)
           if (stop < source.length) { start = stop + 1; stop = end(start) }
           else { start = -1; stop = -1 }
           chunk
@@ -147,13 +152,15 @@ object Library {
   def cat_lines(lines: IterableOnce[String]): String =
     lines.iterator.mkString("\n")
 
+  def make_lines(lines: String*): String = cat_lines(lines)
+
   def split_lines(str: String): List[String] = space_explode('\n', str)
 
   def prefix_lines(prfx: String, str: String): String =
-    isabelle.setup.Library.prefix_lines(prfx, str)
+    isabelle.setup.Library.prefix_lines(prfx, str).nn
 
   def indent_lines(n: Int, str: String): String =
-    prefix_lines(Symbol.spaces(n), str)
+    if (n == 0) str else prefix_lines(Symbol.spaces(n), str)
 
   def first_line(source: CharSequence): String = {
     val lines = separated_chunks(_ == '\n', source)
@@ -162,16 +169,25 @@ object Library {
   }
 
   def trim_line(s: String): String =
-    isabelle.setup.Library.trim_line(s)
+    isabelle.setup.Library.trim_line(s).nn
 
   def trim_split_lines(s: String): List[String] =
     split_lines(trim_line(s)).map(trim_line)
 
-  def encode_lines(s: String): String = s.replace('\n', '\u000b')
-  def decode_lines(s: String): String = s.replace('\u000b', '\n')
+  def encode_lines(s: String): String = s.replacing("\n" -> "\u000b")
+  def decode_lines(s: String): String = s.replacing("\u000b" -> "\n")
+
+
+  /* locales */
+
+  val locale_root: Locale = Locale.ROOT.nn
+  val locale_english: Locale = Locale.ENGLISH.nn
+  val locale_german: Locale = Locale.GERMAN.nn
 
 
   /* strings */
+
+  def trim_string(s: String): String = s.trim.nn
 
   def string_builder(hint: Int = 0)(body: StringBuilder => Unit): String = {
     val builder = new StringBuilder(if (hint <= 0) 16 else hint)
@@ -180,18 +196,27 @@ object Library {
   }
 
   def try_unprefix(prfx: String, s: String): Option[String] =
-    if (s.startsWith(prfx)) Some(s.substring(prfx.length)) else None
+    if (s.startsWith(prfx)) Some(s.drop(prfx.length)) else None
 
   def try_unsuffix(sffx: String, s: String): Option[String] =
-    if (s.endsWith(sffx)) Some(s.substring(0, s.length - sffx.length)) else None
+    if (s.endsWith(sffx)) Some(s.slice(0, s.length - sffx.length)) else None
 
   def perhaps_unprefix(prfx: String, s: String): String = try_unprefix(prfx, s) getOrElse s
   def perhaps_unsuffix(sffx: String, s: String): String = try_unsuffix(sffx, s) getOrElse s
 
   def isolate_substring(s: String): String = new String(s.toCharArray)
 
+  def replacing(str: String, args: ((String | Regex), String)*): String =
+    args.iterator.foldLeft(str) {
+      case (acc, (x: String, y)) => acc.replace(x, y).nn
+      case (acc, (x: Regex, y)) => x.pattern.nn.matcher(acc).nn.replaceAll(y).nn
+    }
+
   def strip_ansi_color(s: String): String =
-    s.replaceAll("\u001b\\[\\d+m", "")
+    replacing(s, "\u001b\\[\\d+m".r -> "")
+
+  def format(format: String, args: Any*): String =
+    String.format(locale_root, format, args:_*).nn
 
 
   /* quote */
@@ -201,7 +226,7 @@ object Library {
   def quote(s: String): String = "\"" + s + "\""
 
   def try_unquote(s: String): Option[String] =
-    if (s.startsWith("\"") && s.endsWith("\"")) Some(s.substring(1, s.length - 1))
+    if (s.startsWith("\"") && s.endsWith("\"")) Some(s.slice(1, s.length - 1))
     else None
 
   def perhaps_unquote(s: String): String = try_unquote(s) getOrElse s
@@ -211,6 +236,9 @@ object Library {
 
 
   /* CharSequence */
+
+  def make_string(text: CharSequence, start: Int, end: Int): String =
+    text.subSequence(start, end).nn.toString
 
   class Reverse(text: CharSequence, start: Int, end: Int) extends CharSequence {
     require(0 <= start && start <= end && end <= text.length, "bad reverse range")
@@ -226,15 +254,6 @@ object Library {
 
     override def toString: String =
       string_builder(hint = length) { buf => for (i <- 0 until length) buf.append(charAt(i)) }
-  }
-
-  class Line_Termination(text: CharSequence) extends CharSequence {
-    def length: Int = text.length + 1
-    def charAt(i: Int): Char = if (i == text.length) '\n' else text.charAt(i)
-    def subSequence(i: Int, j: Int): CharSequence =
-      if (j == text.length + 1) new Line_Termination(text.subSequence(i, j - 1))
-      else text.subSequence(i, j)
-    override def toString: String = text.toString + "\n"
   }
 
 
@@ -310,20 +329,43 @@ object Library {
       case _ => error(message)
     }
 
+  def runs[A](xs: List[A], eq: (A, A) => Boolean = (x: A, y: A) => x == y): List[List[A]] = {
+    val run = new mutable.ListBuffer[A]
+    val result = new mutable.ListBuffer[List[A]]
+
+    def flush(): Unit =
+      if (run.nonEmpty) {
+        result += run.toList
+        run.clear()
+      }
+
+    for (x <- xs) {
+      if (run.nonEmpty && !eq(run.last, x)) flush()
+      run += x
+    }
+
+    flush()
+    result.toList
+  }
+
 
   /* proper values */
+
+  def proper_value[A](x: A | Null): Option[A] =
+    if (x.asInstanceOf[Any] == null) None else Some(x.asInstanceOf[A])
 
   def proper_bool(b: Boolean): Option[Boolean] =
     if (!b) None else Some(b)
 
-  def proper_string(s: String): Option[String] =
-    if (s == null || s == "") None else Some(s)
+  def proper_string(s: String | Null): Option[String] =
+    if (s.asInstanceOf[Any] == null || s == "") None else Some(s.asInstanceOf[String])
 
-  def proper_list[A](list: List[A]): Option[List[A]] =
-    if (list == null || list.isEmpty) None else Some(list)
+  def proper_list[A](list: List[A] | Null): Option[List[A]] =
+    if (list.asInstanceOf[Any] == null || list.asInstanceOf[List[A]].isEmpty) None
+    else Some(list.asInstanceOf[List[A]])
 
-  def if_proper[A](x: Iterable[A], body: => String): String =
-    if (x == null || x.isEmpty) "" else body
+  def if_proper[A](x: Iterable[A] | Null, body: => String): String =
+    if (x.asInstanceOf[Any] == null || x.asInstanceOf[Iterable[A]].isEmpty) "" else body
 
   def if_proper(b: Boolean, body: => String): String =
     if (!b) "" else body
@@ -339,6 +381,6 @@ object Library {
     subclass(a)
   }
 
-  def as_subclass[C](c: Class[C])(x: AnyRef): Option[C] =
+  def as_subclass[C](c: Class[C])(x: Any): Option[C] =
     if (x == null || is_subclass(x.getClass, c)) Some(x.asInstanceOf[C]) else None
 }

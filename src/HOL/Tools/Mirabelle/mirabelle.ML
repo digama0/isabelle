@@ -130,17 +130,16 @@ fun finalize_action ({finalize, ...} : action) context =
 
 fun apply_action ({run, ...} : action) context (command as {pos, pre, ...} : command) =
   let
-    val thy = Proof.theory_of pre;
-    val action_path = make_action_path context;
-    val goal_name_path = Path.basic (#name command)
-    val line_path = Path.basic (string_of_int (the (Position.line_of pos)));
-    val offset_path = Path.basic (string_of_int (the (Position.offset_of pos)));
-    val ({elapsed, ...}, s) = Timing.timing run_action_function (fn () => run command);
+    val action_path = make_action_path context
+    and goal_name_path = Path.basic (#name command)
+    and line_path = Path.basic (string_of_int (the (Position.line_of pos)))
+    and offset_path = Path.basic (string_of_int (the (Position.offset_of pos)))
+    and ({elapsed, ...}, s) = Timing.timing run_action_function (fn () => run command);
     val export_name =
       Path.binding0 (Path.basic "mirabelle" + action_path + Path.basic "goal" + goal_name_path +
         line_path + offset_path + Path.basic (string_of_int (Time.toMilliseconds elapsed)));
   in
-    Export.export thy export_name [XML.Text s]
+    Export.export (Proof.theory_of pre) export_name [XML.Text s]
   end;
 
 
@@ -185,7 +184,96 @@ fun check_theories strs =
 
 (* presentation hook *)
 
-val whitelist = ["apply", "by", "proof", "unfolding", "using"];
+fun run_actions actions qualifier loaded_theories =
+  let
+    val mirabelle_dry_run = Options.default_bool \<^system_option>\<open>mirabelle_dry_run\<close>;
+    val mirabelle_timeout = Options.default_seconds \<^system_option>\<open>mirabelle_timeout\<close>;
+    val mirabelle_stride = Options.default_int \<^system_option>\<open>mirabelle_stride\<close>;
+    val mirabelle_max_calls = Options.default_int \<^system_option>\<open>mirabelle_max_calls\<close>;
+    val mirabelle_randomize = Options.default_int \<^system_option>\<open>mirabelle_randomize\<close>;
+    val mirabelle_theories = Options.default_string \<^system_option>\<open>mirabelle_theories\<close>;
+    val mirabelle_output_dir = Options.default_string \<^system_option>\<open>mirabelle_output_dir\<close>;
+    val mirabelle_parallel_group_size = Options.default_int \<^system_option>\<open>mirabelle_parallel_group_size\<close>;
+    val check_theory = check_theories (space_explode "," mirabelle_theories);
+    val mirabelle_subgoals = Options.default_string \<^system_option>\<open>mirabelle_subgoals\<close>;
+    val considered_subgoals = space_explode "," mirabelle_subgoals;
+
+    fun parallel_app (f : 'a -> unit) (xs : 'a list) : unit =
+      chop_groups mirabelle_parallel_group_size xs
+      |> List.app (ignore o Par_List.map f)
+
+    fun make_commands (thy_index, (thy, segments)) =
+      let
+        val thy_long_name = Context.theory_long_name thy;
+        val check_thy = check_theory thy_long_name;
+        fun make_command {command = tr, prev_state = st, state = st', ...} =
+          let
+            val name = Toplevel.name_of tr;
+            val pos = Toplevel.pos_of tr;
+          in
+            if Context.proper_subthy (\<^theory>, thy) andalso
+              can (Proof.assert_backward o Toplevel.proof_of) st andalso
+              member (op =) considered_subgoals name andalso check_thy pos
+            then SOME {theory_index = thy_index, name = name, pos = pos,
+              pre = Toplevel.proof_of st, post = st'}
+            else NONE
+          end;
+      in
+        if Resources.theory_qualifier thy_long_name = qualifier then
+          map_filter make_command segments
+        else
+          []
+      end;
+
+    (* initialize actions *)
+    val contexts = actions |> map_index (fn (n, (label, name, args)) =>
+      let
+        val make_action =
+          (case get_action name of
+            SOME f => f
+          | NONE => error "Unknown action");
+        val action_subdir = if label = "" then string_of_int n ^ "." ^ name else label;
+        val output_dir =
+          Path.append (Path.explode mirabelle_output_dir) (Path.basic action_subdir);
+        val context =
+          {index = n, label = label, name = name, arguments = args,
+           timeout = mirabelle_timeout, output_dir = output_dir};
+      in
+        (initialize_action make_action context, context)
+      end);
+  in
+    (* run actions on all relevant goals *)
+    loaded_theories
+    |> map_index I
+    |> maps make_commands
+    |> (if mirabelle_randomize <= 0 then
+          I
+        else
+          fst o MLCG.shuffle (MLCG.initialize mirabelle_randomize))
+    |> (fn xs => fold_map (fn x => fn i => ((i, x), i + 1)) xs 0)
+    |> (fn (indexed_commands, commands_length) =>
+      let
+        val stride =
+          if mirabelle_stride <= 0 then
+            Integer.max 1 (commands_length div mirabelle_max_calls)
+          else
+            mirabelle_stride
+      in
+        maps (fn (n, command) =>
+        let val (m, k) = Integer.div_mod (n + 1) stride in
+          if k = 0 andalso (mirabelle_max_calls <= 0 orelse m <= mirabelle_max_calls) then
+            map (fn context => (context, command)) contexts
+          else
+            []
+        end) indexed_commands
+      end)
+    (* Don't use multithreading for a dry run because of the high per-thread overhead. *)
+    |> (if mirabelle_dry_run then List.app else parallel_app) (fn ((action, context), command) =>
+        apply_action (if mirabelle_dry_run then dry_run_action else action) context command);
+
+    (* finalize actions *)
+    List.app (uncurry finalize_action) contexts
+  end
 
 val _ =
   Build.add_hook (fn qualifier => fn loaded_theories =>
@@ -199,88 +287,7 @@ val _ =
       if null actions then
         ()
       else
-        let
-          val mirabelle_dry_run = Options.default_bool \<^system_option>\<open>mirabelle_dry_run\<close>;
-          val mirabelle_timeout = Options.default_seconds \<^system_option>\<open>mirabelle_timeout\<close>;
-          val mirabelle_stride = Options.default_int \<^system_option>\<open>mirabelle_stride\<close>;
-          val mirabelle_max_calls = Options.default_int \<^system_option>\<open>mirabelle_max_calls\<close>;
-          val mirabelle_randomize = Options.default_int \<^system_option>\<open>mirabelle_randomize\<close>;
-          val mirabelle_theories = Options.default_string \<^system_option>\<open>mirabelle_theories\<close>;
-          val mirabelle_output_dir = Options.default_string \<^system_option>\<open>mirabelle_output_dir\<close>;
-          val check_theory = check_theories (space_explode "," mirabelle_theories);
-
-          fun make_commands (thy_index, (thy, segments)) =
-            let
-              val thy_long_name = Context.theory_long_name thy;
-              val check_thy = check_theory thy_long_name;
-              fun make_command {command = tr, prev_state = st, state = st', ...} =
-                let
-                  val name = Toplevel.name_of tr;
-                  val pos = Toplevel.pos_of tr;
-                in
-                  if Context.proper_subthy (\<^theory>, thy) andalso
-                    can (Proof.assert_backward o Toplevel.proof_of) st andalso
-                    member (op =) whitelist name andalso check_thy pos
-                  then SOME {theory_index = thy_index, name = name, pos = pos,
-                    pre = Toplevel.proof_of st, post = st'}
-                  else NONE
-                end;
-            in
-              if Resources.theory_qualifier thy_long_name = qualifier then
-                map_filter make_command segments
-              else
-                []
-            end;
-
-          (* initialize actions *)
-          val contexts = actions |> map_index (fn (n, (label, name, args)) =>
-            let
-              val make_action =
-                (case get_action name of
-                  SOME f => f
-                | NONE => error "Unknown action");
-              val action_subdir = if label = "" then string_of_int n ^ "." ^ name else label;
-              val output_dir =
-                Path.append (Path.explode mirabelle_output_dir) (Path.basic action_subdir);
-              val context =
-                {index = n, label = label, name = name, arguments = args,
-                 timeout = mirabelle_timeout, output_dir = output_dir};
-            in
-              (initialize_action make_action context, context)
-            end);
-        in
-          (* run actions on all relevant goals *)
-          loaded_theories
-          |> map_index I
-          |> maps make_commands
-          |> (if mirabelle_randomize <= 0 then
-                I
-              else
-                fst o MLCG.shuffle (MLCG.initialize mirabelle_randomize))
-          |> (fn xs => fold_map (fn x => fn i => ((i, x), i + 1)) xs 0)
-          |> (fn (indexed_commands, commands_length) =>
-            let
-              val stride =
-                if mirabelle_stride <= 0 then
-                  Integer.max 1 (commands_length div mirabelle_max_calls)
-                else
-                  mirabelle_stride
-            in
-              maps (fn (n, command) =>
-              let val (m, k) = Integer.div_mod (n + 1) stride in
-                if k = 0 andalso (mirabelle_max_calls <= 0 orelse m <= mirabelle_max_calls) then
-                  map (fn context => (context, command)) contexts
-                else
-                  []
-              end) indexed_commands
-            end)
-          (* Don't use multithreading for a dry run because of the high per-thread overhead. *)
-          |> (if mirabelle_dry_run then map else Par_List.map) (fn ((action, context), command) =>
-              apply_action (if mirabelle_dry_run then dry_run_action else action) context command);
-
-          (* finalize actions *)
-          List.app (uncurry finalize_action) contexts
-        end
+        run_actions actions qualifier loaded_theories
     end);
 
 

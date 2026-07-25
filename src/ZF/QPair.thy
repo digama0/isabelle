@@ -21,8 +21,8 @@ W. V. Quine, On Ordered Pairs and Relations, in Selected Logic Papers,
 \<close>
 
 definition
-  QPair     :: "[i, i] \<Rightarrow> i"                      (\<open><(_;/ _)>\<close>)  where
-    "<a;b> \<equiv> a+b"
+  QPair     :: "[i, i] \<Rightarrow> i"  (\<open>(\<open>indent=1 notation=\<open>mixfix Quine pair\<close>\<close><_;/ _>)\<close>)
+  where "<a;b> \<equiv> a+b"
 
 definition
   qfst :: "i \<Rightarrow> i"  where
@@ -45,7 +45,7 @@ definition
     "QSigma(A,B)  \<equiv>  \<Union>x\<in>A. \<Union>y\<in>B(x). {<x;y>}"
 
 syntax
-  "_QSUM"   :: "[idt, i, i] \<Rightarrow> i"               (\<open>(3QSUM _ \<in> _./ _)\<close> 10)
+  "_QSUM"   :: "[idt, i, i] \<Rightarrow> i"  (\<open>(\<open>indent=3 notation=\<open>binder QSUM\<in>\<close>\<close>QSUM _ \<in> _./ _)\<close> 10)
 syntax_consts
   "_QSUM" \<rightleftharpoons> QSigma
 translations

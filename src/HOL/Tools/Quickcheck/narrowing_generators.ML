@@ -56,7 +56,7 @@ fun add_partial_term_of tyco raw_vs thy =
     thy
     |> Class.instantiation ([tyco], vs, \<^sort>\<open>partial_term_of\<close>)
     |> `(fn lthy => Syntax.check_term lthy eq)
-    |-> (fn eq => Specification.definition NONE [] [] ((Binding.name (triv_name_of eq), []), eq))
+    |-> (fn eq => Specification.definition {verbose = false} NONE [] [] ((Binding.name (triv_name_of eq), []), eq))
     |> snd
     |> Class.prove_instantiation_exit (fn ctxt => Class.intro_classes_tac ctxt [])
   end
@@ -72,7 +72,7 @@ fun ensure_partial_term_of (tyco, (raw_vs, _)) thy =
 
 fun mk_partial_term_of_eq thy ty (i, (c, (_, tys))) =
   let
-    val frees = map Free (Name.invent_names Name.context "a" (map (K \<^typ>\<open>narrowing_term\<close>) tys))
+    val frees = map (fn a => Free (a, \<^typ>\<open>narrowing_term\<close>)) (Name.invent_global "a" (length tys))
     val narrowing_term =
       \<^term>\<open>Quickcheck_Narrowing.Narrowing_constructor\<close> $ HOLogic.mk_number \<^typ>\<open>integer\<close> i $
         HOLogic.mk_list \<^typ>\<open>narrowing_term\<close> (rev frees)
@@ -257,7 +257,7 @@ fun value (contains_existentials, ((genuine_only, (quiet, verbose)), size))
         val executable = in_path + Path.basic "isabelle_quickcheck_narrowing"
         val cmd =
           "exec \"$ISABELLE_GHC\" " ^ Code_Haskell.language_params ^ " " ^ ghc_options ^ " " ^
-            (space_implode " "
+            (implode_space
               (map File.bash_platform_path
                 (map fst includes @ [code_file, narrowing_engine_file, main_file]))) ^
           " -o " ^ File.bash_platform_path executable ^ ";"

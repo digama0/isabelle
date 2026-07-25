@@ -37,11 +37,15 @@ setup \<open>Sign.parent_path\<close>
 declare case_split [cases type: bool]
   \<comment> \<open>prefer plain propositional version\<close>
 
-lemma [code]: "HOL.equal False P \<longleftrightarrow> \<not> P"
-  and [code]: "HOL.equal True P \<longleftrightarrow> P"
-  and [code]: "HOL.equal P False \<longleftrightarrow> \<not> P"
-  and [code]: "HOL.equal P True \<longleftrightarrow> P"
-  and [code nbe]: "HOL.equal P P \<longleftrightarrow> True"
+lemma [code]:
+  "HOL.equal False P \<longleftrightarrow> \<not> P"
+  "HOL.equal True P \<longleftrightarrow> P"
+  "HOL.equal P False \<longleftrightarrow> \<not> P"
+  "HOL.equal P True \<longleftrightarrow> P"
+  by (simp_all add: equal)
+
+lemma [code nbe]:
+  "HOL.equal P P \<longleftrightarrow> True" for P :: bool
   by (simp_all add: equal)
 
 lemma If_case_cert:
@@ -61,7 +65,7 @@ subsection \<open>The \<open>unit\<close> type\<close>
 typedef unit = "{True}"
   by auto
 
-definition Unity :: unit  ("'(')")
+definition Unity :: unit  (\<open>'(')\<close>)
   where "() = Abs_unit True"
 
 lemma unit_eq [no_atp]: "u = ()"
@@ -195,14 +199,10 @@ code_printing
 | constant "HOL.equal :: unit \<Rightarrow> unit \<Rightarrow> bool" \<rightharpoonup>
     (Haskell) infix 4 "=="
 
-code_reserved SML
-  unit
-
-code_reserved OCaml
-  unit
-
-code_reserved Scala
-  Unit
+code_reserved
+  (SML) unit
+  and (OCaml) unit
+  and (Scala) Unit
 
 
 subsection \<open>The product type\<close>
@@ -214,11 +214,11 @@ definition Pair_Rep :: "'a \<Rightarrow> 'b \<Rightarrow> 'a \<Rightarrow> 'b \<
 
 definition "prod = {f. \<exists>a b. f = Pair_Rep (a::'a) (b::'b)}"
 
-typedef ('a, 'b) prod ("(_ \<times>/ _)" [21, 20] 20) = "prod :: ('a \<Rightarrow> 'b \<Rightarrow> bool) set"
+typedef ('a, 'b) prod (\<open>(\<open>notation=\<open>infix \<times>\<close>\<close>_ \<times>/ _)\<close> [21, 20] 20) = "prod :: ('a \<Rightarrow> 'b \<Rightarrow> bool) set"
   unfolding prod_def by auto
 
 type_notation (ASCII)
-  prod  (infixr "*" 20)
+  prod  (infixr \<open>*\<close> 20)
 
 definition Pair :: "'a \<Rightarrow> 'b \<Rightarrow> 'a \<times> 'b"
   where "Pair a b = Abs_prod (Pair_Rep a b)"
@@ -285,16 +285,19 @@ text \<open>
 \<close>
 
 nonterminal tuple_args and patterns
+
+open_bundle tuple_syntax
+begin
+
 syntax
-  "_tuple"      :: "'a \<Rightarrow> tuple_args \<Rightarrow> 'a \<times> 'b"        ("(1'(_,/ _'))")
-  "_tuple_arg"  :: "'a \<Rightarrow> tuple_args"                   ("_")
-  "_tuple_args" :: "'a \<Rightarrow> tuple_args \<Rightarrow> tuple_args"     ("_,/ _")
-  "_pattern"    :: "pttrn \<Rightarrow> patterns \<Rightarrow> pttrn"         ("'(_,/ _')")
-  ""            :: "pttrn \<Rightarrow> patterns"                  ("_")
-  "_patterns"   :: "pttrn \<Rightarrow> patterns \<Rightarrow> patterns"      ("_,/ _")
-  "_unit"       :: pttrn                                ("'(')")
+  "_tuple"      :: "'a \<Rightarrow> tuple_args \<Rightarrow> 'a \<times> 'b"        (\<open>(\<open>indent=1 notation=\<open>mixfix tuple\<close>\<close>'(_,/ _'))\<close>)
+  "_tuple_arg"  :: "'a \<Rightarrow> tuple_args"                   (\<open>_\<close>)
+  "_tuple_args" :: "'a \<Rightarrow> tuple_args \<Rightarrow> tuple_args"     (\<open>_,/ _\<close>)
+  "_pattern"    :: "pttrn \<Rightarrow> patterns \<Rightarrow> pttrn"         (\<open>(\<open>open_block notation=\<open>pattern tuple\<close>\<close>'(_,/ _'))\<close>)
+  ""            :: "pttrn \<Rightarrow> patterns"                  (\<open>_\<close>)
+  "_patterns"   :: "pttrn \<Rightarrow> patterns \<Rightarrow> patterns"      (\<open>_,/ _\<close>)
+  "_unit"       :: pttrn                                (\<open>(\<open>open_block notation=\<open>pattern unit\<close>\<close>'('))\<close>)
 syntax_consts
-  "_tuple" "_tuple_arg" "_tuple_args" \<rightleftharpoons> Pair and
   "_pattern" "_patterns" \<rightleftharpoons> case_prod and
   "_unit" \<rightleftharpoons> case_unit
 translations
@@ -311,39 +314,41 @@ translations
   "\<lambda>(). b" \<rightleftharpoons> "CONST case_unit b"
   "_abs (CONST Unity) t" \<rightharpoonup> "\<lambda>(). t"
 
+end
+
 text \<open>print \<^term>\<open>case_prod f\<close> as \<^term>\<open>\<lambda>(x, y). f x y\<close> and
   \<^term>\<open>case_prod (\<lambda>x. f x)\<close> as \<^term>\<open>\<lambda>(x, y). f x y\<close>\<close>
 
 typed_print_translation \<open>
   let
-    fun case_prod_guess_names_tr' T [Abs (x, _, Abs _)] = raise Match
-      | case_prod_guess_names_tr' T [Abs (x, xT, t)] =
+    fun case_prod_guess_names_tr' _ T [Abs (x, _, Abs _)] = raise Match
+      | case_prod_guess_names_tr' ctxt T [Abs (x, xT, t)] =
           (case (head_of t) of
             Const (\<^const_syntax>\<open>case_prod\<close>, _) => raise Match
           | _ =>
             let
               val (_ :: yT :: _) = binder_types (domain_type T) handle Bind => raise Match;
-              val (y, t') = Syntax_Trans.atomic_abs_tr' ("y", yT, incr_boundvars 1 t $ Bound 0);
-              val (x', t'') = Syntax_Trans.atomic_abs_tr' (x, xT, t');
+              val (y, t') = Syntax_Trans.atomic_abs_tr' ctxt ("y", yT, incr_boundvars 1 t $ Bound 0);
+              val (x', t'') = Syntax_Trans.atomic_abs_tr' ctxt (x, xT, t');
             in
               Syntax.const \<^syntax_const>\<open>_abs\<close> $
                 (Syntax.const \<^syntax_const>\<open>_pattern\<close> $ x' $ y) $ t''
             end)
-      | case_prod_guess_names_tr' T [t] =
+      | case_prod_guess_names_tr' ctxt T [t] =
           (case head_of t of
             Const (\<^const_syntax>\<open>case_prod\<close>, _) => raise Match
           | _ =>
             let
               val (xT :: yT :: _) = binder_types (domain_type T) handle Bind => raise Match;
               val (y, t') =
-                Syntax_Trans.atomic_abs_tr' ("y", yT, incr_boundvars 2 t $ Bound 1 $ Bound 0);
-              val (x', t'') = Syntax_Trans.atomic_abs_tr' ("x", xT, t');
+                Syntax_Trans.atomic_abs_tr' ctxt ("y", yT, incr_boundvars 2 t $ Bound 1 $ Bound 0);
+              val (x', t'') = Syntax_Trans.atomic_abs_tr' ctxt ("x", xT, t');
             in
               Syntax.const \<^syntax_const>\<open>_abs\<close> $
                 (Syntax.const \<^syntax_const>\<open>_pattern\<close> $ x' $ y) $ t''
             end)
-      | case_prod_guess_names_tr' _ _ = raise Match;
-  in [(\<^const_syntax>\<open>case_prod\<close>, K case_prod_guess_names_tr')] end
+      | case_prod_guess_names_tr' _ _ _ = raise Match;
+  in [(\<^const_syntax>\<open>case_prod\<close>, case_prod_guess_names_tr')] end
 \<close>
 
 text \<open>Reconstruct pattern from (nested) \<^const>\<open>case_prod\<close>s,
@@ -352,39 +357,39 @@ text \<open>Reconstruct pattern from (nested) \<^const>\<open>case_prod\<close>s
 
 print_translation \<open>
   let
-    fun case_prod_tr' [Abs (x, T, t as (Abs abs))] =
+    fun case_prod_tr' ctxt [Abs (x, T, t as (Abs abs))] =
           (* case_prod (\<lambda>x y. t) \<Rightarrow> \<lambda>(x, y) t *)
           let
-            val (y, t') = Syntax_Trans.atomic_abs_tr' abs;
-            val (x', t'') = Syntax_Trans.atomic_abs_tr' (x, T, t');
+            val (y, t') = Syntax_Trans.atomic_abs_tr' ctxt abs;
+            val (x', t'') = Syntax_Trans.atomic_abs_tr' ctxt (x, T, t');
           in
             Syntax.const \<^syntax_const>\<open>_abs\<close> $
               (Syntax.const \<^syntax_const>\<open>_pattern\<close> $ x' $ y) $ t''
           end
-      | case_prod_tr' [Abs (x, T, (s as Const (\<^const_syntax>\<open>case_prod\<close>, _) $ t))] =
+      | case_prod_tr' ctxt [Abs (x, T, (s as Const (\<^const_syntax>\<open>case_prod\<close>, _) $ t))] =
           (* case_prod (\<lambda>x. (case_prod (\<lambda>y z. t))) \<Rightarrow> \<lambda>(x, y, z). t *)
           let
             val Const (\<^syntax_const>\<open>_abs\<close>, _) $
               (Const (\<^syntax_const>\<open>_pattern\<close>, _) $ y $ z) $ t' =
-                case_prod_tr' [t];
-            val (x', t'') = Syntax_Trans.atomic_abs_tr' (x, T, t');
+                case_prod_tr' ctxt [t];
+            val (x', t'') = Syntax_Trans.atomic_abs_tr' ctxt (x, T, t');
           in
             Syntax.const \<^syntax_const>\<open>_abs\<close> $
               (Syntax.const \<^syntax_const>\<open>_pattern\<close> $ x' $
                 (Syntax.const \<^syntax_const>\<open>_patterns\<close> $ y $ z)) $ t''
           end
-      | case_prod_tr' [Const (\<^const_syntax>\<open>case_prod\<close>, _) $ t] =
+      | case_prod_tr' ctxt [Const (\<^const_syntax>\<open>case_prod\<close>, _) $ t] =
           (* case_prod (case_prod (\<lambda>x y z. t)) \<Rightarrow> \<lambda>((x, y), z). t *)
-          case_prod_tr' [(case_prod_tr' [t])]
+          case_prod_tr' ctxt [(case_prod_tr' ctxt [t])]
             (* inner case_prod_tr' creates next pattern *)
-      | case_prod_tr' [Const (\<^syntax_const>\<open>_abs\<close>, _) $ x_y $ Abs abs] =
+      | case_prod_tr' ctxt [Const (\<^syntax_const>\<open>_abs\<close>, _) $ x_y $ Abs abs] =
           (* case_prod (\<lambda>pttrn z. t) \<Rightarrow> \<lambda>(pttrn, z). t *)
-          let val (z, t) = Syntax_Trans.atomic_abs_tr' abs in
+          let val (z, t) = Syntax_Trans.atomic_abs_tr' ctxt abs in
             Syntax.const \<^syntax_const>\<open>_abs\<close> $
               (Syntax.const \<^syntax_const>\<open>_pattern\<close> $ x_y $ z) $ t
           end
-      | case_prod_tr' _ = raise Match;
-  in [(\<^const_syntax>\<open>case_prod\<close>, K case_prod_tr')] end
+      | case_prod_tr' _ _ = raise Match;
+  in [(\<^const_syntax>\<open>case_prod\<close>, case_prod_tr')] end
 \<close>
 
 
@@ -493,10 +498,10 @@ ML \<open>
       | exists_paired_all (Abs (_, _, t)) = exists_paired_all t
       | exists_paired_all _ = false;
     val ss =
-      simpset_of
-       (put_simpset HOL_basic_ss \<^context>
-        addsimps [@{thm split_paired_all}, @{thm unit_all_eq2}, @{thm unit_abs_eta_conv}]
-        |> Simplifier.add_proc \<^simproc>\<open>unit_eq\<close>);
+      HOL_basic_ss
+      |> Simplifier.simpset_map \<^context> (
+        Simplifier.add_simps @{thms split_paired_all unit_all_eq2 unit_abs_eta_conv}
+        #> Simplifier.add_proc \<^simproc>\<open>unit_eq\<close>);
   in
     fun split_all_tac ctxt = SUBGOAL (fn (t, i) =>
       if exists_paired_all t then safe_full_simp_tac (put_simpset ss ctxt) i else no_tac);
@@ -533,7 +538,8 @@ text \<open>
 ML \<open>
 local
   val cond_case_prod_eta_ss =
-    simpset_of (put_simpset HOL_basic_ss \<^context> addsimps @{thms cond_case_prod_eta});
+    HOL_basic_ss
+    |> Simplifier.simpset_map \<^context> (Simplifier.add_simps @{thms cond_case_prod_eta});
   fun Pair_pat k 0 (Bound m) = (m = k)
     | Pair_pat k i (Const (\<^const_name>\<open>Pair\<close>,  _) $ Bound m $ t) =
         i > 0 andalso m = k + i andalso Pair_pat k (i - 1) t
@@ -642,7 +648,9 @@ local (* filtering with exists_p_split is an essential optimization *)
 in
   fun split_conv_tac ctxt = SUBGOAL (fn (t, i) =>
     if exists_p_split t
-    then safe_full_simp_tac (put_simpset HOL_basic_ss ctxt addsimps @{thms case_prod_conv}) i
+    then
+      safe_full_simp_tac
+        (put_simpset HOL_basic_ss ctxt |> Simplifier.add_simps @{thms case_prod_conv}) i
     else no_tac);
 end;
 \<close>
@@ -797,17 +805,15 @@ lemma curry_K: "curry (\<lambda>x. c) = (\<lambda>x y. c)"
 
 text \<open>The composition-uncurry combinator.\<close>
 
-definition scomp :: "('a \<Rightarrow> 'b \<times> 'c) \<Rightarrow> ('b \<Rightarrow> 'c \<Rightarrow> 'd) \<Rightarrow> 'a \<Rightarrow> 'd"  (infixl "\<circ>\<rightarrow>" 60)
+definition scomp :: "('a \<Rightarrow> 'b \<times> 'c) \<Rightarrow> ('b \<Rightarrow> 'c \<Rightarrow> 'd) \<Rightarrow> 'a \<Rightarrow> 'd"  (infixl \<open>\<circ>\<rightarrow>\<close> 60)
   where "f \<circ>\<rightarrow> g = (\<lambda>x. case_prod g (f x))"
 
-no_notation scomp (infixl "\<circ>\<rightarrow>" 60)
+no_notation scomp (infixl \<open>\<circ>\<rightarrow>\<close> 60)
 
 bundle state_combinator_syntax
 begin
-
-notation fcomp (infixl "\<circ>>" 60)
-notation scomp (infixl "\<circ>\<rightarrow>" 60)
-
+notation fcomp (infixl \<open>\<circ>>\<close> 60)
+notation scomp (infixl \<open>\<circ>\<rightarrow>\<close> 60)
 end
 
 context
@@ -991,8 +997,8 @@ lemma fst_swap [simp]: "fst (prod.swap x) = snd x"
 lemma snd_swap [simp]: "snd (prod.swap x) = fst x"
   by (cases x) simp
 
-lemma split_pairs:
-  "(A,B) = X \<longleftrightarrow> fst X = A \<and> snd X = B" and "X = (A,B) \<longleftrightarrow> fst X = A \<and> snd X = B" 
+lemma split_pairs: "(A,B) = X \<longleftrightarrow> fst X = A \<and> snd X = B"
+  and split_pairs2: "X = (A,B) \<longleftrightarrow> fst X = A \<and> snd X = B" 
   by auto
 
 text \<open>Disjoint union of a family of sets -- Sigma.\<close>
@@ -1000,20 +1006,20 @@ text \<open>Disjoint union of a family of sets -- Sigma.\<close>
 definition Sigma :: "'a set \<Rightarrow> ('a \<Rightarrow> 'b set) \<Rightarrow> ('a \<times> 'b) set"
   where "Sigma A B \<equiv> \<Union>x\<in>A. \<Union>y\<in>B x. {Pair x y}"
 
-abbreviation Times :: "'a set \<Rightarrow> 'b set \<Rightarrow> ('a \<times> 'b) set"  (infixr "\<times>" 80)
+context
+begin
+qualified abbreviation Times :: "'a set \<Rightarrow> 'b set \<Rightarrow> ('a \<times> 'b) set"  (infixr \<open>\<times>\<close> 80)
   where "A \<times> B \<equiv> Sigma A (\<lambda>_. B)"
-
-hide_const (open) Times
-
-bundle no_Set_Product_syntax begin
-no_notation Product_Type.Times (infixr "\<times>" 80)
 end
-bundle Set_Product_syntax begin
-notation Product_Type.Times (infixr "\<times>" 80)
+
+bundle set_product_syntax
+begin
+notation Product_Type.Times (infixr \<open>\<times>\<close> 80)
 end
 
 syntax
-  "_Sigma" :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b set \<Rightarrow> ('a \<times> 'b) set"  ("(3SIGMA _:_./ _)" [0, 0, 10] 10)
+  "_Sigma" :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b set \<Rightarrow> ('a \<times> 'b) set"
+    (\<open>(\<open>indent=3 notation=\<open>binder SIGMA\<close>\<close>SIGMA _:_./ _)\<close> [0, 0, 10] 10)
 syntax_consts
   "_Sigma" \<rightleftharpoons> Sigma
 translations
@@ -1051,6 +1057,9 @@ lemma Sigma_empty1 [simp]: "Sigma {} B = {}"
 
 lemma Sigma_empty2 [simp]: "A \<times> {} = {}"
   by blast
+
+lemma Sigma_insert: "Sigma (insert x A) B = (Pair x) ` B x \<union> Sigma A B"
+  by auto
 
 lemma UNIV_Times_UNIV [simp]: "UNIV \<times> UNIV = UNIV"
   by auto
@@ -1188,6 +1197,12 @@ lemma image_paired_Times:
    "(\<lambda>(x,y). (f x, g y)) ` (A \<times> B) = (f ` A) \<times> (g ` B)"
   by auto
 
+lemma Times_insert_right: "A \<times> insert y B = (\<lambda>x. (x, y)) ` A \<union> A \<times> B"
+  by auto
+
+lemma Times_insert_left: "insert x A \<times> B = (\<lambda>y. (x, y)) ` B \<union> A \<times> B"
+  by auto
+
 lemma product_swap: "prod.swap ` (A \<times> B) = B \<times> A"
   by (auto simp add: set_eq_iff)
 
@@ -1311,6 +1326,28 @@ next
     by auto
 qed
 
+lemma bij_betw_map_prod:
+  assumes "bij_betw f A C" "bij_betw g B D"
+  shows   "bij_betw (map_prod f g) (A \<times> B) (C \<times> D)"
+  using assms unfolding bij_betw_def inj_on_def by auto
+
+
+subsection \<open>Code generator setup for paired and tripled bounded set comprehension\<close>
+
+context
+begin
+
+qualified lemma paired_bounded_Collect_eq_filter [code_unfold, no_atp]:
+  \<open>{(x, y). (x, y) \<in> A \<and> P x y} = Set.filter (\<lambda>(x, y). P x y) A\<close>
+  by auto
+
+
+qualified lemma tripled_bounded_Collect_eq_filter [code_unfold, no_atp]:
+  \<open>{(x, y, z). (x, y, z) \<in> A \<and> P x y z} = Set.filter (\<lambda>(x, y, z). P x y z) A\<close>
+  by auto
+
+end
+
 
 subsection \<open>Simproc for rewriting a set comprehension into a pointfree expression\<close>
 
@@ -1353,7 +1390,7 @@ simproc_setup Collect_mem ("Collect t") = \<open>
                     let
                       val simp =
                         full_simp_tac (put_simpset HOL_basic_ss ctxt
-                          addsimps [@{thm split_paired_all}, @{thm case_prod_conv}]) 1
+                          |> Simplifier.add_simps [@{thm split_paired_all}, @{thm case_prod_conv}]) 1
                     in
                       SOME (Goal.prove ctxt [] [] \<^Const>\<open>Pure.eq \<^Type>\<open>set A\<close> for S S'\<close>
                         (K (EVERY

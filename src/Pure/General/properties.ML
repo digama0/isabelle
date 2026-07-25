@@ -16,8 +16,10 @@ sig
   val put: entry -> T -> T
   val remove: string -> T -> T
   val make_string: string -> string -> T
+  val make_bool: string -> bool -> T
   val make_int: string -> int -> T
   val get_string: T -> string -> string
+  val get_bool: T -> string -> bool
   val get_int: T -> string -> int
   val get_seconds: T -> string -> Time.time
 end;
@@ -40,9 +42,15 @@ fun put entry (props: T) = AList.update (op =) entry props;
 fun remove name (props: T) = AList.delete (op =) name props;
 
 fun make_string k s = if s = "" then [] else [(k, s)];
+fun make_bool k b = if not b then [] else [(k, Value.print_bool b)];
 fun make_int k i = if i = 0 then [] else [(k, Value.print_int i)];
 
 val get_string = the_default "" oo get;
+
+fun get_bool props name =
+  (case get props name of
+    NONE => false
+  | SOME s => Value.parse_bool s);
 
 fun get_int props name =
   (case get props name of

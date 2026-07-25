@@ -239,7 +239,7 @@ fun get_dist_thm2 ctxt x y =
 
     fun get_paths dist_thm =
       let
-        val ctree = Thm.cprop_of dist_thm |> Thm.dest_comb |> #2 |> Thm.dest_comb |> #2;
+        val ctree = Thm.cprop_of dist_thm |> Thm.dest_arg |> Thm.dest_arg;
         val tree = Thm.term_of ctree;
         val x_path = the (DistinctTreeProver.find_tree x tree);
         val y_path = the (DistinctTreeProver.find_tree y tree);
@@ -290,7 +290,7 @@ fun distinctTree_tac ctxt = SUBGOAL (fn (goal, i) =>
       | NONE => no_tac)
   | _ => no_tac));
 
-val distinctNameSolver = mk_solver "distinctNameSolver" distinctTree_tac;
+val distinctNameSolver = Simplifier.mk_solver "distinctNameSolver" distinctTree_tac;
 
 val distinct_simproc =
   \<^simproc_setup>\<open>passive distinct_simproc ("x = y") =
@@ -349,7 +349,7 @@ fun namespace_definition name nameT parent_expr parent_comps new_comps thy =
 
     val assume =
       ((Binding.name dist_thm_name, [attr]),
-        [(HOLogic.Trueprop $
+        [(HOLogic.mk_Trueprop
           (Const (\<^const_name>\<open>all_distinct\<close>, Type (\<^type_name>\<open>tree\<close>, [nameT]) --> HOLogic.boolT) $
             DistinctTreeProver.mk_tree (fn n => Free (n, nameT)) nameT
               (sort fast_string_ord all_comps)), [])]);
@@ -463,8 +463,8 @@ fun statespace_definition state_type args name parents parent_comps components t
       in Context.mapping I upd_prf ctxt end;
 
    fun string_of_typ T =
-      Print_Mode.setmp []
-        (Syntax.string_of_typ (Config.put show_sorts true (Syntax.init_pretty_global thy))) T;
+      Pretty.pure_string_of
+        (Syntax.pretty_typ (Config.put show_sorts true (Syntax.init_pretty_global thy)) T);
    val fixestate = (case state_type of
          NONE => []
        | SOME s =>

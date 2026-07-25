@@ -210,7 +210,8 @@ fun print_classes ctxt =
     Sorts.all_classes algebra
     |> sort (Name_Space.extern_ord ctxt class_space)
     |> map prt_entry
-    |> Pretty.writeln_chunks2
+    |> Pretty.chunks2
+    |> Pretty.writeln
   end;
 
 
@@ -276,7 +277,7 @@ fun make_rewrite t c_ty =
   let
     val vs = strip_abs_vars t;
     val vts = map snd vs
-      |> Name.invent_names Name.context Name.uu
+      |> Name.invent_names_global Name.uu
       |> map (fn (v, T) => Var ((v, 0), T));
   in (betapplys (t, vts), betapplys (Const c_ty, vts)) end;
 
@@ -361,12 +362,12 @@ fun guess_morphism_identity (b, rhs) phi1 phi2 =
     val rhs2 = Morphism.term phi2 rhs;
   in n1 = n2 andalso Term.aconv_untyped (rhs1, rhs2) end;
 
-fun target_const class phi0 prmode (b, rhs) lthy =
+fun target_const class phi prmode (b, rhs) lthy =
   let
     val export =
       Morphism.set_context' lthy (Variable.export_morphism lthy (Local_Theory.target_of lthy));
     val guess_identity = guess_morphism_identity (b, rhs) export;
-    val guess_canonical = guess_morphism_identity (b, rhs) (export $> phi0);
+    val guess_canonical = guess_morphism_identity (b, rhs) (export $> phi);
   in
     lthy
     |> Generic_Target.locale_target_const class
@@ -411,12 +412,13 @@ in
 fun const class ((b, mx), lhs) params lthy =
   let
     val phi = morphism lthy class;
+    val b_canonical = b |> Name_Space.transform_binding (Proof_Context.naming_of lthy);
     val dangling_params = map (Morphism.term phi) (uncurry append (dangling_params_for lthy class params));
   in
     lthy
     |> target_const class phi Syntax.mode_default (b, lhs)
     |> Local_Theory.raw_theory (canonical_const class phi dangling_params
-         ((Morphism.binding phi b, if null dangling_params then mx else NoSyn), Morphism.term phi lhs))
+         ((Morphism.binding phi b_canonical, if null dangling_params then mx else NoSyn), Morphism.term phi lhs))
     |> Generic_Target.standard_const (fn (this, other) => other <> 0 andalso this <> other)
          Syntax.mode_default ((b, if null dangling_params then NoSyn else mx), lhs)
     |> synchronize_class_syntax_target class
@@ -438,7 +440,7 @@ fun canonical_abbrev class phi prmode with_syntax ((b, mx), rhs) thy =
     thy
     |> Sign.add_abbrev (#1 prmode) (b, Logic.varify_types_global rhs')
     |> snd
-    |> with_syntax ? Sign.notation true prmode [(Const (c, fastype_of rhs), mx)]
+    |> with_syntax ? Sign.notation_global true prmode [(Const (c, fastype_of rhs), mx)]
     |> with_syntax ? register_operation class (c, rhs)
         (#1 prmode = Print_Mode.input)
     |> Sign.add_const_constraint (c, SOME (fastype_of rhs'))
@@ -447,7 +449,7 @@ fun canonical_abbrev class phi prmode with_syntax ((b, mx), rhs) thy =
 fun canonical_abbrev_target class phi prmode ((b, mx), rhs) lthy =
   let
     val thy = Proof_Context.theory_of lthy;
-    val preprocess = perhaps (try (Pattern.rewrite_term_top thy (these_unchecks thy [class]) []));
+    val preprocess = perhaps (try (Pattern.rewrite_term_yoyo thy (these_unchecks thy [class]) []));
     val (global_rhs, (_, (_, term_params))) =
       Generic_Target.export_abbrev lthy preprocess rhs;
     val mx' = Generic_Target.check_mixfix_global (b, null term_params) mx;
@@ -469,7 +471,7 @@ fun abbrev class prmode ((b, mx), rhs) lthy =
     val thy = Proof_Context.theory_of lthy;
     val phi = morphism lthy class;
     val rhs_generic =
-      perhaps (try (Pattern.rewrite_term_top thy (these_unchecks_reversed thy [class]) [])) rhs;
+      perhaps (try (Pattern.rewrite_term_yoyo thy (these_unchecks_reversed thy [class]) [])) rhs;
   in
     lthy
     |> canonical_abbrev_target class phi prmode ((b, mx), rhs)
@@ -581,7 +583,7 @@ fun read_multi_arity thy (raw_tycos, raw_sorts, raw_sort) =
       (raw_tyco, raw_sorts, raw_sort)) raw_tycos;
     val tycos = map #1 all_arities;
     val (_, sorts, sort) = hd all_arities;
-    val vs = Name.invent_names Name.context Name.aT sorts;
+    val vs = Name.invent_types_global sorts;
   in (tycos, vs, sort) end;
 
 

@@ -9,7 +9,6 @@ package isabelle
 
 
 import scala.collection.mutable
-import scala.util.Sorting
 
 
 object Text {
@@ -70,7 +69,7 @@ object Text {
       if (this apart that) None
       else Some(Range(this.start min that.start, this.stop max that.stop))
 
-    def substring(text: String): String = text.substring(start, stop)
+    def substring(text: String): String = text.substring(start, stop).nn
 
     def try_substring(text: String): Option[String] =
       try { Some(substring(text)) }
@@ -138,8 +137,10 @@ object Text {
   /* editing */
 
   object Edit {
-    def insert(start: Offset, text: String): Edit = new Edit(true, start, text)
-    def remove(start: Offset, text: String): Edit = new Edit(false, start, text)
+    def make(is_insert: Boolean, start: Offset, text: String): Edit =
+      new Edit(is_insert, start, text)
+    def insert(start: Offset, text: String): Edit = make(true, start, text)
+    def remove(start: Offset, text: String): Edit = make(false, start, text)
     def inserts(start: Offset, text: String): List[Edit] =
       if (text == "") Nil else List(insert(start, text))
     def removes(start: Offset, text: String): List[Edit] =
@@ -151,7 +152,7 @@ object Text {
 
   final class Edit private(val is_insert: Boolean, val start: Offset, val text: String) {
     override def toString: String =
-      (if (is_insert) "Insert(" else "Remove(") + (start, text).toString + ")"
+      (if (is_insert) "Insert(" else "Remove(") + (start, text.length).toString + ")"
 
 
     /* transform offsets */
@@ -168,10 +169,10 @@ object Text {
     /* edit strings */
 
     private def insert(i: Offset, string: String): String =
-      string.substring(0, i) + text + string.substring(i)
+      string.substring(0, i).nn + text + string.substring(i).nn
 
     private def remove(i: Offset, count: Offset, string: String): String =
-      string.substring(0, i) + string.substring(i + count)
+      string.substring(0, i).nn + string.substring(i + count).nn
 
     def can_edit(string: String, shift: Offset): Boolean =
       shift <= start && start < shift + string.length
@@ -184,7 +185,7 @@ object Text {
         val count = text.length min (string.length - i)
         val rest =
           if (count == text.length) None
-          else Some(Edit.remove(start, text.substring(count)))
+          else Some(Edit.remove(start, text.substring(count).nn))
         (rest, remove(i, count, string))
       }
   }

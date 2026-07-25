@@ -9,44 +9,39 @@ theory Sprod
   imports Cfun
 begin
 
-default_sort pcpo
-
-
 subsection \<open>Definition of strict product type\<close>
 
-definition "sprod = {p::'a \<times> 'b. p = \<bottom> \<or> (fst p \<noteq> \<bottom> \<and> snd p \<noteq> \<bottom>)}"
+definition "sprod = {p::'a::pcpo \<times> 'b::pcpo. p = \<bottom> \<or> (fst p \<noteq> \<bottom> \<and> snd p \<noteq> \<bottom>)}"
 
-pcpodef ('a, 'b) sprod  ("(_ \<otimes>/ _)" [21,20] 20) = "sprod :: ('a \<times> 'b) set"
+pcpodef ('a::pcpo, 'b::pcpo) sprod  (\<open>(\<open>notation=\<open>infix strict product\<close>\<close>_ \<otimes>/ _)\<close> [21,20] 20) =
+  "sprod :: ('a \<times> 'b) set"
   by (simp_all add: sprod_def)
 
 instance sprod :: ("{chfin,pcpo}", "{chfin,pcpo}") chfin
   by (rule typedef_chfin [OF type_definition_sprod below_sprod_def])
 
 type_notation (ASCII)
-  sprod  (infixr "**" 20)
+  sprod  (infixr \<open>**\<close> 20)
 
 
 subsection \<open>Definitions of constants\<close>
 
-definition sfst :: "('a ** 'b) \<rightarrow> 'a"
+definition sfst :: "('a::pcpo ** 'b::pcpo) \<rightarrow> 'a"
   where "sfst = (\<Lambda> p. fst (Rep_sprod p))"
 
-definition ssnd :: "('a ** 'b) \<rightarrow> 'b"
+definition ssnd :: "('a::pcpo ** 'b::pcpo) \<rightarrow> 'b"
   where "ssnd = (\<Lambda> p. snd (Rep_sprod p))"
 
-definition spair :: "'a \<rightarrow> 'b \<rightarrow> ('a ** 'b)"
+definition spair :: "'a::pcpo \<rightarrow> 'b::pcpo \<rightarrow> ('a ** 'b)"
   where "spair = (\<Lambda> a b. Abs_sprod (seq\<cdot>b\<cdot>a, seq\<cdot>a\<cdot>b))"
 
-definition ssplit :: "('a \<rightarrow> 'b \<rightarrow> 'c) \<rightarrow> ('a ** 'b) \<rightarrow> 'c"
+definition ssplit :: "('a::pcpo \<rightarrow> 'b::pcpo \<rightarrow> 'c::pcpo) \<rightarrow> ('a ** 'b) \<rightarrow> 'c"
   where "ssplit = (\<Lambda> f p. seq\<cdot>p\<cdot>(f\<cdot>(sfst\<cdot>p)\<cdot>(ssnd\<cdot>p)))"
 
-nonterminal stuple_args
 syntax
-  "" :: "logic \<Rightarrow> stuple_args"  ("_")
-  "_stuple_args" :: "logic \<Rightarrow> stuple_args \<Rightarrow> stuple_args"  ("_,/ _")
-  "_stuple" :: "[logic, stuple_args] \<Rightarrow> logic"  ("(1'(:_,/ _:'))")
+  "_stuple" :: "[logic, args] \<Rightarrow> logic"  (\<open>(\<open>indent=1 notation=\<open>mixfix strict tuple\<close>\<close>'(:_,/ _:'))\<close>)
 syntax_consts
-  "_stuple_args" "_stuple" \<rightleftharpoons> spair
+  "_stuple" \<rightleftharpoons> spair
 translations
   "(:x, y, z:)" \<rightleftharpoons> "(:x, (:y, z:):)"
   "(:x, y:)" \<rightleftharpoons> "CONST spair\<cdot>x\<cdot>y"

@@ -6,6 +6,7 @@ Untyped, unscoped, unchecked access to JVM objects.
 
 package isabelle
 
+import scala.language.unsafeNulls
 
 import java.lang.reflect.{Constructor, Method, Field}
 
@@ -17,7 +18,7 @@ object Untyped {
     con
   }
 
-  def the_constructor[C](c:  Class[C]): Constructor[C] = {
+  def the_constructor[C](c: Class[C]): Constructor[C] = {
     c.getDeclaredConstructors().toList match {
       case List(con) =>
         con.setAccessible(true)

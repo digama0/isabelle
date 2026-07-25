@@ -10,6 +10,8 @@ Checklist for official releases
 
 - Admin/components/bundled: update naproche;
 
+- test "isabelle find_facts_index FOL && isabelle find_facts_server";
+
 - test "isabelle dump -b Pure ZF";
 
 - test "isabelle build -o export_theory -f ZF";
@@ -57,7 +59,7 @@ Checklist for official releases
 
 - Windows: check recent MiKTeX;
 
-- Phabricator:
+- Phorge:
     . src/Doc/System/Phabricator.thy: check/update underlying Ubuntu version
     . etc/options: check/update phabricator_version entries;
 
@@ -78,19 +80,21 @@ Packaging
 - regular packaging:
 
   #on fast Linux machine, with access to build_host for each platform
-  Admin/build_release -D ~/tmp/isadist -b HOL -R Isabelle2024 -j2 -l
+  Admin/build_release -D ~/tmp/isadist -b HOL -R Isabelle2025-1 -l -F -L \
+    -e ISABELLE_SWIPL=/usr/bin/swipl -e ISABELLE_SMLNJ=/usr/bin/sml \
+    -e 'ISABELLE_TOOL_JAVA_OPTIONS="-Djava.awt.headless=true -Xms512m -Xmx6g -Xss16m"'
 
 - Docker image:
 
-  isabelle docker_build -o Dockerfile -E -t makarius/isabelle:Isabelle2024 Isabelle2024_linux.tar.gz
-  isabelle docker_build -o Dockerfile -E -t makarius/isabelle:Isabelle2024_X11_Latex -P X11 -P latex Isabelle2024_linux.tar.gz
+  isabelle docker_build -o Dockerfile -E -t makarius/isabelle:Isabelle2025-1 Isabelle2025-1_linux.tar.gz
+  isabelle docker_build -o Dockerfile -E -t makarius/isabelle:Isabelle2025-1_X11_Latex -P X11 -P latex Isabelle2025-1_linux.tar.gz
 
-  isabelle docker_build -o Dockerfile -E -t makarius/isabelle:Isabelle2024_ARM Isabelle2024_linux_arm.tar.gz
-  isabelle docker_build -o Dockerfile -E -t makarius/isabelle:Isabelle2024_ARM_X11_Latex -P X11 -P latex Isabelle2024_linux_arm.tar.gz
+  isabelle docker_build -o Dockerfile -E -t makarius/isabelle:Isabelle2025-1_ARM Isabelle2025-1_linux_arm.tar.gz
+  isabelle docker_build -o Dockerfile -E -t makarius/isabelle:Isabelle2025-1_ARM_X11_Latex -P X11 -P latex Isabelle2025-1_linux_arm.tar.gz
 
   docker login
 
-  docker push makarius/isabelle:Isabelle2024
+  docker push makarius/isabelle:Isabelle2025-1
 
   docker tag ... latest
   docker push makarius/isabelle:latest

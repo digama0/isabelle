@@ -169,8 +169,8 @@ fun get_inst_tyco consts = try (dest_Type_name o the_single o Consts.typargs con
 fun unoverload ctxt = rewrite_rule ctxt (inst_thms ctxt);
 fun overload ctxt = rewrite_rule ctxt (map Thm.symmetric (inst_thms ctxt));
 
-fun unoverload_conv ctxt = Raw_Simplifier.rewrite ctxt true (inst_thms ctxt);
-fun overload_conv ctxt = Raw_Simplifier.rewrite ctxt true (map Thm.symmetric (inst_thms ctxt));
+fun unoverload_conv ctxt = Raw_Simplifier.rewrite_wrt ctxt true (inst_thms ctxt);
+fun overload_conv ctxt = Raw_Simplifier.rewrite_wrt ctxt true (map Thm.symmetric (inst_thms ctxt));
 
 fun lookup_inst_param consts params (c, T) =
   (case get_inst_tyco consts (c, T) of
@@ -280,12 +280,12 @@ fun add_arity raw_th thy =
     val binding =
       Binding.concealed (Binding.name (prefix arity_prefix (Logic.name_arity arity)));
 
-    val args = Name.invent_names Name.context Name.aT Ss;
+    val args = map TFree (Name.invent_types_global Ss);
     val missing_params =
       Sign.complete_sort thy [c]
       |> maps (these o Option.map #params o try (get_info thy))
       |> filter_out (fn (const, _) => can (get_inst_param thy) (const, t))
-      |> (map o apsnd o map_atyps) (K (Type (t, map TFree args)));
+      |> (map o apsnd o map_atyps) (K (Type (t, args)));
   in
     thy
     |> Global_Theory.store_thm (binding, th)

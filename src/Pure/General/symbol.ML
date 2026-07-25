@@ -114,7 +114,7 @@ local
 in
   fun spaces n =
     if n < 64 then Vector.nth spaces0 n
-    else replicate_string (n div 64) (Vector.nth spaces0 64) ^ Vector.nth spaces0 (n mod 64);
+    else implode (Vector.nth spaces0 (n mod 64) :: replicate (n div 64) (Vector.nth spaces0 64));
 end;
 
 val comment = "\<comment>";
@@ -498,20 +498,22 @@ val make_bold = make_style bold;
 
 (** symbol output **)
 
-(* length *)
+(* metric *)
 
-fun sym_len s =
-  if String.isPrefix "\092<long" s orelse String.isPrefix "\092<Long" s then 2
-  else if is_printable s then 1
+fun metric1 s =
+  if String.isPrefix "\092<longlonglong" s then 4
+  else if String.isPrefix "\092<longlong" s then 3
+  else if String.isPrefix "\092<long" s orelse String.isPrefix "\092<Long" s then 2
+  else if is_blank s orelse is_printable s then 1
   else 0;
 
-fun sym_length ss = fold (fn s => fn n => sym_len s + n) ss 0;
+fun metric ss = fold (fn s => fn n => metric1 s + n) ss 0;
 
-fun output s = (s, sym_length (Symbol.explode s));
+fun output s = (s, metric (Symbol.explode s));
 
 
 (*final declarations of this structure!*)
 val explode = Symbol.explode;
-val length = sym_length;
+val length = metric;
 
 end;

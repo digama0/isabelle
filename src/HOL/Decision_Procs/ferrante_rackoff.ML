@@ -161,10 +161,11 @@ let
    val qe_th = Drule.implies_elim_list
                   ((fconv_rule (Thm.beta_conversion true))
                    (Thm.instantiate' [] (map SOME [cU, qx, get_p1 minf_th, get_p1 pinf_th])
-                        qe))
+                        (mk_meta_eq qe)))
                   [fU, ld_th, nmi_th, npi_th, minf_th, pinf_th]
     val bex_conv =
-      Simplifier.rewrite (put_simpset HOL_basic_ss ctxt addsimps @{thms simp_thms bex_simps(1-5)})
+      Simplifier.rewrite
+        (put_simpset HOL_basic_ss ctxt |> Simplifier.add_simps @{thms simp_thms bex_simps(1-5)})
     val result_th = fconv_rule (arg_conv bex_conv) (Thm.transitive enth qe_th)
    in result_th
    end
@@ -198,9 +199,8 @@ in h end;
 fun raw_ferrack_qe_conv ctxt (thy, {isolate_conv, whatis, simpset = ss}) tm =
  let
    val ss' =
-     merge_ss (simpset_of
-      (put_simpset HOL_basic_ss ctxt addsimps
-        @{thms simp_thms ex_simps all_simps not_all all_not_ex ex_disj_distrib}), ss);
+     Simplifier.merge_ss (HOL_basic_ss |> Simplifier.simpset_map ctxt
+      (Simplifier.add_simps @{thms simp_thms ex_simps all_simps not_all all_not_ex ex_disj_distrib}), ss);
    val pcv = Simplifier.rewrite (put_simpset ss' ctxt);
    val postcv = Simplifier.rewrite (put_simpset ss ctxt);
    val nnf = K (nnf_conv ctxt then_conv postcv)

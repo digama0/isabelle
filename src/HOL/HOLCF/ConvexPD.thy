@@ -11,7 +11,7 @@ begin
 subsection \<open>Basis preorder\<close>
 
 definition
-  convex_le :: "'a pd_basis \<Rightarrow> 'a pd_basis \<Rightarrow> bool" (infix "\<le>\<natural>" 50) where
+  convex_le :: "'a::bifinite pd_basis \<Rightarrow> 'a pd_basis \<Rightarrow> bool" (infix \<open>\<le>\<natural>\<close> 50) where
   "convex_le = (\<lambda>u v. u \<le>\<sharp> v \<and> u \<le>\<flat> v)"
 
 lemma convex_le_refl [simp]: "t \<le>\<natural> t"
@@ -92,10 +92,7 @@ proof (intro exI conjI)
     apply fast
     done
   show "t \<le>\<natural> ?v" "u \<le>\<natural> ?w"
-   apply (insert z)
-   apply (simp_all add: convex_le_def upper_le_def lower_le_def Rep_PDPlus Rep_v Rep_w)
-   apply fast+
-   done
+    using z by (simp_all add: convex_le_def upper_le_def lower_le_def Rep_PDPlus Rep_v Rep_w) fast+
 qed
 
 lemma convex_le_induct [induct set: convex_le]:
@@ -104,22 +101,29 @@ lemma convex_le_induct [induct set: convex_le]:
   assumes 3: "\<And>a b. a \<sqsubseteq> b \<Longrightarrow> P (PDUnit a) (PDUnit b)"
   assumes 4: "\<And>t u v w. \<lbrakk>P t v; P u w\<rbrakk> \<Longrightarrow> P (PDPlus t u) (PDPlus v w)"
   shows "P t u"
-using le apply (induct t arbitrary: u rule: pd_basis_induct)
-apply (erule rev_mp)
-apply (induct_tac u rule: pd_basis_induct1)
-apply (simp add: 3)
-apply (simp, clarify, rename_tac a b t)
-apply (subgoal_tac "P (PDPlus (PDUnit a) (PDUnit a)) (PDPlus (PDUnit b) t)")
-apply (simp add: PDPlus_absorb)
-apply (erule (1) 4 [OF 3])
-apply (drule convex_le_PDPlus_lemma, clarify)
-apply (simp add: 4)
-done
+  using le
+proof (induct t arbitrary: u rule: pd_basis_induct)
+  case (PDUnit a)
+  then show ?case
+  proof (induct u rule: pd_basis_induct1)
+    case (PDUnit b)
+    then show ?case by (simp add: 3)
+  next
+    case (PDPlus b t)
+    have "P (PDPlus (PDUnit a) (PDUnit a)) (PDPlus (PDUnit b) t)"
+      by (rule 4 [OF 3]) (use PDPlus in simp_all)
+    then show ?case by (simp add: PDPlus_absorb)
+  qed
+next
+  case PDPlus
+  from PDPlus(1,2) show ?case
+    using convex_le_PDPlus_lemma [OF PDPlus(3)] by (auto simp add: 4)
+qed
 
 
 subsection \<open>Type definition\<close>
 
-typedef 'a convex_pd  ("('(_')\<natural>)") =
+typedef 'a::bifinite convex_pd  (\<open>(\<open>notation=\<open>postfix convex_pd\<close>\<close>'(_')\<natural>)\<close>) =
   "{S::'a pd_basis set. convex_le.ideal S}"
 by (rule convex_le.ex_ideal)
 
@@ -141,7 +145,7 @@ using type_definition_convex_pd below_convex_pd_def
 by (rule convex_le.typedef_ideal_cpo)
 
 definition
-  convex_principal :: "'a pd_basis \<Rightarrow> 'a convex_pd" where
+  convex_principal :: "'a::bifinite pd_basis \<Rightarrow> 'a convex_pd" where
   "convex_principal t = Abs_convex_pd {u. u \<le>\<natural> t}"
 
 interpretation convex_pd:
@@ -165,26 +169,21 @@ by (rule convex_pd_minimal [THEN bottomI, symmetric])
 subsection \<open>Monadic unit and plus\<close>
 
 definition
-  convex_unit :: "'a \<rightarrow> 'a convex_pd" where
+  convex_unit :: "'a::bifinite \<rightarrow> 'a convex_pd" where
   "convex_unit = compact_basis.extension (\<lambda>a. convex_principal (PDUnit a))"
 
 definition
-  convex_plus :: "'a convex_pd \<rightarrow> 'a convex_pd \<rightarrow> 'a convex_pd" where
+  convex_plus :: "'a::bifinite convex_pd \<rightarrow> 'a convex_pd \<rightarrow> 'a convex_pd" where
   "convex_plus = convex_pd.extension (\<lambda>t. convex_pd.extension (\<lambda>u.
       convex_principal (PDPlus t u)))"
 
 abbreviation
-  convex_add :: "'a convex_pd \<Rightarrow> 'a convex_pd \<Rightarrow> 'a convex_pd"
-    (infixl "\<union>\<natural>" 65) where
+  convex_add :: "'a::bifinite convex_pd \<Rightarrow> 'a convex_pd \<Rightarrow> 'a convex_pd"
+    (infixl \<open>\<union>\<natural>\<close> 65) where
   "xs \<union>\<natural> ys == convex_plus\<cdot>xs\<cdot>ys"
 
-nonterminal convex_pd_args
 syntax
-  "" :: "logic \<Rightarrow> convex_pd_args"  ("_")
-  "_convex_pd_args" :: "logic \<Rightarrow> convex_pd_args \<Rightarrow> convex_pd_args"  ("_,/ _")
-  "_convex_pd" :: "convex_pd_args \<Rightarrow> logic"  ("{_}\<natural>")
-syntax_consts
-  "_convex_pd_args" "_convex_pd" == convex_add
+  "_convex_pd" :: "args \<Rightarrow> logic"  (\<open>(\<open>indent=1 notation=\<open>mixfix convex_pd enumeration\<close>\<close>{_}\<natural>)\<close>)
 translations
   "{x,xs}\<natural>" == "{x}\<natural> \<union>\<natural> {xs}\<natural>"
   "{x}\<natural>" == "CONST convex_unit\<cdot>x"
@@ -285,34 +284,42 @@ lemma convex_pd_induct1:
   assumes P: "adm P"
   assumes unit: "\<And>x. P {x}\<natural>"
   assumes insert: "\<And>x ys. \<lbrakk>P {x}\<natural>; P ys\<rbrakk> \<Longrightarrow> P ({x}\<natural> \<union>\<natural> ys)"
-  shows "P (xs::'a convex_pd)"
-apply (induct xs rule: convex_pd.principal_induct, rule P)
-apply (induct_tac a rule: pd_basis_induct1)
-apply (simp only: convex_unit_Rep_compact_basis [symmetric])
-apply (rule unit)
-apply (simp only: convex_unit_Rep_compact_basis [symmetric]
-                  convex_plus_principal [symmetric])
-apply (erule insert [OF unit])
-done
+  shows "P (xs::'a::bifinite convex_pd)"
+proof (induct xs rule: convex_pd.principal_induct)
+  show "P (convex_principal a)" for a
+  proof (induct a rule: pd_basis_induct1)
+    case PDUnit
+    show ?case by (simp only: convex_unit_Rep_compact_basis [symmetric]) (rule unit)
+  next
+    case PDPlus
+    show ?case
+      by (simp only: convex_unit_Rep_compact_basis [symmetric] convex_plus_principal [symmetric])
+        (rule insert [OF unit PDPlus])
+  qed
+qed (rule P)
 
-lemma convex_pd_induct
-  [case_names adm convex_unit convex_plus, induct type: convex_pd]:
+lemma convex_pd_induct [case_names adm convex_unit convex_plus, induct type: convex_pd]:
   assumes P: "adm P"
   assumes unit: "\<And>x. P {x}\<natural>"
   assumes plus: "\<And>xs ys. \<lbrakk>P xs; P ys\<rbrakk> \<Longrightarrow> P (xs \<union>\<natural> ys)"
-  shows "P (xs::'a convex_pd)"
-apply (induct xs rule: convex_pd.principal_induct, rule P)
-apply (induct_tac a rule: pd_basis_induct)
-apply (simp only: convex_unit_Rep_compact_basis [symmetric] unit)
-apply (simp only: convex_plus_principal [symmetric] plus)
-done
+  shows "P (xs::'a::bifinite convex_pd)"
+proof (induct xs rule: convex_pd.principal_induct)
+  show "P (convex_principal a)" for a
+  proof (induct a rule: pd_basis_induct)
+    case PDUnit
+    then show ?case by (simp only: convex_unit_Rep_compact_basis [symmetric] unit)
+  next
+    case PDPlus
+    then show ?case by (simp only: convex_plus_principal [symmetric] plus)
+  qed
+qed (rule P)
 
 
 subsection \<open>Monadic bind\<close>
 
 definition
   convex_bind_basis ::
-  "'a pd_basis \<Rightarrow> ('a \<rightarrow> 'b convex_pd) \<rightarrow> 'b convex_pd" where
+  "'a::bifinite pd_basis \<Rightarrow> ('a \<rightarrow> 'b convex_pd) \<rightarrow> 'b::bifinite convex_pd" where
   "convex_bind_basis = fold_pd
     (\<lambda>a. \<Lambda> f. f\<cdot>(Rep_compact_basis a))
     (\<lambda>x y. \<Lambda> f. x\<cdot>f \<union>\<natural> y\<cdot>f)"
@@ -345,15 +352,12 @@ apply (simp add: monofun_LAM monofun_cfun)
 done
 
 definition
-  convex_bind :: "'a convex_pd \<rightarrow> ('a \<rightarrow> 'b convex_pd) \<rightarrow> 'b convex_pd" where
+  convex_bind :: "'a::bifinite convex_pd \<rightarrow> ('a \<rightarrow> 'b convex_pd) \<rightarrow> 'b::bifinite convex_pd" where
   "convex_bind = convex_pd.extension convex_bind_basis"
 
 syntax
   "_convex_bind" :: "[logic, logic, logic] \<Rightarrow> logic"
-    ("(3\<Union>\<natural>_\<in>_./ _)" [0, 0, 10] 10)
-
-syntax_consts
-  "_convex_bind" == convex_bind
+    (\<open>(\<open>indent=3 notation=\<open>binder convex_bind\<close>\<close>\<Union>\<natural>_\<in>_./ _)\<close> [0, 0, 10] 10)
 
 translations
   "\<Union>\<natural>x\<in>xs. e" == "CONST convex_bind\<cdot>xs\<cdot>(\<Lambda> x. e)"
@@ -386,7 +390,7 @@ by (induct xs, simp_all)
 subsection \<open>Map\<close>
 
 definition
-  convex_map :: "('a \<rightarrow> 'b) \<rightarrow> 'a convex_pd \<rightarrow> 'b convex_pd" where
+  convex_map :: "('a::bifinite \<rightarrow> 'b) \<rightarrow> 'a convex_pd \<rightarrow> 'b::bifinite convex_pd" where
   "convex_map = (\<Lambda> f xs. convex_bind\<cdot>xs\<cdot>(\<Lambda> x. {f\<cdot>x}\<natural>))"
 
 lemma convex_map_unit [simp]:
@@ -474,6 +478,7 @@ proof (rule finite_deflation_intro)
     by (rule finite_range_imp_finite_fixes)
 qed
 
+
 subsection \<open>Convex powerdomain is bifinite\<close>
 
 lemma approx_chain_convex_map:
@@ -489,10 +494,11 @@ proof
     by (fast intro!: approx_chain_convex_map)
 qed
 
+
 subsection \<open>Join\<close>
 
 definition
-  convex_join :: "'a convex_pd convex_pd \<rightarrow> 'a convex_pd" where
+  convex_join :: "'a::bifinite convex_pd convex_pd \<rightarrow> 'a convex_pd" where
   "convex_join = (\<Lambda> xss. convex_bind\<cdot>xss\<cdot>(\<Lambda> xs. xs))"
 
 lemma convex_join_unit [simp]:
@@ -528,7 +534,7 @@ lemma convex_le_imp_upper_le: "t \<le>\<natural> u \<Longrightarrow> t \<le>\<sh
 unfolding convex_le_def by simp
 
 definition
-  convex_to_upper :: "'a convex_pd \<rightarrow> 'a upper_pd" where
+  convex_to_upper :: "'a::bifinite convex_pd \<rightarrow> 'a upper_pd" where
   "convex_to_upper = convex_pd.extension upper_principal"
 
 lemma convex_to_upper_principal [simp]:
@@ -568,7 +574,7 @@ lemma convex_le_imp_lower_le: "t \<le>\<natural> u \<Longrightarrow> t \<le>\<fl
 unfolding convex_le_def by simp
 
 definition
-  convex_to_lower :: "'a convex_pd \<rightarrow> 'a lower_pd" where
+  convex_to_lower :: "'a::bifinite convex_pd \<rightarrow> 'a lower_pd" where
   "convex_to_lower = convex_pd.extension lower_principal"
 
 lemma convex_to_lower_principal [simp]:

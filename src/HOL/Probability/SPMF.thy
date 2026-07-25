@@ -513,7 +513,7 @@ subsubsection \<open>Bind\<close>
 definition bind_spmf :: "'a spmf \<Rightarrow> ('a \<Rightarrow> 'b spmf) \<Rightarrow> 'b spmf"
   where "bind_spmf x f = bind_pmf x (\<lambda>a. case a of None \<Rightarrow> return_pmf None | Some a' \<Rightarrow> f a')"
 
-adhoc_overloading Monad_Syntax.bind bind_spmf
+adhoc_overloading Monad_Syntax.bind \<rightleftharpoons> bind_spmf
 
 lemma return_None_bind_spmf [simp]: "return_pmf None \<bind> (f :: 'a \<Rightarrow> _) = return_pmf None"
   by(simp add: bind_spmf_def bind_return_pmf)
@@ -941,7 +941,7 @@ lemma nn_integral_embed_spmf_eq_1:
 proof -
   have "?lhs = \<integral>\<^sup>+ x. ?f x * indicator {None} x + ?f x * indicator (range Some) x \<partial>?M"
     by(rule nn_integral_cong)(auto split: split_indicator)
-  also have "\<dots> = (1 - enn2real (\<integral>\<^sup>+ x. ennreal (f x) \<partial>count_space UNIV)) + \<integral>\<^sup>+ x. ?f x * indicator (range Some) x \<partial>?M"
+  also have "\<dots> = (1 - enn2real (\<integral>\<^sup>+ x. ennreal (f x) \<partial>count_space UNIV)) + (\<integral>\<^sup>+ x. ?f x * indicator (range Some) x \<partial>?M)"
     (is "_ = ?None + ?Some")
     by(subst nn_integral_add)(simp_all add: AE_count_space max_def le_diff_eq real_le_ereal_iff one_ereal_def[symmetric] prob split: option.split)
   also have "?Some = \<integral>\<^sup>+ x. ?f x \<partial>count_space (range Some)"
@@ -992,7 +992,7 @@ abbreviation ord_spmf :: "('a \<Rightarrow> 'a \<Rightarrow> bool) \<Rightarrow>
   where "ord_spmf ord \<equiv> rel_pmf (ord_option ord)"
 
 locale ord_spmf_syntax begin
-notation ord_spmf (infix "\<sqsubseteq>\<index>" 60)
+notation ord_spmf (infix \<open>\<sqsubseteq>\<index>\<close> 60)
 end
 
 lemma ord_spmf_map_spmf1: "ord_spmf R (map_spmf f p) = ord_spmf (\<lambda>x. R (f x)) p"
@@ -1482,7 +1482,7 @@ proof
 next
   fix x y z
   assume "?R x y" "?R y z"
-  with transp_ord_option[OF transp_equality] show "?R x z" by(rule transp_rel_pmf[THEN transpD])
+  with transp_ord_option[OF transp_on_equality] show "?R x z" by(rule transp_rel_pmf[THEN transpD])
 next
   fix x y
   assume "?R x y" "?R y x"
@@ -1805,7 +1805,7 @@ end
 
 subsection \<open>Restrictions on spmfs\<close>
 
-definition restrict_spmf :: "'a spmf \<Rightarrow> 'a set \<Rightarrow> 'a spmf" (infixl "\<upharpoonleft>" 110)
+definition restrict_spmf :: "'a spmf \<Rightarrow> 'a set \<Rightarrow> 'a spmf" (infixl \<open>\<upharpoonleft>\<close> 110)
   where "p \<upharpoonleft> A = map_pmf (\<lambda>x. x \<bind> (\<lambda>y. if y \<in> A then Some y else None)) p"
 
 lemma set_restrict_spmf [simp]: "set_spmf (p \<upharpoonleft> A) = set_spmf p \<inter> A"
@@ -2173,7 +2173,7 @@ where
 lemma scale_spmf_le_1:
   "(\<integral>\<^sup>+ x. min (inverse (weight_spmf p)) (max 0 r) * spmf p x \<partial>count_space UNIV) \<le> 1" (is "?lhs \<le> _")
 proof -
-  have "?lhs = min (inverse (weight_spmf p)) (max 0 r) * \<integral>\<^sup>+ x. spmf p x \<partial>count_space UNIV"
+  have "?lhs = min (inverse (weight_spmf p)) (max 0 r) * (\<integral>\<^sup>+ x. spmf p x \<partial>count_space UNIV)"
     by(subst nn_integral_cmult[symmetric])(simp_all add: weight_spmf_nonneg max_def min_def ennreal_mult)
   also have "\<dots> \<le> 1" unfolding weight_spmf_eq_nn_integral_spmf[symmetric]
     by(simp add: min_def max_def weight_spmf_nonneg order.strict_iff_order field_simps ennreal_mult[symmetric])
@@ -2621,8 +2621,9 @@ lemma lossless_assert_spmf [iff]: "lossless_spmf (assert_spmf b) \<longleftright
 
 subsection \<open>Try\<close>
 
-definition try_spmf :: "'a spmf \<Rightarrow> 'a spmf \<Rightarrow> 'a spmf" ("TRY _ ELSE _" [0,60] 59)
-where "try_spmf p q = bind_pmf p (\<lambda>x. case x of None \<Rightarrow> q | Some y \<Rightarrow> return_spmf y)"
+definition try_spmf :: "'a spmf \<Rightarrow> 'a spmf \<Rightarrow> 'a spmf"
+  (\<open>(\<open>open_block notation=\<open>mixfix try_spmf\<close>\<close>TRY _ ELSE _)\<close> [0,60] 59)
+where "TRY p ELSE q = bind_pmf p (\<lambda>x. case x of None \<Rightarrow> q | Some y \<Rightarrow> return_spmf y)"
 
 lemma try_spmf_lossless [simp]:
   assumes "lossless_spmf p"
@@ -2688,7 +2689,7 @@ lemma spmf_try_spmf:
 proof -
   have "ennreal (spmf (TRY p ELSE q) x) = \<integral>\<^sup>+ y. ennreal (spmf q x) * indicator {None} y + indicator {Some x} y \<partial>measure_pmf p"
     unfolding try_spmf_def ennreal_pmf_bind by(rule nn_integral_cong)(simp split: option.split split_indicator)
-  also have "\<dots> = (\<integral>\<^sup>+ y. ennreal (spmf q x) * indicator {None} y \<partial>measure_pmf p) + \<integral>\<^sup>+ y. indicator {Some x} y \<partial>measure_pmf p"
+  also have "\<dots> = (\<integral>\<^sup>+ y. ennreal (spmf q x) * indicator {None} y \<partial>measure_pmf p) + (\<integral>\<^sup>+ y. indicator {Some x} y \<partial>measure_pmf p)"
     by(simp add: nn_integral_add)
   also have "\<dots> = ennreal (spmf q x) * pmf p None + spmf p x" by(simp add: emeasure_pmf_single)
   finally show ?thesis by(simp flip: ennreal_plus ennreal_mult)

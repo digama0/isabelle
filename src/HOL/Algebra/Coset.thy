@@ -11,23 +11,25 @@ begin
 section \<open>Cosets and Quotient Groups\<close>
 
 definition
-  r_coset    :: "[_, 'a set, 'a] \<Rightarrow> 'a set"    (infixl "#>\<index>" 60)
+  r_coset    :: "[_, 'a set, 'a] \<Rightarrow> 'a set"    (infixl \<open>#>\<index>\<close> 60)
   where "H #>\<^bsub>G\<^esub> a = (\<Union>h\<in>H. {h \<otimes>\<^bsub>G\<^esub> a})"
 
 definition
-  l_coset    :: "[_, 'a, 'a set] \<Rightarrow> 'a set"    (infixl "<#\<index>" 60)
+  l_coset    :: "[_, 'a, 'a set] \<Rightarrow> 'a set"    (infixl \<open><#\<index>\<close> 60)
   where "a <#\<^bsub>G\<^esub> H = (\<Union>h\<in>H. {a \<otimes>\<^bsub>G\<^esub> h})"
 
 definition
-  RCOSETS  :: "[_, 'a set] \<Rightarrow> ('a set)set"   ("rcosets\<index> _" [81] 80)
+  RCOSETS  :: "[_, 'a set] \<Rightarrow> ('a set)set"
+    (\<open>(\<open>open_block notation=\<open>prefix rcosets\<close>\<close>rcosets\<index> _)\<close> [81] 80)
   where "rcosets\<^bsub>G\<^esub> H = (\<Union>a\<in>carrier G. {H #>\<^bsub>G\<^esub> a})"
 
 definition
-  set_mult  :: "[_, 'a set ,'a set] \<Rightarrow> 'a set" (infixl "<#>\<index>" 60)
+  set_mult  :: "[_, 'a set ,'a set] \<Rightarrow> 'a set" (infixl \<open><#>\<index>\<close> 60)
   where "H <#>\<^bsub>G\<^esub> K = (\<Union>h\<in>H. \<Union>k\<in>K. {h \<otimes>\<^bsub>G\<^esub> k})"
 
 definition
-  SET_INV :: "[_,'a set] \<Rightarrow> 'a set"  ("set'_inv\<index> _" [81] 80)
+  SET_INV :: "[_,'a set] \<Rightarrow> 'a set"
+    (\<open>(\<open>open_block notation=\<open>prefix set_inv\<close>\<close>set'_inv\<index> _)\<close> [81] 80)
   where "set_inv\<^bsub>G\<^esub> H = (\<Union>h\<in>H. {inv\<^bsub>G\<^esub> h})"
 
 
@@ -35,7 +37,7 @@ locale normal = subgroup + group +
   assumes coset_eq: "(\<forall>x \<in> carrier G. H #> x = x <# H)"
 
 abbreviation
-  normal_rel :: "['a set, ('a, 'b) monoid_scheme] \<Rightarrow> bool"  (infixl "\<lhd>" 60) where
+  normal_rel :: "['a set, ('a, 'b) monoid_scheme] \<Rightarrow> bool"  (infixl \<open>\<lhd>\<close> 60) where
   "H \<lhd> G \<equiv> normal H G"
 
 lemma (in comm_group) subgroup_imp_normal: "subgroup A G \<Longrightarrow> A \<lhd> G"
@@ -659,7 +661,8 @@ lemma (in normal) rcosets_mult_eq: "M \<in> rcosets H \<Longrightarrow> H <#> M 
 subsubsection\<open>An Equivalence Relation\<close>
 
 definition
-  r_congruent :: "[('a,'b)monoid_scheme, 'a set] \<Rightarrow> ('a*'a)set"  ("rcong\<index> _")
+  r_congruent :: "[('a,'b)monoid_scheme, 'a set] \<Rightarrow> ('a*'a)set"
+    (\<open>(\<open>open_block notation=\<open>prefix rcong\<close>\<close>rcong\<index> _)\<close>)
   where "rcong\<^bsub>G\<^esub> H = {(x,y). x \<in> carrier G \<and> y \<in> carrier G \<and> inv\<^bsub>G\<^esub> x \<otimes>\<^bsub>G\<^esub> y \<in> H}"
 
 
@@ -670,7 +673,7 @@ proof -
   interpret group G by fact
   show ?thesis
   proof (intro equivI)
-    have "rcong H \<subseteq> carrier G \<times> carrier G"
+    show "rcong H \<subseteq> carrier G \<times> carrier G"
       by (auto simp add: r_congruent_def)
     thus "refl_on (carrier G) (rcong H)"
       by (auto simp add: r_congruent_def refl_on_def)
@@ -961,7 +964,7 @@ corollary (in group) card_rcosets_triv:
 subsection \<open>Quotient Groups: Factorization of a Group\<close>
 
 definition
-  FactGroup :: "[('a,'b) monoid_scheme, 'a set] \<Rightarrow> ('a set) monoid" (infixl "Mod" 65)
+  FactGroup :: "[('a,'b) monoid_scheme, 'a set] \<Rightarrow> ('a set) monoid" (infixl \<open>Mod\<close> 65)
     \<comment> \<open>Actually defined for groups rather than monoids\<close>
    where "FactGroup G H = \<lparr>carrier = rcosets\<^bsub>G\<^esub> H, mult = set_mult G, one = H\<rparr>"
 
@@ -1911,9 +1914,10 @@ proof -
     interpret Anormal: normal A "(G Mod H)" using assms by simp
     show "{x \<in> carrier G. H #> x \<in> A} #> x = x <# {x \<in> carrier G. H #> x \<in> A}" if x: "x \<in> carrier G" for x
     proof -
-      { fix y
-        assume y: "y \<in> {x \<in> carrier G. H #> x \<in> A} #> x"
-        then obtain x' where x': "x' \<in> carrier G" "H #> x' \<in> A" "y = x' \<otimes> x" 
+      have "y \<in> x <# {x \<in> carrier G. H #> x \<in> A}"
+        if y: "y \<in> {x \<in> carrier G. H #> x \<in> A} #> x" for y
+      proof -
+        from that obtain x' where x': "x' \<in> carrier G" "H #> x' \<in> A" "y = x' \<otimes> x" 
           unfolding r_coset_def by auto
         from x(1) have Hx: "H #> x \<in> carrier (G Mod H)" 
           unfolding FactGroup_def RCOSETS_def by force
@@ -1934,11 +1938,12 @@ proof -
         also have "\<dots> = y"
           by (simp add: x x')
         finally have "x \<otimes> (inv x \<otimes> x' \<otimes> x) = y" .
-        with xcoset have "y \<in> x <# {x \<in> carrier G. H #> x \<in> A}" by auto}
-      moreover
-      { fix y
-        assume y: "y \<in> x <# {x \<in> carrier G. H #> x \<in> A}"
-        then obtain x' where x': "x' \<in> carrier G" "H #> x' \<in> A" "y = x \<otimes> x'" unfolding l_coset_def by auto
+        with xcoset show ?thesis by auto
+      qed
+      moreover have "y \<in> {x \<in> carrier G. H #> x \<in> A} #> x"
+        if y: "y \<in> x <# {x \<in> carrier G. H #> x \<in> A}" for y
+      proof -
+        from that obtain x' where x': "x' \<in> carrier G" "H #> x' \<in> A" "y = x \<otimes> x'" unfolding l_coset_def by auto
         from x(1) have invx: "inv x \<in> carrier G" 
           by (rule inv_closed)
         hence Hinvx: "H #> (inv x) \<in> carrier (G Mod H)" 
@@ -1957,7 +1962,8 @@ proof -
         also have "\<dots> = y"
           by (simp add: x x')
         finally have "x \<otimes> x' \<otimes> inv x \<otimes> x = y".
-        with xcoset have "y \<in> {x \<in> carrier G. H #> x \<in> A} #> x" by auto }
+        with xcoset show ?thesis by auto
+      qed
       ultimately show ?thesis
         by auto
     qed

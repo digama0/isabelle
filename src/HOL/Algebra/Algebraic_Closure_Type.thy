@@ -468,15 +468,15 @@ qed
 
 bundle alg_closure_syntax
 begin
-notation to_ac ("_\<up>" [1000] 999)
-notation of_ac ("_\<down>" [1000] 999)
+notation to_ac (\<open>(\<open>open_block notation=\<open>postfix \<up>\<close>\<close>_\<up>)\<close> [1000] 999)
+notation of_ac (\<open>(\<open>open_block notation=\<open>postfix \<down>\<close>\<close>_\<down>)\<close> [1000] 999)
 end
 
 
 bundle alg_closure_syntax'
 begin
-notation (output) to_ac ("_")
-notation (output) of_ac ("_")
+notation (output) to_ac (\<open>_\<close>)
+notation (output) of_ac (\<open>_\<close>)
 end
 
 

@@ -5,27 +5,27 @@ section "Document Preparation"
 option browser_info : bool = false for build
   -- "generate theory browser information"
 
-option document : string = "" (standard "true") for build
+option document : string = "" (standard "true") for build build_sync
   -- "build PDF document (enabled for \"pdf\" or \"true\", disabled for \"\" or \"false\")"
-option document_output : string = "" (standard "output") for build
+option document_output : string = "" (standard "output") for build build_sync
   -- "document output directory"
-option document_echo : bool = false for build
+option document_echo : bool = false for build build_sync
   -- "inform about document file names during session presentation"
-option document_variants : string = "document" for build document
+option document_variants : string = "document" for build document build_sync
   -- "alternative document variants (separated by colons)"
-option document_tags : string = "" for document
+option document_tags : string = "" for document build_sync
   -- "default command tags (separated by commas)"
-option document_bibliography : bool = false for document
+option document_bibliography : bool = false for document build_sync
   -- "explicitly enable use of bibtex (default: according to presence of root.bib)"
-option document_build : string = "lualatex" (standard "build") for document
+option document_build : string = "lualatex" (standard "build") for document build_sync
   -- "document build engine (e.g. build, lualatex, pdflatex)"
-option document_logo : string = "" (standard "_") for document
+option document_logo : string = "" (standard "_") for document build_sync
   -- "generate named instance of Isabelle logo (underscore means unnamed variant)"
-option document_heading_prefix : string = "isamarkup" (standard) for document
+option document_heading_prefix : string = "isamarkup" (standard) for document build_sync
   -- "prefix for LaTeX macros generated from 'chapter', 'section' etc."
-option document_comment_latex : bool = false for document
+option document_comment_latex : bool = false for document build_sync
   -- "use regular LaTeX version of comment.sty, instead of historic plain TeX version"
-option document_cite_commands : string = "cite,nocite,citet,citep" for document
+option document_cite_commands : string = "cite,nocite,citet,citep" for document build_sync
   -- "antiquotation commands to determine the structure of bibliography"
 
 option thy_output_display : bool = false for content
@@ -69,6 +69,8 @@ option show_main_goal : bool = false for content
 option goals_limit : int = 10 for content
   -- "maximum number of subgoals to be printed"
 
+option show_results : bool = true for content
+  -- "show toplevel results even if outside of interactive mode"
 option show_states : bool = false for content
   -- "show toplevel states even if outside of interactive mode"
 
@@ -83,18 +85,21 @@ option names_unique : bool = true for content
 option eta_contract : bool = true for content
   -- "print terms in eta-contracted form"
 
-option print_mode : string = "" for content
+option print_mode : string = "" for content ML_process
   -- "additional print modes for prover output (separated by commas)"
 
 
 section "Parallel Processing and Timing"
 
-public option threads : int = 0 for build
+public option threads : int = 0 for build ML_process
   -- "maximum number of worker threads for prover process (0 = guess from hardware)"
-option threads_trace : int = 0
+option threads_trace : int = 0 for ML_process
   -- "level of tracing information for multithreading"
-option threads_stack_limit : real = 0.25
+option threads_stack_limit : real = 0.25 for ML_process
   -- "maximum stack size for worker threads (in giga words, 0 = unlimited)"
+
+option interactive : bool = false
+  -- "interactive mode (implicitly provided by the PIDE session)"
 
 public option parallel_limit : int = 0 for build
   -- "approximative limit for parallel tasks (0 = unlimited)"
@@ -105,25 +110,28 @@ public option parallel_proofs : int = 1 for build
 option parallel_subproofs_threshold : real = 0.01 for build
   -- "lower bound of timing estimate for forked nested proofs (seconds)"
 
-option command_timing_threshold : real = 0.1 for build
-  -- "default threshold for persistent command timing (seconds)"
+option build_timing_threshold : real = 0.1 for build
+  -- "threshold for persistent storage of command timings (seconds)"
 
 public option timeout_scale : real = 1.0 for build
   -- "scale factor for timeout in Isabelle/ML and session build"
 
-option context_data_timing : bool = false for build
+option context_data_timing : bool = false for build ML_process
   -- "timing for context data operations"
 
-option context_theory_tracing : bool = false for build
+option context_theory_tracing : bool = false for build ML_process
   -- "tracing of persistent theory values within ML heap"
 
-option context_proof_tracing : bool = false for build
+option context_proof_tracing : bool = false for build ML_process
   -- "tracing of persistent Proof.context values within ML heap"
 
 
-section "Detail of Proof Checking"
+section "Detail of Theory and Proof Processing"
 
-option record_proofs : int = -1 for content
+option record_theories : bool = false for content
+  -- "record intermediate theory commands and results"
+
+option record_proofs : int = -1 for content ML_process
   -- "set level of proofterm recording: 0, 1, 2, negative means unchanged"
 option quick_and_dirty : bool = false for content
   -- "if true then some tools will OMIT some proofs"
@@ -138,7 +146,7 @@ section "Global Session Parameters"
 option context : string = "" for content
   -- "free-form information for session content (to be interpreted in Isabelle/ML)"
 
-option condition : string = "" for content
+option condition : string = "" for content ML_process
   -- "required environment variables for subsequent theories (separated by commas)"
 
 option timeout : real = 0 for build
@@ -153,11 +161,14 @@ option process_policy : string = ""
 option process_output_tail : int = 40 for build
   -- "build process output tail shown to user (in lines, 0 = unlimited)"
 
-option profiling : string = "" (standard "time") for build
+option profiling : string = "" (standard "time") for build ML_process
   -- "ML profiling (possible values: time, time_thread, allocations)"
 
+option profiling_dir : string = ""
+  -- "auxiliary directory for \"isabelle profiling\" tool"
+
 option system_log : string = "" (standard "-") for build
-  -- "output for system messages (log file or \"-\" for console progress)"
+  -- "output for system log messages (log file or \"-\" for console progress)"
 
 option system_heaps : bool = false for build
   -- "store session heaps in $ISABELLE_HEAPS_SYSTEM, not $ISABELLE_HEAPS"
@@ -165,7 +176,7 @@ option system_heaps : bool = false for build
 
 section "ML System"
 
-option ML_print_depth : int = 20 for content
+option ML_print_depth : int = 20 for content ML_process
   -- "ML print depth for toplevel pretty-printing"
 
 public option ML_exception_trace : bool = false
@@ -177,6 +188,9 @@ public option ML_exception_debugger : bool = false
 public option ML_debugger : bool = false
   -- "ML debugger instrumentation for newly compiled code"
 
+public option ML_platform : string = "" for build build_sync
+  -- "explicit ML platform identifier"
+
 public option ML_system_64 : bool = false for build build_sync
   -- "prefer native 64bit platform (change requires restart)"
 
@@ -185,6 +199,9 @@ public option ML_system_apple : bool = true for build
 
 
 section "Build Process"
+
+option build_debug : bool = false
+  -- "print details about differing sources and heaps"
 
 option build_thorough : bool = false
   -- "observe dependencies on options with tag 'content' or 'document'"
@@ -201,14 +218,23 @@ option build_database : bool = false for build_sync
 option build_database_slice : real = 300 for build_sync
   -- "slice size in MiB for ML heap stored within database"
 
+option build_progress_threshold : real = 20 for build
+  -- "threshold for long-running commands (seconds)"
+
+option build_progress_detailed : bool = false for build
+  -- "detailed status for ongoing build progress"
+
+option build_progress_delay : real = 2 for build
+  -- "delay for detailed build progress"
+
 option build_delay : real = 0.2
-  -- "delay build process main loop (local)"
+  -- "delay for build process main loop (local)"
 
 option build_delay_master : real = 1.0
-  -- "delay build process main loop (cluster master)"
+  -- "delay for build process main loop (cluster master)"
 
 option build_delay_worker : real = 0.5
-  -- "delay build process main loop (cluster worker)"
+  -- "delay for build process main loop (cluster worker)"
 
 option build_cluster_expire : int = 50
   -- "enforce database synchronization after given number of delay loops"
@@ -234,14 +260,20 @@ option build_schedule_outdated_delay : real = 300.0
 option build_schedule_inactive_delay : real = 300.0
   -- "delay removing inactive hosts"
 
+option build_schedule_history : int = 150
+  -- "length of history relevant for scheduling (in days)"
+
 
 section "Build Manager"
+
+option build_manager_group : string = "isabelle"
+  -- "common group for users on build manager system"
 
 option build_manager_dir : string = "/srv/build"
   -- "directory for submissions on build server"
 
-option build_manager_address : string = "https://build.proof.cit.tum.de"
-  -- "web address for build server"
+option build_manager_address : string = ""
+  -- "explicit web address for build server"
 
 option build_manager_identifier : string = "build_manager"
   -- "isabelle identifier for build manager processes"
@@ -276,6 +308,9 @@ public option editor_load_delay : real = 0.5
 public option editor_input_delay : real = 0.2
   -- "delay for user input (text edits, cursor movement etc.)"
 
+public option editor_jump_delay : real = 0.3
+  -- "delay for mouse selection events after jumping around in the editor"
+
 public option editor_generated_input_delay : real = 1.0
   -- "delay for machine-generated input that may outperform user edits"
 
@@ -309,6 +344,9 @@ public option editor_continuous_checking : bool = true
 public option editor_output_state : bool = false
   -- "implicit output of proof state"
 
+public option editor_auto_hovering : bool = true
+  -- "automatic mouse hovering without keyboard modifier"
+
 public option editor_document_session : string = ""
   -- "session for interactive document preparation"
 
@@ -323,6 +361,9 @@ option editor_execution_delay : real = 0.02
 
 option editor_syslog_limit : int = 100
   -- "maximum amount of buffered syslog messages"
+
+public option editor_timing_threshold : real = 0.1
+  -- "threshold for interactive display of command timings (seconds)"
 
 
 section "Headless Session"
@@ -405,10 +446,10 @@ public option ssh_alive_count_max : int = 3
 
 section "Phabricator / Phorge"
 
-option phabricator_version_arcanist : string = "7f28d7266f81985096219a11b949561d70f052e4"
+option phabricator_version_arcanist : string = "80906355979a8d35f85ee7e075e510d89f7f57ca"
   -- "repository version for arcanist"
 
-option phabricator_version_phabricator : string = "f2a01dca39280d78cc799cd602dc1fc7bc26f165"
+option phabricator_version_phabricator : string = "ee9991d3c995470b6b5f2c736a9abfa70e01bdc8"
   -- "repository version for phabricator"
 
 
@@ -417,7 +458,7 @@ section "Theory Export"
 option export_theory : bool = false for content
   -- "export theory content to Isabelle/Scala"
 
-option export_standard_proofs : bool = false for content
+option export_standard_proofs : bool = false for content ML_process
   -- "export standardized proof terms to Isabelle/Scala (not scalable)"
 
 option export_proofs : bool = false for content
@@ -479,15 +520,15 @@ option build_log_verbose : bool = false for build_sync
 section "Build Manager SSH"
 
 option build_manager_ssh_host : string = "build.proof.cit.tum.de" for connection
-  -- "ssh server on which build manager runs"
-
-option build_manager_ssh_user : string = "" for connection
-  -- "ssh user to access build manager system"
-
-option build_manager_ssh_group : string = "isabelle"
-  -- "common group for users on build manager system"
-
+  -- "SSH host name for build manager"
 option build_manager_ssh_port : int = 0 for connection
+  -- "explicit SSH port"
+option build_manager_ssh_user : string = "" for connection
+  -- "explicit SSH user"
+
+option build_manager_cluster_ssh_host : string = "localhost" for connection
+option build_manager_cluster_ssh_user : string = "" for connection
+option build_manager_cluster_ssh_port : int = 0 for connection
 
 
 section "Build Manager Database"
@@ -511,20 +552,20 @@ option system_channel_password : string = "" for connection
 section "Bash process execution server"
 
 option bash_process_debugging : bool = false for connection
-option bash_process_address : string = "" for connection
-option bash_process_password : string = "" for connection
+option bash_process_address : string = "" for connection ML_process
+option bash_process_password : string = "" for connection ML_process
 
 
 section "Continuous integration"
 
 option ci_mail_user : string = "" for connection
 option ci_mail_password : string = "" for connection
-option ci_mail_sender : string = "" for connection
-option ci_mail_smtp_host : string = "" for connection
-option ci_mail_smtp_port : int = 587 for connection
+option ci_mail_sender : string = "ci@proof.cit.tum.de" for connection
+option ci_mail_smtp_host : string = "mail.cit.tum.de" for connection
+option ci_mail_smtp_port : int = 465 for connection
 
-option ci_mail_from : string = "ci@isabelle.systems"
+option ci_mail_from : string = "ci@proof.cit.tum.de"
   -- "mail address for build failure notifications"
-  
-option ci_mail_to : string = ""
+
+option ci_mail_to : string = "isabelle-ci@mailman46.in.tum.de"
   -- "recipient address for build failure notifications"

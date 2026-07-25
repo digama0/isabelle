@@ -7,36 +7,35 @@ content and virtual file-systems.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
 import java.io.{File => JFile, ByteArrayOutputStream}
-import javax.swing.text.Segment
 
 import scala.util.parsing.input.Reader
 
-import org.gjt.sp.jedit.io.{VFS, FileVFS, VFSManager}
+import org.gjt.sp.jedit.io.{FileVFS, VFSManager}
 import org.gjt.sp.jedit.MiscUtilities
-import org.gjt.sp.jedit.{jEdit, View, Buffer}
+import org.gjt.sp.jedit.Buffer
 import org.gjt.sp.jedit.bufferio.BufferIORequest
 
 
 object JEdit_Resources {
   def apply(options: Options): JEdit_Resources =
-    new JEdit_Resources(JEdit_Sessions.session_background(options))
+    new JEdit_Resources(JEdit_Session.session_background(options))
 }
 
 class JEdit_Resources private(session_background: Sessions.Background)
-extends Resources(session_background) {
+extends Resources(session_background, GUI.log) {
   /* document node name */
 
   def node_name(path: String): Document.Node.Name =
-    JEdit_Lib.check_file(path).flatMap(find_theory) getOrElse {
+    JEdit_Lib.get_local_file(path).flatMap(find_theory) getOrElse {
       val vfs = VFSManager.getVFSForPath(path)
-      val node = if (vfs.isInstanceOf[FileVFS]) MiscUtilities.resolveSymlinks(path) else path
-      val theory = theory_name(Sessions.DRAFT, Thy_Header.theory_name(node))
-      if (session_base.loaded_theory(theory)) Document.Node.Name.loaded_theory(theory)
-      else Document.Node.Name(node, theory = theory)
+      val theory = theory_name(Sessions.DRAFT, Thy_Header.theory_name(path))
+      if (loaded_theory(theory)) Document.Node.Name.loaded_theory(theory)
+      else Document.Node.Name(path, theory = theory)
     }
 
   def node_name(buffer: Buffer): Document.Node.Name =
@@ -130,18 +129,4 @@ extends Resources(session_background) {
   }
 
   def make_file_content(buffer: Buffer): Bytes = (new File_Content_Request(buffer)).content()
-
-
-  /* theory text edits */
-
-  def auto_resolve: Boolean = PIDE.options.bool("jedit_auto_resolve")
-
-  override def commit(change: Session.Change): Unit = {
-    if (change.syntax_changed.nonEmpty) {
-      GUI_Thread.later { Document_Model.syntax_changed(change.syntax_changed) }
-    }
-    if (change.deps_changed || auto_resolve && undefined_blobs(change.version).nonEmpty) {
-      PIDE.plugin.deps_changed()
-    }
-  }
 }

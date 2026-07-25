@@ -286,10 +286,8 @@ fun term_of _ (Argo_Expr.E (Argo_Expr.True, _)) = \<^Const>\<open>True\<close>
         SOME t => t
       | NONE => raise Fail "bad expression")
 
-fun as_prop ct = Thm.apply \<^cterm>\<open>Trueprop\<close> ct
-
 fun cterm_of ctxt cons e = Thm.cterm_of ctxt (term_of (ctxt, cons) e)
-fun cprop_of ctxt cons e = as_prop (cterm_of ctxt cons e)
+fun cprop_of ctxt cons e = HOLogic.mk_judgment (cterm_of ctxt cons e)
 
 
 (* generic proof tools *)
@@ -299,7 +297,7 @@ fun discharge2 thm1 thm2 rule = discharge thm2 (discharge thm1 rule)
 fun discharges thm rules = [thm] RL rules
 
 fun under_assumption f ct =
-  let val cprop = as_prop ct
+  let val cprop = HOLogic.mk_judgment ct
   in Thm.implies_intr cprop (f (Thm.assume cprop)) end
 
 
@@ -311,7 +309,7 @@ fun prove_taut ctxt ns t =
 
 fun with_frees ctxt n mk =
   let
-    val ns = map (fn i => "P" ^ string_of_int i) (0 upto (n - 1))
+    val ns = map_range (fn i => "P" ^ string_of_int i) n
     val ts = map (Free o rpair \<^Type>\<open>bool\<close>) ns
     val t = mk_nary HOLogic.mk_disj (mk ts)
   in prove_taut ctxt ns t end
@@ -412,7 +410,7 @@ fun iff_intro rule lf rf ct =
 fun with_conj f g ct = iff_intro iff_conj_thm (f o explode_conj) g ct
 fun with_ndis f g ct = iff_intro iff_ndis_thm (f o explode_ndis) g (Thm.apply \<^cterm>\<open>Not\<close> ct)
 
-fun swap_indices n iss = map (fn i => find_index (fn is => member (op =) is i) iss) (0 upto (n - 1))
+fun swap_indices n iss = map_range (fn i => find_index (fn is => member (op =) is i) iss) n
 fun sort_nary w f g (n, iss) = w (f (map hd iss)) (under_assumption (f (swap_indices n iss) o g))
 val sort_conj = sort_nary with_conj join_conj explode_conj
 val sort_ndis = sort_nary with_ndis join_ndis explode_ndis 
@@ -537,7 +535,7 @@ val dneg_rule = @{lemma "\<not>\<not>P \<Longrightarrow> P" by auto}
 fun replay_hyp i ct =
   if i < 0 then (Thm.assume ct, [(~i, ct)])
   else
-    let val cu = as_prop (Thm.apply \<^cterm>\<open>Not\<close> (Thm.apply \<^cterm>\<open>Not\<close> (Thm.dest_arg ct)))
+    let val cu = HOLogic.mk_judgment (Thm.apply \<^cterm>\<open>Not\<close> (Thm.apply \<^cterm>\<open>Not\<close> (Thm.dest_arg ct)))
     in (discharge (Thm.assume cu) dneg_rule, [(~i, cu)]) end
 
 
@@ -634,7 +632,7 @@ fun trace_step ctxt proof_id rule proofs = with_full_tracing ctxt (fn ctxt' =>
     val id = Argo_Proof.string_of_proof_id proof_id
     val ids = map (Argo_Proof.string_of_proof_id o Argo_Proof.id_of) proofs
     val rule_string = Argo_Proof.string_of_rule rule
-  in full_tracing ctxt' ("  " ^ id ^ " <- " ^ space_implode " " ids ^ " . " ^ rule_string) end)
+  in full_tracing ctxt' ("  " ^ id ^ " <- " ^ implode_space ids ^ " . " ^ rule_string) end)
 
 fun replay_bottom_up (env as (ctxt, _, _)) proof thm_cache =
   let

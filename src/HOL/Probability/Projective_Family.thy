@@ -116,7 +116,7 @@ proof (intro antisym sets.sigma_sets_subset)
   qed
 qed (auto elim!: generator.cases)
 
-definition mu_G ("\<mu>G") where
+definition mu_G (\<open>\<mu>G\<close>) where
   "\<mu>G A = (THE x. \<forall>J\<subseteq>I. finite J \<longrightarrow> (\<forall>X\<in>sets (Pi\<^sub>M J M). A = emb I J X \<longrightarrow> x = emeasure (P J) X))"
 
 definition lim :: "('i \<Rightarrow> 'a) measure" where
@@ -618,7 +618,7 @@ proof (rule emeasure_lim[OF *], goal_cases)
     have inj_t: "inj_on t (\<Union>i. J i)"
       using count by (auto simp: t_def)
     then have inj_t_J: "inj_on t (J i)" for i
-      by (rule subset_inj_on) auto
+      by (rule inj_on_subset) auto
     interpret IT: Ionescu_Tulcea "\<lambda>i \<omega>. M (f i)" "\<lambda>i. M (f i)"
       by standard auto
     interpret Mf: product_prob_space "\<lambda>x. M (f x)" UNIV

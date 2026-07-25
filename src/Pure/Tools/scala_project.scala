@@ -31,7 +31,7 @@ object Scala_Project {
           case Some(name) => Path.explode(space_explode('.', name).mkString("/"))
           case None => error("Failed to guess package from " + source_file)
         }
-      (if (source_file.is_java) java_src_dir else scala_src_dir) + dir
+      (if (File.is_java(source_file)) java_src_dir else scala_src_dir) + dir
     }
   }
 
@@ -66,7 +66,7 @@ repositories {
 }
 
 dependencies {
-  implementation 'org.scala-lang:scala3-library_3:scala-library:""" + scala_version + """'
+  implementation 'org.scala-lang:scala3-library_3:""" + scala_version + """'
   compileOnly files(
     """ + jars.map(jar => groovy_string(File.platform_path(jar))).mkString("", ",\n    ", ")") +
 """
@@ -83,9 +83,15 @@ dependencies {
 
     override val project_root: Path = Path.explode("pom.xml")
 
+    def replace_special(c: Char): String =
+      if (Symbol.is_ascii_letter(c) || Symbol.is_ascii_digit(c) || "_-.".contains(c)) c.toString
+      else "_"
+
+    def sanitize_name(name: String): String = name.iterator.map(replace_special).mkString
+
     override def init_project(dir: Path, jars: List[Path]): Unit = {
       def dependency(jar: Path): String = {
-        val name = jar.expand.drop_ext.base.implode
+        val name = sanitize_name(jar.expand.drop_ext.base.implode)
         val system_path = File.platform_path(jar.absolute)
         """  <dependency>
     <groupId>classpath</groupId>
@@ -156,7 +162,7 @@ dependencies {
       (for {
         context <- contexts.iterator
         path <- context.sources.iterator
-        if path.is_scala || path.is_java
+        if File.is_scala(path) || File.is_java(path)
       } yield path).toList
 
     (jars, sources)
@@ -166,7 +172,7 @@ dependencies {
     Scala_Build.context(Path.ISABELLE_HOME, component = true)
       .sources.iterator.foldLeft(Map.empty[String, Path]) {
         case (map, path) =>
-          if (path.is_scala) {
+          if (File.is_scala(path)) {
           val base = path.base.implode
             map.get(base) match {
               case None => map + (base -> path)
@@ -181,10 +187,10 @@ dependencies {
 
   def here: Here = {
     val exn = new Exception
-    exn.getStackTrace.toList match {
+    exn.getStackTrace.nn.toList match {
       case _ :: caller :: _ =>
-        val name = proper_string(caller.getFileName).getOrElse("")
-        val line = caller.getLineNumber
+        val name = proper_string(caller.nn.getFileName).getOrElse("")
+        val line = caller.nn.getLineNumber
         new Here(name, line)
       case _ => new Here("", 0)
     }
@@ -230,9 +236,8 @@ dependencies {
 
     progress.echo("Creating " + build_tool + " project directory: " + project_dir.absolute)
     Isabelle_System.make_directory(project_dir)
-
-    val java_src_dir = Isabelle_System.make_directory(project_dir + build_tool.java_src_dir)
-    val scala_src_dir = Isabelle_System.make_directory(project_dir + build_tool.scala_src_dir)
+    Isabelle_System.make_directory(project_dir + build_tool.java_src_dir)
+    Isabelle_System.make_directory(project_dir + build_tool.scala_src_dir)
 
     val (jars, sources) = isabelle_files
     isabelle_scala_files
@@ -243,7 +248,7 @@ dependencies {
       val dir = build_tool.package_dir(source)
       val target_dir = project_dir + dir
       if (!target_dir.is_dir) {
-        progress.echo("  Creating package directory: " + dir)
+        progress.echo("  Creating package directory: " + dir, verbose = true)
         Isabelle_System.make_directory(target_dir)
       }
       if (symlinks) Isabelle_System.symlink(source.absolute, target_dir, native = true)
@@ -262,6 +267,7 @@ dependencies {
         var project_dir = default_project_dir
         var symlinks = false
         var force = false
+        var verbose = false
 
         val getopts = Getopts("""
 Usage: isabelle scala_project [OPTIONS] [MORE_SOURCES ...]
@@ -272,6 +278,7 @@ Usage: isabelle scala_project [OPTIONS] [MORE_SOURCES ...]
     -L           make symlinks to original source files
     -M           use Maven as build tool
     -f           force update of existing directory
+    -v           verbose
 
   Setup project for Isabelle/Scala/jEdit --- to support common IDEs such
   as IntelliJ IDEA. Either option -G or -M is mandatory to specify the
@@ -281,12 +288,13 @@ Usage: isabelle scala_project [OPTIONS] [MORE_SOURCES ...]
           "G" -> (_ => build_tool = Some(Gradle)),
           "L" -> (_ => symlinks = true),
           "M" -> (_ => build_tool = Some(Maven)),
-          "f" -> (_ => force = true))
+          "f" -> (_ => force = true),
+          "v" -> (_ => verbose = true))
 
         val more_args = getopts(args)
 
         val more_sources = more_args.map(Path.explode)
-        val progress = new Console_Progress
+        val progress = new Console_Progress(verbose = verbose)
 
         if (build_tool.isEmpty) {
           error("Unspecified build tool: need to provide option -G or -M")

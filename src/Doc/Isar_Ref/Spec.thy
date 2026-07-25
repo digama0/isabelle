@@ -211,10 +211,12 @@ text \<open>
   \begin{matharray}{rcl}
     @{command_def "bundle"} & : & \<open>local_theory \<rightarrow> local_theory\<close> \\
     @{command "bundle"} & : & \<open>theory \<rightarrow> local_theory\<close> \\
+    @{command_def "unbundle"} & : & \<open>local_theory \<rightarrow> local_theory\<close> \\
     @{command_def "print_bundles"}\<open>\<^sup>*\<close> & : & \<open>context \<rightarrow>\<close> \\
     @{command_def "include"} & : & \<open>proof(state) \<rightarrow> proof(state)\<close> \\
     @{command_def "including"} & : & \<open>proof(prove) \<rightarrow> proof(prove)\<close> \\
     @{keyword_def "includes"} & : & syntax \\
+    @{keyword_def "opening"} & : & syntax \\
   \end{matharray}
 
   The outer syntax of fact expressions (\secref{sec:syn-att}) involves
@@ -231,18 +233,20 @@ text \<open>
   (\secref{sec:locale}).
 
   \<^rail>\<open>
-    @@{command bundle} @{syntax name}
+    (@@{command bundle} | @@{command open_bundle}) @{syntax name} \<newline>
       ( '=' @{syntax thms} @{syntax for_fixes} | @'begin')
+    ;
+    @@{command unbundle} @{syntax bundles}
     ;
     @@{command print_bundles} ('!'?)
     ;
-    (@@{command include} | @@{command including}) (@{syntax name}+)
+    (@@{command include} | @@{command including}) @{syntax bundles}
     ;
-    @{syntax_def "includes"}: @'includes' (@{syntax name}+)
+    @{syntax_def "includes"}: @'includes' @{syntax bundles}
     ;
-    @{syntax_def "opening"}: @'opening' (@{syntax name}+)
+    @{syntax_def "opening"}: @'opening' @{syntax bundles}
     ;
-    @@{command unbundle} (@{syntax name}+)
+    @{syntax bundles}: ('no')? @{syntax name} + @'and'
   \<close>
 
   \<^descr> \<^theory_text>\<open>bundle b = decls\<close> defines a bundle of declarations in the current
@@ -258,29 +262,46 @@ text \<open>
   b\<close>'' or ``\<^theory_text>\<open>lemma a [simp]: B \<proof>\<close>'' are also admitted, but the name
   bindings are not recorded in the bundle.
 
+  \<^descr> \<^theory_text>\<open>open_bundle b\<close> is like \<^theory_text>\<open>bundle b\<close> followed by \<^theory_text>\<open>unbundle b\<close>, so its
+  declarations are activated immediately, but also named for later re-use.
+
+  \<^descr> \<^theory_text>\<open>unbundle \<^vec>b\<close> activates the declarations from the given bundles in
+  the current local theory context. This is analogous to \<^theory_text>\<open>lemmas\<close>
+  (\secref{sec:theorems}) with the expanded bundles.
+
   \<^descr> \<^theory_text>\<open>print_bundles\<close> prints the named bundles that are available in the
   current context; the ``\<open>!\<close>'' option indicates extra verbosity.
 
-  \<^descr> \<^theory_text>\<open>include b\<^sub>1 \<dots> b\<^sub>n\<close> activates the declarations from the given bundles
-  in a proof body (forward mode). This is analogous to \<^theory_text>\<open>note\<close>
+  \<^descr> \<^theory_text>\<open>include \<^vec>b\<close> activates the declarations from the given bundles in a
+  proof body (forward mode). This is analogous to \<^theory_text>\<open>note\<close>
   (\secref{sec:proof-facts}) with the expanded bundles.
 
-  \<^descr> \<^theory_text>\<open>including b\<^sub>1 \<dots> b\<^sub>n\<close> is similar to \<^theory_text>\<open>include\<close>, but works in proof refinement
-  (backward mode). This is analogous to \<^theory_text>\<open>using\<close> (\secref{sec:proof-facts})
-  with the expanded bundles.
+  \<^descr> \<^theory_text>\<open>including \<^vec>b\<close> is similar to \<^theory_text>\<open>include\<close>, but works in proof
+  refinement (backward mode). This is analogous to \<^theory_text>\<open>using\<close>
+  (\secref{sec:proof-facts}) with the expanded bundles.
 
-  \<^descr> \<^theory_text>\<open>includes b\<^sub>1 \<dots> b\<^sub>n\<close> is similar to \<^theory_text>\<open>include\<close>, but applies to a
-  confined specification context: unnamed \<^theory_text>\<open>context\<close>s and
-  long statements of \<^theory_text>\<open>theorem\<close>.
+  \<^descr> \<^theory_text>\<open>includes \<^vec>b\<close> is similar to \<^theory_text>\<open>include\<close>, but applies to a confined
+  specification context: unnamed \<^theory_text>\<open>context\<close>s and long statements of
+  \<^theory_text>\<open>theorem\<close>.
 
-  \<^descr> \<^theory_text>\<open>opening b\<^sub>1 \<dots> b\<^sub>n\<close> is similar to \<^theory_text>\<open>includes\<close>, but applies to
-  a named specification context: \<^theory_text>\<open>locale\<close>s, \<^theory_text>\<open>class\<close>es and
-  named \<^theory_text>\<open>context\<close>s. The effect is confined to the surface context within the
-  specification block itself and the corresponding \<^theory_text>\<open>begin\<close> / \<^theory_text>\<open>end\<close> block.
+  \<^descr> \<^theory_text>\<open>opening \<^vec>b\<close> is similar to \<^theory_text>\<open>includes\<close>, but applies to a named
+  specification context: \<^theory_text>\<open>locale\<close>s, \<^theory_text>\<open>class\<close>es and named \<^theory_text>\<open>context\<close>s. The
+  effect is confined to the surface context within the specification block
+  itself and the corresponding \<^theory_text>\<open>begin\<close> / \<^theory_text>\<open>end\<close> block.
 
-  \<^descr> \<^theory_text>\<open>unbundle b\<^sub>1 \<dots> b\<^sub>n\<close> activates the declarations from the given bundles in
-  the current local theory context. This is analogous to \<^theory_text>\<open>lemmas\<close>
-  (\secref{sec:theorems}) with the expanded bundles.
+  \<^descr> Bundle names may be prefixed by the reserved word \<^verbatim>\<open>no\<close> to indicate that
+  the polarity of certain declaration commands should be inverted, notably:
+
+    \<^item> @{command syntax} versus @{command no_syntax}
+    \<^item> @{command translations} versus @{command no_translations}
+    \<^item> @{command notation} versus @{command no_notation}
+    \<^item> @{command type_notation} versus @{command no_type_notation}
+    \<^item> @{command adhoc_overloading} versus @{command no_adhoc_overloading}
+
+  This also works recursively for the @{command unbundle} command as
+  declaration inside a @{command bundle} definition: \<^verbatim>\<open>no\<close> means that
+  both the order and polarity of declarations is reversed (following
+  algebraic group laws).
 
 
   Here is an artificial example of bundling various configuration options:
@@ -1073,6 +1094,41 @@ lemma "Length ((a, b), (c, d), ()) = 2" by simp
 lemma "Length ((a, b, c, d, e), ()) = 1" by simp
 
 
+section \<open>Overloaded constant abbreviations: adhoc overloading\<close>
+
+text \<open>
+  \begin{tabular}{rcll}
+  @{command_def "adhoc_overloading"} & : & \<open>local_theory \<rightarrow> local_theory\<close> \\
+  @{command_def "no_adhoc_overloading"} & : & \<open>local_theory \<rightarrow> local_theory\<close> \\
+  @{attribute_def "show_variants"} & : & \<open>attribute\<close> & default \<open>false\<close> \\
+  \end{tabular}
+
+  \<^medskip>
+  Adhoc overloading allows to overload a constant depending on its type.
+  Typically this involves the introduction of an uninterpreted constant (used
+  for input and output) and the addition of some variants (used internally).
+  For examples see \<^file>\<open>~~/src/HOL/Examples/Adhoc_Overloading.thy\<close> and
+  \<^file>\<open>~~/src/HOL/Library/Monad_Syntax.thy\<close>.
+
+  \<^rail>\<open>
+    (@@{command adhoc_overloading} | @@{command no_adhoc_overloading}) \<newline>
+      (@{syntax name} ('==' | '\<rightleftharpoons>') (@{syntax term} + ) + @'and')
+  \<close>
+
+  \<^descr> @{command "adhoc_overloading"}~\<open>c \<rightleftharpoons> v\<^sub>1 ... v\<^sub>n\<close> associates variants with an
+  existing constant.
+
+  \<^descr> @{command "no_adhoc_overloading"} is similar to @{command
+  "adhoc_overloading"}, but removes the specified variants from the present
+  context.
+
+  \<^descr> @{attribute "show_variants"} controls printing of variants of overloaded
+  constants. If enabled, the internally used variants are printed instead of
+  their respective overloaded constants. This is occasionally useful to check
+  whether the system agrees with a user's expectations about derived variants.
+\<close>
+
+
 section \<open>Incorporating ML code \label{sec:ML}\<close>
 
 text \<open>
@@ -1139,7 +1195,7 @@ text \<open>
   exported to the global bootstrap environment of the ML process --- it has
   a lasting effect that cannot be retracted. This allows ML evaluation
   without a formal theory context, e.g. for command-line tools via @{tool
-  process} \<^cite>\<open>"isabelle-system"\<close>.
+  ML_process} \<^cite>\<open>"isabelle-system"\<close>.
 
   \<^descr> \<^theory_text>\<open>ML_prf\<close> is analogous to \<^theory_text>\<open>ML\<close> but works within a proof context.
   Top-level ML bindings are stored within the proof context in a purely

@@ -360,10 +360,7 @@ default names \<open>is_Nil\<close>, \<open>un_Cons1\<close>, \<open>un_Cons2\<c
       "[x, xs]" == "x # [xs]"
       "[x]" == "x # []"
 
-    no_notation
-      Nil ("[]") and
-      Cons (infixr "#" 65)
-
+    unbundle no list_syntax
     hide_type list
     hide_const Nil Cons case_list hd tl set map list_all2 rec_list size_list list_all
 
@@ -436,13 +433,13 @@ constructors. For example:
 (*<*)
     end
 (*>*)
-    datatype ('a, 'b) prod (infixr "*" 20) = Pair 'a 'b
+    datatype ('a, 'b) prod (infixr \<open>*\<close> 20) = Pair 'a 'b
 
 text \<open>\blankline\<close>
 
     datatype (set: 'a) list =
-      null: Nil ("[]")
-    | Cons (hd: 'a) (tl: "'a list") (infixr "#" 65)
+      null: Nil (\<open>[]\<close>)
+    | Cons (hd: 'a) (tl: "'a list") (infixr \<open>#\<close> 65)
     for
       map: map
       rel: list_all2
@@ -452,8 +449,10 @@ text \<open>
 \noindent
 Incidentally, this is how the traditional syntax can be set up:
 \<close>
-
-    syntax "_list" :: "list_args \<Rightarrow> 'a list" ("[(_)]")
+(*<*)
+unbundle no list_enumeration_syntax
+(*>*)
+    syntax "_list" :: "args \<Rightarrow> 'a list" (\<open>[(_)]\<close>)
 
 text \<open>\blankline\<close>
 
@@ -2166,7 +2165,7 @@ element in a stream:
 \<close>
 
     primcorec every_snd :: "'a stream \<Rightarrow> 'a stream" where
-      "every_snd s = SCons (shd s) (stl (stl s))"
+      "every_snd s = SCons (shd s) (every_snd (stl (stl s)))"
 
 text \<open>
 \noindent
@@ -2507,7 +2506,7 @@ text \<open>\blankline\<close>
 
     primcorec every_snd :: "'a stream \<Rightarrow> 'a stream" where
       "shd (every_snd s) = shd s"
-    | "stl (every_snd s) = stl (stl s)"
+    | "stl (every_snd s) = every_snd (stl (stl s))"
 
 text \<open>
 \noindent

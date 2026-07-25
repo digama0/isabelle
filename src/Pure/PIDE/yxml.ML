@@ -16,9 +16,7 @@ Markup <elem att="val" ...>...body...</elem> is encoded as:
 
 signature YXML =
 sig
-  val X: Symbol.symbol
-  val Y: Symbol.symbol
-  val detect: string -> bool
+  include YXML
   val traverse: (string -> 'a -> 'a) -> XML.tree -> 'a -> 'a
   val tree_size: XML.tree -> int
   val body_size: XML.body -> int
@@ -27,33 +25,22 @@ sig
   val bytes_of_body: XML.body -> Bytes.T
   val bytes_of: XML.tree -> Bytes.T
   val write_body: Path.T -> XML.body -> unit
-  val output_markup: Markup.T -> string * string
+  val output_markup_only: Markup.T -> string
   val output_markup_elem: Markup.T -> (string * string) * string
   val parse_body: string -> XML.body
   val parse_body_bytes: Bytes.T -> XML.body
   val parse: string -> XML.tree
   val parse_bytes: Bytes.T -> XML.tree
-  val content_of: string -> string
   val is_wellformed: string -> bool
 end;
 
 structure YXML: YXML =
 struct
 
+open YXML;
+
+
 (** string representation **)
-
-(* markers *)
-
-val X_char = Char.chr 5;
-val Y_char = Char.chr 6;
-
-val X = String.str X_char;
-val Y = String.str Y_char;
-val XY = X ^ Y;
-val XYX = XY ^ X;
-
-fun detect s = Char.contains s X_char orelse Char.contains s Y_char;
-
 
 (* traverse *)
 
@@ -91,9 +78,7 @@ fun write_body path body =
 val Z = chr 0;
 val Z_text = [XML.Text Z];
 
-fun output_markup (markup as (name, atts)) =
-  if Markup.is_empty markup then Markup.no_output
-  else (XY ^ name ^ implode (map (fn p => Y ^ Properties.print_eq p) atts) ^ X, XYX);
+val output_markup_only = op ^ o output_markup;
 
 fun output_markup_elem markup =
   let val [bg1, bg2, en] = space_explode Z (string_of (XML.wrap_elem ((markup, Z_text), Z_text)))
@@ -169,8 +154,6 @@ val parse = parse' o split_string;
 val parse_bytes = parse' o split_bytes;
 
 end;
-
-val content_of = parse_body #> XML.content_of;
 
 fun is_wellformed s = string_of_body (parse_body s) = s
   handle Fail _ => false;

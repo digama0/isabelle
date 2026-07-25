@@ -12,10 +12,10 @@ begin
 subsection \<open>Real vector spaces\<close>
 
 class scaleR =
-  fixes scaleR :: "real \<Rightarrow> 'a \<Rightarrow> 'a" (infixr "*\<^sub>R" 75)
+  fixes scaleR :: "real \<Rightarrow> 'a \<Rightarrow> 'a" (infixr \<open>*\<^sub>R\<close> 75)
 begin
 
-abbreviation divideR :: "'a \<Rightarrow> real \<Rightarrow> 'a"  (infixl "'/\<^sub>R" 70)
+abbreviation divideR :: "'a \<Rightarrow> real \<Rightarrow> 'a"  (infixl \<open>'/\<^sub>R\<close> 70)
   where "x /\<^sub>R r \<equiv> inverse r *\<^sub>R x"
 
 end
@@ -287,6 +287,9 @@ lemma of_real_sum[simp]: "of_real (sum f s) = (\<Sum>x\<in>s. of_real (f x))"
 lemma of_real_prod[simp]: "of_real (prod f s) = (\<Prod>x\<in>s. of_real (f x))"
   by (induct s rule: infinite_finite_induct) auto
 
+lemma sum_list_of_real: "sum_list (map of_real xs) = of_real (sum_list xs)"
+  by (induction xs) auto
+
 lemma nonzero_of_real_inverse:
   "x \<noteq> 0 \<Longrightarrow> of_real (inverse x) = inverse (of_real x :: 'a::real_div_algebra)"
   by (simp add: of_real_def nonzero_inverse_scaleR_distrib)
@@ -409,7 +412,7 @@ instance real_field < field_char_0 ..
 
 subsection \<open>The Set of Real Numbers\<close>
 
-definition Reals :: "'a::real_algebra_1 set"  ("\<real>")
+definition Reals :: "'a::real_algebra_1 set"  (\<open>\<real>\<close>)
   where "\<real> = range of_real"
 
 lemma Reals_of_real [simp]: "of_real r \<in> \<real>"
@@ -793,6 +796,14 @@ lemma divideR_right:
 
 class real_normed_field = real_field + real_normed_div_algebra
 
+lemma dist_mult_left:
+  "dist (a * b) (a * c :: 'a :: real_normed_field) = norm a * dist b c"
+  unfolding dist_norm right_diff_distrib [symmetric] norm_mult by simp
+
+lemma dist_mult_right:
+  "dist (b * a) (c * a :: 'a :: real_normed_field) = norm a * dist b c"
+  using dist_mult_left[of a b c] by (simp add: mult_ac)
+
 instance real_normed_div_algebra < real_normed_algebra_1
 proof
   show "norm (x * y) \<le> norm x * norm y" for x y :: 'a
@@ -944,6 +955,18 @@ lemma norm_add_less: "norm x < r \<Longrightarrow> norm y < s \<Longrightarrow> 
   by (rule order_le_less_trans [OF norm_triangle_ineq add_strict_mono])
 
 end
+
+lemma dist_sum_le:
+  fixes f :: "'a \<Rightarrow> 'b :: real_normed_vector"
+  shows "dist (\<Sum>x\<in>A. f x) (\<Sum>x\<in>A. g x) \<le> (\<Sum>x\<in>A. dist (f x) (g x))"
+proof -
+  have "dist (\<Sum>x\<in>A. f x) (\<Sum>x\<in>A. g x) = norm (\<Sum>x\<in>A. f x - g x)"
+    by (simp add: dist_norm sum_subtractf)
+  also have "\<dots> \<le> (\<Sum>x\<in>A. norm (f x - g x))"
+    by (rule norm_sum)
+  finally show ?thesis
+    by (simp add: dist_norm)
+qed
 
 lemma dist_scaleR [simp]: "dist (x *\<^sub>R a) (y *\<^sub>R a) = \<bar>x - y\<bar> * norm a"
   for a :: "'a::real_normed_vector"
@@ -1301,10 +1324,10 @@ begin
 
 definition dist_real_def: "dist x y = \<bar>x - y\<bar>"
 
-definition uniformity_real_def [code del]:
+definition uniformity_real_def:
   "(uniformity :: (real \<times> real) filter) = (INF e\<in>{0 <..}. principal {(x, y). dist x y < e})"
 
-definition open_real_def [code del]:
+definition open_real_def:
   "open (U :: real set) \<longleftrightarrow> (\<forall>x\<in>U. eventually (\<lambda>(x', y). x' = x \<longrightarrow> y \<in> U) uniformity)"
 
 definition real_norm_def [simp]: "norm r = \<bar>r\<bar>"
@@ -1314,13 +1337,9 @@ instance
 
 end
 
-declare uniformity_Abort[where 'a=real, code]
-
 lemma dist_of_real [simp]: "dist (of_real x :: 'a) (of_real y) = dist x y"
   for a :: "'a::real_normed_div_algebra"
   by (metis dist_norm norm_of_real of_real_diff real_norm_def)
-
-declare [[code abort: "open :: real set \<Rightarrow> bool"]]
 
 instance real :: linorder_topology
 proof
@@ -1535,7 +1554,7 @@ lemma bounded_linear_intro:
 
 locale bounded_bilinear =
   fixes prod :: "'a::real_normed_vector \<Rightarrow> 'b::real_normed_vector \<Rightarrow> 'c::real_normed_vector"
-    (infixl "**" 70)
+    (infixl \<open>**\<close> 70)
   assumes add_left: "prod (a + a') b = prod a b + prod a' b"
     and add_right: "prod a (b + b') = prod a b + prod a b'"
     and scaleR_left: "prod (scaleR r a) b = scaleR r (prod a b)"

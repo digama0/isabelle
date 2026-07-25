@@ -78,10 +78,10 @@ val a_v =
   pt_random_aux |> Thm.ctyp_of_cterm |> Thm.dest_ctyp1
   |> Thm.typ_of |> dest_TVar;
 
-val rew_thms = map mk_meta_eq [@{thm natural_zero_minus_one},
-  @{thm Suc_natural_minus_one}, @{thm select_weight_cons_zero}, @{thm beyond_zero}];
+val rew_thms = map mk_meta_eq @{thms natural_zero_minus_one
+  Suc_natural_minus_one select_weight_cons_zero beyond_zero};
 val rew_ts = map (Logic.dest_equals o Thm.prop_of) rew_thms;
-val rew_ss = simpset_of (put_simpset HOL_ss \<^context> addsimps rew_thms);
+val rew_ss = HOL_ss |> Simplifier.simpset_map \<^context> (Simplifier.add_simps rew_thms);
 
 in
 
@@ -146,9 +146,9 @@ fun random_aux_primrec_multi auxname [eq] lthy =
           let
             val proj_simps = map (snd o snd) proj_defs;
             fun tac { context = ctxt, prems = _ } =
-              ALLGOALS (simp_tac (put_simpset HOL_ss ctxt addsimps proj_simps))
+              ALLGOALS (simp_tac (put_simpset HOL_ss ctxt |> Simplifier.add_simps proj_simps))
               THEN ALLGOALS (EqSubst.eqsubst_tac ctxt [0] [aux_simp])
-              THEN ALLGOALS (simp_tac (put_simpset HOL_ss ctxt addsimps @{thms fst_conv snd_conv}));
+              THEN ALLGOALS (simp_tac (put_simpset HOL_ss ctxt |> Simplifier.add_simps @{thms fst_conv snd_conv}));
           in (map (fn prop => Goal.prove_sorry lthy [v] [] prop tac) eqs, lthy) end;
       in
         lthy
@@ -219,7 +219,7 @@ fun mk_random_aux_eqs thy descr vs (names, auxnames) (Ts, Us) =
         val tTs = (map o apsnd) termifyT simple_tTs;
         val is_rec = exists is_some ks;
         val k = fold (fn NONE => I | SOME k => Integer.max k) ks 0;
-        val vs = Name.invent_names Name.context "x" (map snd simple_tTs);
+        val vs = Name.invent_names_global "x" (map snd simple_tTs);
         val tc = HOLogic.mk_return T \<^typ>\<open>Random.seed\<close>
           (HOLogic.mk_valtermify_app c vs simpleT);
         val t = HOLogic.mk_ST
@@ -265,7 +265,7 @@ fun instantiate_random_datatype config descr vs tycos prfx (names, auxnames) (Ts
     |> random_aux_specification prfx random_auxN auxs_eqs
     |> `(fn lthy => map (Syntax.check_term lthy) random_defs)
     |-> (fn random_defs' => fold_map (fn random_def =>
-          Specification.definition NONE [] []
+          Specification.definition {verbose = false} NONE [] []
             ((Binding.concealed Binding.empty, []), random_def)) random_defs')
     |> snd
     |> Class.prove_instantiation_exit (fn ctxt => Class.intro_classes_tac ctxt [])

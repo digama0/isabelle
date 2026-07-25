@@ -26,13 +26,17 @@ sig
   eqtype token
   val kind_of_token: token -> token_kind
   val str_of_token: token -> string
+  val range_of_token: token -> Position.range
   val pos_of_token: token -> Position.T
   val end_pos_of_token: token -> Position.T
   val is_proper: token -> bool
   val dummy: token
+  val is_dummy: token -> bool
   val literal: string -> token
   val is_literal: token -> bool
-  val tokens_match_ord: token ord
+  val token_ord: token ord
+  val token_content_ord: token ord
+  val token_type_ord: token ord
   val mk_eof: Position.T -> token
   val eof: token
   val is_eof: token -> bool
@@ -40,8 +44,6 @@ sig
   val terminals: string list
   val is_terminal: string -> bool
   val get_terminal: string -> token option
-  val suppress_literal_markup: string -> bool
-  val suppress_markup: token -> bool
   val literal_markup: string -> Markup.T list
   val reports_of_token: token -> Position.report list
   val reported_token_range: Proof.context -> token -> string
@@ -50,7 +52,7 @@ sig
   val explode_string: string * Position.T -> Symbol_Pos.T list
   val implode_str: Symbol.symbol list -> string
   val explode_str: string * Position.T -> Symbol_Pos.T list
-  val tokenize: Scan.lexicon -> bool -> Symbol_Pos.T list -> token list
+  val tokenize: Scan.lexicon -> {raw: bool} -> Symbol_Pos.T list -> token list
   val read_indexname: string -> indexname
   val read_var: string -> term
   val read_variable: string -> indexname option
@@ -58,17 +60,20 @@ sig
   val read_int: string -> int option
   val read_num: string -> {radix: int, leading_zeros: int, value: int}
   val read_float: string -> {mant: int, exp: int}
-  val mark_class: string -> string val unmark_class: string -> string
-  val mark_type: string -> string val unmark_type: string -> string
-  val mark_const: string -> string val unmark_const: string -> string
-  val mark_fixed: string -> string val unmark_fixed: string -> string
-  val unmark:
+  val mark_syntax: string -> string
+  val mark_binder: string -> string
+  val mark_indexed: string -> string
+  val mark_class: string -> string val unmark_class: string -> string val is_class: string -> bool
+  val mark_type: string -> string val unmark_type: string -> string val is_type: string -> bool
+  val mark_const: string -> string val unmark_const: string -> string val is_const: string -> bool
+  val mark_fixed: string -> string val unmark_fixed: string -> string val is_fixed: string -> bool
+  val unmark_entity:
    {case_class: string -> 'a,
     case_type: string -> 'a,
     case_const: string -> 'a,
     case_fixed: string -> 'a,
     case_default: string -> 'a} -> string -> 'a
-  val is_marked: string -> bool
+  val is_marked_entity: string -> bool
   val dummy_type: term
   val fun_type: term
 end;
@@ -141,12 +146,15 @@ datatype token = Token of int * string * Position.range;
 fun index_of_token (Token (i, _, _)) = i;
 val kind_of_token = index_of_token #> token_kind;
 fun str_of_token (Token (_, s, _)) = s;
-fun pos_of_token (Token (_, _, (pos, _))) = pos;
-fun end_pos_of_token (Token (_, _, (_, end_pos))) = end_pos;
+fun range_of_token (Token (_, _, r)) = r;
+val pos_of_token = #1 o range_of_token;
+val end_pos_of_token = #1 o range_of_token;
 
 val is_proper = kind_of_token #> (fn Space => false | Comment _ => false | _ => true);
 
-val dummy = Token (token_kind_index Dummy, "", Position.no_range);
+val dummy_index = token_kind_index Dummy;
+val dummy = Token (dummy_index, "", Position.no_range);
+fun is_dummy tok = index_of_token tok = dummy_index;
 
 
 (* literals *)
@@ -155,7 +163,23 @@ val literal_index = token_kind_index Literal;
 fun literal s = Token (literal_index, s, Position.no_range);
 fun is_literal tok = index_of_token tok = literal_index;
 
-fun tokens_match_ord toks =
+
+(* order *)
+
+fun token_ord (Token (i, s, r), Token (i', s', r')) =
+  (case int_ord (i, i') of
+    EQUAL =>
+      (case fast_string_ord (s, s') of
+        EQUAL => Position.range_ord (r, r')
+      | ord => ord)
+  | ord => ord);
+
+fun token_content_ord (Token (i, s, _), Token (i', s', _)) =
+  (case int_ord (i, i') of
+    EQUAL => fast_string_ord (s, s')
+  | ord => ord);
+
+fun token_type_ord toks =
   let val is = apply2 index_of_token toks in
     (case int_ord is of
       EQUAL => if #1 is = literal_index then fast_string_ord (apply2 str_of_token toks) else EQUAL
@@ -198,9 +222,6 @@ fun get_terminal s =
 
 
 (* markup *)
-
-val suppress_literal_markup = Symbol.has_control_block o Symbol.explode;
-fun suppress_markup tok = is_literal tok andalso suppress_literal_markup (str_of_token tok);
 
 fun literal_markup s =
   let val syms = Symbol.explode s in
@@ -291,10 +312,10 @@ fun token kind =
   let val i = token_kind_index kind
   in fn ss => Token (i, Symbol_Pos.content ss, Symbol_Pos.range ss) end;
 
-fun tokenize lex xids syms =
+fun tokenize lex {raw} syms =
   let
-    val scan_xid =
-      (if xids then $$$ "_" @@@ scan_id || scan_id else scan_id) ||
+    val scan_id =
+      (if raw then $$$ "_" @@@ scan_id || scan_id else scan_id) ||
       $$$ "_" @@@ $$$ "_";
 
     val scan_val =
@@ -304,7 +325,7 @@ fun tokenize lex xids syms =
       Symbol_Pos.scan_float >> token Float ||
       scan_num >> token Num ||
       scan_longid >> token Long_Ident ||
-      scan_xid >> token Ident;
+      scan_id >> token Ident;
 
     val scan_lit = Scan.literal lex >> token Literal;
 
@@ -456,16 +477,27 @@ fun read_float str =
   end;
 
 
-(* marked logical entities *)
 
-fun marker s = (prefix s, unprefix s);
+(** marked names **)
 
-val (mark_class, unmark_class) = marker "\<^class>";
-val (mark_type, unmark_type) = marker "\<^type>";
-val (mark_const, unmark_const) = marker "\<^const>";
-val (mark_fixed, unmark_fixed) = marker "\<^fixed>";
+fun marker s = (prefix s, unprefix s, String.isPrefix s);
 
-fun unmark {case_class, case_type, case_const, case_fixed, case_default} s =
+
+(* syntax consts *)
+
+val (mark_syntax, _, _) = marker "\<^syntax>";
+val (mark_binder, _, _) = marker "\<^binder>";
+val (mark_indexed, _, _) = marker "\<^indexed>";
+
+
+(* logical entities *)
+
+val (mark_class, unmark_class, is_class) = marker "\<^class>";
+val (mark_type, unmark_type, is_type) = marker "\<^type>";
+val (mark_const, unmark_const, is_const) = marker "\<^const>";
+val (mark_fixed, unmark_fixed, is_fixed) = marker "\<^fixed>";
+
+fun unmark_entity {case_class, case_type, case_const, case_fixed, case_default} s =
   (case try unmark_class s of
     SOME c => case_class c
   | NONE =>
@@ -479,9 +511,8 @@ fun unmark {case_class, case_type, case_const, case_fixed, case_default} s =
                 SOME c => case_fixed c
               | NONE => case_default s))));
 
-val is_marked =
-  unmark {case_class = K true, case_type = K true, case_const = K true,
-    case_fixed = K true, case_default = K false};
+fun is_marked_entity s =
+  is_class s orelse is_type s orelse is_const s orelse is_fixed s;
 
 val dummy_type = Syntax.const (mark_type "dummy");
 val fun_type = Syntax.const (mark_type "fun");
@@ -491,6 +522,6 @@ val fun_type = Syntax.const (mark_type "fun");
 
 val _ =
   ML_system_pp (fn _ => fn _ =>
-    Pretty.to_polyml o Pretty.str_list "{" "}" o map quote o Scan.dest_lexicon);
+    Pretty.to_ML o Pretty.str_list "{" "}" o map quote o Scan.dest_lexicon);
 
 end;

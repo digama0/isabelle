@@ -47,18 +47,18 @@ end;
 fun build_theories qualifier (options, thys) =
   let
     val _ = ML_Profiling.check_mode (Options.string options "profiling");
+    val print_mode = space_explode "," (Options.string options "print_mode") @ print_mode_value ();
     val condition = space_explode "," (Options.string options "condition");
     val conds = filter_out (can getenv_strict) condition;
     val loaded_theories =
       if null conds then
-        (Options.set_default options;
+        (Options.set_process_default (SOME options);
           Isabelle_Process.init_options ();
           Future.fork I;
-          (Thy_Info.use_theories options qualifier
-          |> Unsynchronized.setmp print_mode
-              (space_explode "," (Options.string options "print_mode") @ print_mode_value ())) thys)
+          (Thy_Info.use_theories qualifier
+            |> Unsynchronized.setmp Print_Mode.print_mode print_mode) thys)
       else
-       (Output.physical_stderr ("Skipping theories " ^ commas_quote (map #1 thys) ^
+       (Output.physical_stderr ("Skipping theories " ^ commas_quote (map (#1 o #1) thys) ^
           " (undefined " ^ commas conds ^ ")\n"); [])
   in loaded_theories end;
 
@@ -67,15 +67,16 @@ fun build_theories qualifier (options, thys) =
 
 val _ =
   Protocol_Command.define_bytes "build_session"
-    (fn [resources_yxml, args_yxml] =>
+    (fn session_name_bytes :: resources_yxml :: theories_yxml =>
         let
+          val session_name = Bytes.content session_name_bytes;
           val _ = Resources.init_session_yxml resources_yxml;
-          val (session_name, theories) =
-            YXML.parse_body_bytes args_yxml |>
+          val theories = theories_yxml |> map (YXML.parse_body_bytes #>
               let
                 open XML.Decode;
                 val position = Position.of_properties o properties;
-              in pair string (list (pair Options.decode (list (pair string position)))) end;
+                val theory = pair (pair string position) (list (pair string (option string)));
+              in pair Options.decode (list theory) end);
 
           val _ = Session.init session_name;
 
@@ -83,13 +84,13 @@ val _ =
             let
               val res =
                 theories |>
-                  (map (build_theories session_name)
+                  (maps (build_theories session_name)
                     |> session_timing
                     |> Exn.capture);
               val res1 =
                 (case res of
                   Exn.Res loaded_theories =>
-                    Exn.capture (apply_hooks session_name) (flat loaded_theories)
+                    Exn.capture (apply_hooks session_name) loaded_theories
                 | Exn.Exn exn => Exn.Exn exn);
               val res2 = Exn.capture_body Session.finish;
 

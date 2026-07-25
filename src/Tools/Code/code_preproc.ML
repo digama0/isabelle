@@ -115,7 +115,7 @@ val map_data = Code_Preproc_Data.map o map_thmproc;
 val map_pre_post = map_data o apfst;
 
 fun map_simpset which f thy =
-  map_pre_post (which (simpset_map (Proof_Context.init_global thy) f)) thy;
+  map_pre_post (which (Simplifier.simpset_map (Proof_Context.init_global thy) f)) thy;
 val map_pre = map_simpset apfst;
 val map_post = map_simpset apsnd;
 
@@ -129,8 +129,8 @@ fun process_abbrev add_del raw_thm thy =
     val thm_sym = Thm.symmetric thm;
   in
     thy |> map_pre_post (fn (pre, post) =>
-      (pre |> simpset_map ctxt (add_del thm_sym),
-       post |> simpset_map ctxt (add_del thm)))
+      (pre |> Simplifier.simpset_map ctxt (add_del thm_sym),
+       post |> Simplifier.simpset_map ctxt (add_del thm)))
   end;
 
 fun add_functrans (name, f) = (map_data o apsnd)
@@ -202,7 +202,7 @@ fun normalized_tfrees_sandwich ctxt ct =
     val t = Thm.term_of ct;
     val vs_original =
       build (fold_term_types (K (fold_atyps (insert (eq_fst op =) o dest_TFree))) t);
-    val vs_normalized = Name.invent_names Name.context Name.aT (map snd vs_original);
+    val vs_normalized = Name.invent_types_global (map snd vs_original);
     val normalize =
       map_type_tfree (TFree o the o AList.lookup (op =) (vs_original ~~ vs_normalized));
     val normalization =
@@ -262,7 +262,7 @@ fun print_codeproc ctxt =
     val post = (#post o the_thmproc) thy;
     val functrans = (map fst o #functrans o the_thmproc) thy;
   in
-    Pretty.writeln_chunks [
+    Pretty.writeln (Pretty.chunks [
       Pretty.block [
         Pretty.str "preprocessing simpset:",
         Pretty.fbrk,
@@ -278,12 +278,23 @@ fun print_codeproc ctxt =
         :: Pretty.fbrk
         :: (Pretty.fbreaks o map Pretty.str) functrans
       )
-    ]
+    ])
   end;
 
 fun simple_functrans f ctxt eqns = case f ctxt (map fst eqns)
  of SOME thms' => SOME (map (rpair (forall snd eqns)) thms')
   | NONE => NONE;
+
+
+(** auxiliary for type classes **)
+
+fun is_proper_class thy = can (Axclass.get_info thy);
+
+fun complete_proper_sort thy =
+  Sign.complete_sort thy #> filter (is_proper_class thy);
+
+fun inst_params_of_sort thy tyco =
+  map (fn (c, _) => Axclass.param_of_inst thy (c, tyco)) o maps (Code.class_params_of thy);
 
 
 (** sort algebra and code equation graph types **)
@@ -329,7 +340,7 @@ val trace_all = Trace_Switch.put NONE;
 
 fun gen_trace_only prep_const raw_cs context =
   let
-    val cs = map (prep_const (Context.theory_of context)) raw_cs;
+    val cs = map (prep_const (Context.proof_of context)) raw_cs;
   in Trace_Switch.put (SOME cs) context end;
 
 val trace_only = gen_trace_only (K I);
@@ -343,22 +354,10 @@ fun switch_trace c ctxt =
       then tracing ("Preprocessing function equations for "
         ^ Code.string_of_const (Proof_Context.theory_of ctxt) c)
       else ();
-  in Config.put simp_trace switch ctxt end;
+  in Config.put Simplifier.simp_trace switch ctxt end;
 
 
 (** the Waisenhaus algorithm **)
-
-(* auxiliary *)
-
-fun is_proper_class thy = can (Axclass.get_info thy);
-
-fun complete_proper_sort thy =
-  Sign.complete_sort thy #> filter (is_proper_class thy);
-
-fun inst_params thy tyco =
-  map (fn (c, _) => Axclass.param_of_inst thy (c, tyco))
-    o maps (#params o Axclass.get_info thy);
-
 
 (* data structures *)
 
@@ -414,7 +413,7 @@ fun obtain_instance ctxt arities (inst as (class, tyco)) =
         val classess =
           map (complete_proper_sort thy)
             (Proof_Context.arity_sorts ctxt tyco [class]);
-        val inst_params = inst_params thy tyco all_classes;
+        val inst_params = inst_params_of_sort thy tyco all_classes;
       in (classess, (super_classes, inst_params)) end;
 
 
@@ -511,12 +510,12 @@ and ensure_fun ctxt arities eqngr c (vardeps_data as (_, (eqntab, _))) =
 
 (* applying instantiations *)
 
-fun dicts_of ctxt (proj_sort, algebra) (T, sort) =
+fun dict_dependencies_for ctxt (proj_sort, algebra) (T, sort) =
   let
     val thy = Proof_Context.theory_of ctxt;
     fun class_relation _ (x, _) _ = x;
     fun type_constructor (tyco, _) xs class =
-      inst_params thy tyco (Sorts.complete_sort algebra [class])
+      inst_params_of_sort thy tyco (Sorts.complete_sort algebra [class])
         @ (maps o maps) fst xs;
     fun type_variable (TFree (_, sort)) = map (pair []) (proj_sort sort);
   in
@@ -525,6 +524,9 @@ fun dicts_of ctxt (proj_sort, algebra) (T, sort) =
         type_variable = type_variable } (T, proj_sort sort)
        handle Sorts.CLASS_ERROR _ => [] (*permissive!*))
   end;
+
+fun dependencies_for ctxt algebra eqngr (c, rhs) =
+  c :: maps (dict_dependencies_for ctxt algebra) (rhs ~~ sortargs eqngr c);
 
 fun add_arity ctxt vardeps (class, tyco) =
   AList.default (op =) ((class, tyco),
@@ -558,10 +560,9 @@ fun extend_arities_eqngr raw_ctxt cs ts (arities, (eqngr : code_graph)) =
     val algebra = Sorts.subalgebra (Context.Theory thy) (is_proper_class thy)
       (AList.lookup (op =) arities') (Sign.classes_of thy);
     val (rhss, eqngr') = Symtab.fold (add_cert ctxt vardeps) eqntab ([], eqngr);
-    fun deps_of (c, rhs) = c :: maps (dicts_of ctxt algebra)
-      (rhs ~~ sortargs eqngr' c);
-    val eqngr'' = fold (fn (c, rhs) => fold
-      (curry Graph.add_edge c) (deps_of rhs)) rhss eqngr';
+    val eqngr'' =
+      fold (fn (c, rhs) => fold (curry Graph.add_edge c)
+        (dependencies_for ctxt algebra eqngr' rhs)) rhss eqngr';
   in (algebra, (arities', eqngr'')) end;
 
 

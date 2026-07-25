@@ -5,7 +5,7 @@
 section \<open>The basis of Higher-Order Logic\<close>
 
 theory HOL
-imports Pure Tools.Code_Generator
+imports Pure Try0 Tools.Code_Generator
 keywords
   "try" "solve_direct" "quickcheck" "print_coercions" "print_claset"
     "print_induct_rules" :: diag and
@@ -34,6 +34,12 @@ ML_file \<open>~~/src/Tools/project_rule.ML\<close>
 ML_file \<open>~~/src/Tools/subtyping.ML\<close>
 ML_file \<open>~~/src/Tools/case_product.ML\<close>
 
+ML \<open>
+val _ =
+  Try.tool_setup
+   {name = "try0", weight = 30, auto_option = \<^system_option>\<open>auto_methods\<close>,
+    body = fn auto => fst o Try0.generic_try0 (if auto then Try0.Auto_Try else Try0.Try) NONE Try0.empty_facts}
+\<close>
 
 ML \<open>Plugin_Name.declare_setup \<^binding>\<open>extraction\<close>\<close>
 
@@ -81,16 +87,16 @@ instance itself :: (type) type by (rule itself_arity)
 
 typedecl bool
 
-judgment Trueprop :: "bool \<Rightarrow> prop"  ("(_)" 5)
+judgment Trueprop :: "bool \<Rightarrow> prop"  (\<open>(\<open>notation=judgment\<close>_)\<close> 5)
 
-axiomatization implies :: "[bool, bool] \<Rightarrow> bool"  (infixr "\<longrightarrow>" 25)
+axiomatization implies :: "[bool, bool] \<Rightarrow> bool"  (infixr \<open>\<longrightarrow>\<close> 25)
   and eq :: "['a, 'a] \<Rightarrow> bool"
   and The :: "('a \<Rightarrow> bool) \<Rightarrow> 'a"
 
 notation (input)
-  eq  (infixl "=" 50)
+  eq  (infixl \<open>=\<close> 50)
 notation (output)
-  eq  (infix "=" 50)
+  eq  (infix \<open>=\<close> 50)
 
 text \<open>The input syntax for \<open>eq\<close> is more permissive than the output syntax
 because of the large amount of material that relies on infixl.\<close>
@@ -100,22 +106,22 @@ subsubsection \<open>Defined connectives and quantifiers\<close>
 definition True :: bool
   where "True \<equiv> ((\<lambda>x::bool. x) = (\<lambda>x. x))"
 
-definition All :: "('a \<Rightarrow> bool) \<Rightarrow> bool"  (binder "\<forall>" 10)
+definition All :: "('a \<Rightarrow> bool) \<Rightarrow> bool"  (binder \<open>\<forall>\<close> 10)
   where "All P \<equiv> (P = (\<lambda>x. True))"
 
-definition Ex :: "('a \<Rightarrow> bool) \<Rightarrow> bool"  (binder "\<exists>" 10)
+definition Ex :: "('a \<Rightarrow> bool) \<Rightarrow> bool"  (binder \<open>\<exists>\<close> 10)
   where "Ex P \<equiv> \<forall>Q. (\<forall>x. P x \<longrightarrow> Q) \<longrightarrow> Q"
 
 definition False :: bool
   where "False \<equiv> (\<forall>P. P)"
 
-definition Not :: "bool \<Rightarrow> bool"  ("\<not> _" [40] 40)
+definition Not :: "bool \<Rightarrow> bool"  (\<open>(\<open>open_block notation=\<open>prefix \<not>\<close>\<close>\<not> _)\<close> [40] 40)
   where not_def: "\<not> P \<equiv> P \<longrightarrow> False"
 
-definition conj :: "[bool, bool] \<Rightarrow> bool"  (infixr "\<and>" 35)
+definition conj :: "[bool, bool] \<Rightarrow> bool"  (infixr \<open>\<and>\<close> 35)
   where and_def: "P \<and> Q \<equiv> \<forall>R. (P \<longrightarrow> Q \<longrightarrow> R) \<longrightarrow> R"
 
-definition disj :: "[bool, bool] \<Rightarrow> bool"  (infixr "\<or>" 30)
+definition disj :: "[bool, bool] \<Rightarrow> bool"  (infixr \<open>\<or>\<close> 30)
   where or_def: "P \<or> Q \<equiv> \<forall>R. (P \<longrightarrow> R) \<longrightarrow> (Q \<longrightarrow> R) \<longrightarrow> R"
 
 definition Uniq :: "('a \<Rightarrow> bool) \<Rightarrow> bool"
@@ -127,36 +133,36 @@ definition Ex1 :: "('a \<Rightarrow> bool) \<Rightarrow> bool"
 
 subsubsection \<open>Additional concrete syntax\<close>
 
-syntax (ASCII) "_Uniq" :: "pttrn \<Rightarrow> bool \<Rightarrow> bool"  ("(4?< _./ _)" [0, 10] 10)
-syntax "_Uniq" :: "pttrn \<Rightarrow> bool \<Rightarrow> bool"  ("(2\<exists>\<^sub>\<le>\<^sub>1 _./ _)" [0, 10] 10)
+syntax (ASCII) "_Uniq" :: "pttrn \<Rightarrow> bool \<Rightarrow> bool"  (\<open>(\<open>indent=4 notation=\<open>binder ?<\<close>\<close>?< _./ _)\<close> [0, 10] 10)
+syntax "_Uniq" :: "pttrn \<Rightarrow> bool \<Rightarrow> bool"  (\<open>(\<open>indent=2 notation=\<open>binder \<exists>\<^sub>\<le>\<^sub>1\<close>\<close>\<exists>\<^sub>\<le>\<^sub>1 _./ _)\<close> [0, 10] 10)
 
 syntax_consts "_Uniq" \<rightleftharpoons> Uniq
 
 translations "\<exists>\<^sub>\<le>\<^sub>1x. P" \<rightleftharpoons> "CONST Uniq (\<lambda>x. P)"
 
-print_translation \<open>
- [Syntax_Trans.preserve_binder_abs_tr' \<^const_syntax>\<open>Uniq\<close> \<^syntax_const>\<open>_Uniq\<close>]
+typed_print_translation \<open>
+  [(\<^const_syntax>\<open>Uniq\<close>, Syntax_Trans.preserve_binder_abs_tr' \<^syntax_const>\<open>_Uniq\<close>)]
 \<close> \<comment> \<open>to avoid eta-contraction of body\<close>
 
 
 syntax (ASCII)
-  "_Ex1" :: "pttrn \<Rightarrow> bool \<Rightarrow> bool"  ("(3EX! _./ _)" [0, 10] 10)
+  "_Ex1" :: "pttrn \<Rightarrow> bool \<Rightarrow> bool"  (\<open>(\<open>indent=3 notation=\<open>binder EX!\<close>\<close>EX! _./ _)\<close> [0, 10] 10)
 syntax (input)
-  "_Ex1" :: "pttrn \<Rightarrow> bool \<Rightarrow> bool"  ("(3?! _./ _)" [0, 10] 10)
-syntax "_Ex1" :: "pttrn \<Rightarrow> bool \<Rightarrow> bool"  ("(3\<exists>!_./ _)" [0, 10] 10)
+  "_Ex1" :: "pttrn \<Rightarrow> bool \<Rightarrow> bool"  (\<open>(\<open>indent=3 notation=\<open>binder ?!\<close>\<close>?! _./ _)\<close> [0, 10] 10)
+syntax "_Ex1" :: "pttrn \<Rightarrow> bool \<Rightarrow> bool"  (\<open>(\<open>indent=3 notation=\<open>binder \<exists>!\<close>\<close>\<exists>!_./ _)\<close> [0, 10] 10)
 
 syntax_consts "_Ex1" \<rightleftharpoons> Ex1
 
 translations "\<exists>!x. P" \<rightleftharpoons> "CONST Ex1 (\<lambda>x. P)"
 
-print_translation \<open>
- [Syntax_Trans.preserve_binder_abs_tr' \<^const_syntax>\<open>Ex1\<close> \<^syntax_const>\<open>_Ex1\<close>]
+typed_print_translation \<open>
+  [(\<^const_syntax>\<open>Ex1\<close>, Syntax_Trans.preserve_binder_abs_tr' \<^syntax_const>\<open>_Ex1\<close>)]
 \<close> \<comment> \<open>to avoid eta-contraction of body\<close>
 
 
 syntax
-  "_Not_Ex" :: "idts \<Rightarrow> bool \<Rightarrow> bool"  ("(3\<nexists>_./ _)" [0, 10] 10)
-  "_Not_Ex1" :: "pttrn \<Rightarrow> bool \<Rightarrow> bool"  ("(3\<nexists>!_./ _)" [0, 10] 10)
+  "_Not_Ex" :: "idts \<Rightarrow> bool \<Rightarrow> bool"  (\<open>(\<open>indent=3 notation=\<open>binder \<nexists>\<close>\<close>\<nexists>_./ _)\<close> [0, 10] 10)
+  "_Not_Ex1" :: "pttrn \<Rightarrow> bool \<Rightarrow> bool"  (\<open>(\<open>indent=3 notation=\<open>binder \<nexists>!\<close>\<close>\<nexists>!_./ _)\<close> [0, 10] 10)
 syntax_consts
   "_Not_Ex" \<rightleftharpoons> Ex and
   "_Not_Ex1" \<rightleftharpoons> Ex1
@@ -165,45 +171,47 @@ translations
   "\<nexists>!x. P" \<rightleftharpoons> "\<not> (\<exists>!x. P)"
 
 
-abbreviation not_equal :: "['a, 'a] \<Rightarrow> bool"  (infix "\<noteq>" 50)
+abbreviation not_equal :: "['a, 'a] \<Rightarrow> bool"  (infix \<open>\<noteq>\<close> 50)
   where "x \<noteq> y \<equiv> \<not> (x = y)"
 
 notation (ASCII)
-  Not  ("~ _" [40] 40) and
-  conj  (infixr "&" 35) and
-  disj  (infixr "|" 30) and
-  implies  (infixr "-->" 25) and
-  not_equal  (infix "~=" 50)
+  Not  (\<open>(\<open>open_block notation=\<open>prefix ~\<close>\<close>~ _)\<close> [40] 40) and
+  conj  (infixr \<open>&\<close> 35) and
+  disj  (infixr \<open>|\<close> 30) and
+  implies  (infixr \<open>-->\<close> 25) and
+  not_equal  (infix \<open>~=\<close> 50)
 
 abbreviation (iff)
-  iff :: "[bool, bool] \<Rightarrow> bool"  (infixr "\<longleftrightarrow>" 25)
+  iff :: "[bool, bool] \<Rightarrow> bool"  (infixr \<open>\<longleftrightarrow>\<close> 25)
   where "A \<longleftrightarrow> B \<equiv> A = B"
 
-syntax "_The" :: "[pttrn, bool] \<Rightarrow> 'a"  ("(3THE _./ _)" [0, 10] 10)
+syntax "_The" :: "[pttrn, bool] \<Rightarrow> 'a"  (\<open>(\<open>indent=3 notation=\<open>binder THE\<close>\<close>THE _./ _)\<close> [0, 10] 10)
 syntax_consts "_The" \<rightleftharpoons> The
 translations "THE x. P" \<rightleftharpoons> "CONST The (\<lambda>x. P)"
 print_translation \<open>
-  [(\<^const_syntax>\<open>The\<close>, fn _ => fn [Abs abs] =>
-      let val (x, t) = Syntax_Trans.atomic_abs_tr' abs
+  [(\<^const_syntax>\<open>The\<close>, fn ctxt => fn [Abs abs] =>
+      let val (x, t) = Syntax_Trans.atomic_abs_tr' ctxt abs
       in Syntax.const \<^syntax_const>\<open>_The\<close> $ x $ t end)]
 \<close>  \<comment> \<open>To avoid eta-contraction of body\<close>
 
 nonterminal case_syn and cases_syn
 syntax
-  "_case_syntax" :: "['a, cases_syn] \<Rightarrow> 'b"  ("(case _ of/ _)" 10)
-  "_case1" :: "['a, 'b] \<Rightarrow> case_syn"  ("(2_ \<Rightarrow>/ _)" 10)
-  "" :: "case_syn \<Rightarrow> cases_syn"  ("_")
-  "_case2" :: "[case_syn, cases_syn] \<Rightarrow> cases_syn"  ("_/ | _")
+  "_case_syntax" :: "['a, cases_syn] \<Rightarrow> 'b"  (\<open>(\<open>notation=\<open>mixfix case expression\<close>\<close>case _ of/ _)\<close> 10)
+  "_case1" :: "['a, 'b] \<Rightarrow> case_syn"
+    (\<open>(\<open>indent=2 notation=\<open>mixfix case clause\<close>\<close>(\<open>open_block notation=\<open>pattern case\<close>\<close>_) \<Rightarrow>/ _)\<close> 10)
+  "" :: "case_syn \<Rightarrow> cases_syn"  (\<open>_\<close>)
+  "_case2" :: "[case_syn, cases_syn] \<Rightarrow> cases_syn"  (\<open>_/ | _\<close>)
 syntax (ASCII)
-  "_case1" :: "['a, 'b] \<Rightarrow> case_syn"  ("(2_ =>/ _)" 10)
+  "_case1" :: "['a, 'b] \<Rightarrow> case_syn"
+    (\<open>(\<open>indent=2 notation=\<open>mixfix case clause\<close>\<close>(\<open>open_block notation=\<open>pattern case\<close>\<close>_) =>/ _)\<close> 10)
 
 notation (ASCII)
-  All  (binder "ALL " 10) and
-  Ex  (binder "EX " 10)
+  All  (binder \<open>ALL \<close> 10) and
+  Ex  (binder \<open>EX \<close> 10)
 
 notation (input)
-  All  (binder "! " 10) and
-  Ex  (binder "? " 10)
+  All  (binder \<open>! \<close> 10) and
+  Ex  (binder \<open>? \<close> 10)
 
 
 subsubsection \<open>Axioms and basic definitions\<close>
@@ -224,23 +232,29 @@ axiomatization where
 
   True_or_False: "(P = True) \<or> (P = False)"
 
-definition If :: "bool \<Rightarrow> 'a \<Rightarrow> 'a \<Rightarrow> 'a" ("(if (_)/ then (_)/ else (_))" [0, 0, 10] 10)
+definition If :: "bool \<Rightarrow> 'a \<Rightarrow> 'a \<Rightarrow> 'a" (\<open>(\<open>notation=\<open>mixfix if expression\<close>\<close>if (_)/ then (_)/ else (_))\<close> [0, 0, 10] 10)
   where "If P x y \<equiv> (THE z::'a. (P = True \<longrightarrow> z = x) \<and> (P = False \<longrightarrow> z = y))"
 
 definition Let :: "'a \<Rightarrow> ('a \<Rightarrow> 'b) \<Rightarrow> 'b"
   where "Let s f \<equiv> f s"
 
 nonterminal letbinds and letbind
+
+open_bundle let_syntax
+begin
+
 syntax
-  "_bind"       :: "[pttrn, 'a] \<Rightarrow> letbind"              ("(2_ =/ _)" 10)
-  ""            :: "letbind \<Rightarrow> letbinds"                 ("_")
-  "_binds"      :: "[letbind, letbinds] \<Rightarrow> letbinds"     ("_;/ _")
-  "_Let"        :: "[letbinds, 'a] \<Rightarrow> 'a"                ("(let (_)/ in (_))" [0, 10] 10)
+  "_bind"       :: "[pttrn, 'a] \<Rightarrow> letbind"              (\<open>(\<open>indent=2 notation=\<open>mixfix let binding\<close>\<close>_ =/ _)\<close> 10)
+  ""            :: "letbind \<Rightarrow> letbinds"                 (\<open>_\<close>)
+  "_binds"      :: "[letbind, letbinds] \<Rightarrow> letbinds"     (\<open>_;/ _\<close>)
+  "_Let"        :: "[letbinds, 'a] \<Rightarrow> 'a"                (\<open>(\<open>notation=\<open>mixfix let expression\<close>\<close>let (_)/ in (_))\<close> [0, 10] 10)
 syntax_consts
   "_bind" "_binds" "_Let" \<rightleftharpoons> Let
 translations
   "_Let (_binds b bs) e"  \<rightleftharpoons> "_Let b (_Let bs e)"
   "let x = a in e"        \<rightleftharpoons> "CONST Let a (\<lambda>x. e)"
+
+end
 
 axiomatization undefined :: 'a
 
@@ -295,6 +309,12 @@ lemma arg_cong: "x = y \<Longrightarrow> f x = f y"
   by (iprover intro: refl elim: subst)
 
 lemma arg_cong2: "\<lbrakk>a = b; c = d\<rbrakk> \<Longrightarrow> f a c = f b d"
+  by (iprover intro: refl elim: subst)
+
+lemma arg_cong3: "\<lbrakk>x = x'; y = y'; z = z'\<rbrakk> \<Longrightarrow> f x y z = f x' y' z'"
+  by (iprover intro: refl elim: subst)
+
+lemma arg_cong4: "\<lbrakk>w = w'; x = x'; y = y'; z = z'\<rbrakk> \<Longrightarrow> f w x y z = f w' x' y' z'"
   by (iprover intro: refl elim: subst)
 
 lemma cong: "\<lbrakk>f = g; (x::'a) = y\<rbrakk> \<Longrightarrow> f x = g y"
@@ -633,6 +653,11 @@ lemma impCE':
   shows R
   using assms by (elim impCE)
 
+text \<open>The analogous introduction rule for conjunction, above, is even constructive\<close>
+lemma context_disjE:
+  assumes major: "P \<or> Q" and minor: "P \<Longrightarrow> R" "\<not>P \<Longrightarrow> Q \<Longrightarrow> R"
+  shows R
+  by (iprover intro: disjE [OF major] disjE [OF excluded_middle] assms)
 
 text \<open>Classical \<open>\<longleftrightarrow>\<close> elimination.\<close>
 lemma iffCE:
@@ -1177,7 +1202,7 @@ text \<open>
   its premise.
 \<close>
 
-definition simp_implies :: "prop \<Rightarrow> prop \<Rightarrow> prop"  (infixr "=simp=>" 1)
+definition simp_implies :: "prop \<Rightarrow> prop \<Rightarrow> prop"  (infixr \<open>=simp=>\<close> 1)
   where "simp_implies \<equiv> (\<Longrightarrow>)"
 
 lemma simp_impliesI:
@@ -1239,7 +1264,7 @@ ML_file \<open>Tools/simpdata.ML\<close>
 ML \<open>open Simpdata\<close>
 
 setup \<open>
-  map_theory_simpset (put_simpset HOL_basic_ss) #>
+  Simplifier.map_theory_simpset (put_simpset HOL_basic_ss) #>
   Simplifier.method_setup Splitter.split_modifiers
 \<close>
 
@@ -1422,7 +1447,7 @@ lemmas [simp] =
 lemmas [cong] = imp_cong simp_implies_cong
 lemmas [split] = if_split
 
-ML \<open>val HOL_ss = simpset_of \<^context>\<close>
+ML \<open>val HOL_ss = Simplifier.simpset_of \<^context>\<close>
 
 text \<open>Simplifies \<open>x\<close> assuming \<open>c\<close> and \<open>y\<close> assuming \<open>\<not> c\<close>.\<close>
 lemma if_cong:
@@ -1714,10 +1739,10 @@ lemma ex1_eq [iff]: "\<exists>!x. x = t" "\<exists>!x. t = x"
 lemma choice_eq: "(\<forall>x. \<exists>!y. P x y) = (\<exists>!f. \<forall>x. P x (f x))" (is "?lhs = ?rhs")
 proof (intro iffI allI)
   assume L: ?lhs
-  then have \<section>: "\<forall>x. P x (THE y. P x y)"
+  then have *: "\<forall>x. P x (THE y. P x y)"
     by (best intro: theI')
   show ?rhs
-    by (rule ex1I) (use L \<section> in \<open>fast+\<close>)
+    by (rule ex1I) (use L * in \<open>fast+\<close>)
 next
   fix x
   assume R: ?rhs
@@ -1898,13 +1923,10 @@ lemma ASSUMPTION_D: "ASSUMPTION A \<Longrightarrow> A"
   by (simp add: ASSUMPTION_def)
 
 setup \<open>
-let
-  val asm_sol = mk_solver "ASSUMPTION" (fn ctxt =>
-    resolve_tac ctxt [@{thm ASSUMPTION_I}] THEN'
-    resolve_tac ctxt (Simplifier.prems_of ctxt))
-in
-  map_theory_simpset (fn ctxt => Simplifier.addSolver (ctxt,asm_sol))
-end
+  Simplifier.map_theory_simpset (Simplifier.add_unsafe_solver (
+    Simplifier.mk_solver "ASSUMPTION" (fn ctxt =>
+      resolve_tac ctxt @{thms ASSUMPTION_I} THEN'
+      resolve_tac ctxt (Simplifier.prems_of ctxt))))
 \<close>
 
 
@@ -1927,26 +1949,82 @@ setup \<open>
 \<close>
 
 
+subsubsection \<open>Generic code generator foundation\<close>
+
+text \<open>Datatype \<^typ>\<open>bool\<close>\<close>
+
+code_datatype True False
+
+lemma [code]:
+  "P \<and> True \<longleftrightarrow> P"
+  "P \<and> False \<longleftrightarrow> False"
+  "True \<and> P \<longleftrightarrow> P"
+  "False \<and> P \<longleftrightarrow> False"
+  by simp_all
+
+lemma [code]:
+  "P \<or> True \<longleftrightarrow> True"
+  "P \<or> False \<longleftrightarrow> P"
+  "True \<or> P \<longleftrightarrow> True"
+  "False \<or> P \<longleftrightarrow> P"
+  by simp_all
+
+lemma [code]:
+  "(P \<longrightarrow> True) \<longleftrightarrow> True"
+  "(P \<longrightarrow> False) \<longleftrightarrow> \<not> P"
+  "(True \<longrightarrow> P) \<longleftrightarrow> P"
+  "(False \<longrightarrow> P) \<longleftrightarrow> True"
+  by simp_all
+
+text \<open>More about \<^typ>\<open>prop\<close>\<close>
+
+lemma [code nbe]:
+  "(P \<Longrightarrow> R) \<equiv> Trueprop (P \<longrightarrow> R)"
+  "(PROP Q \<Longrightarrow> True) \<equiv> Trueprop True"
+  "(True \<Longrightarrow> PROP Q) \<equiv> PROP Q"
+  by (auto intro!: equal_intr_rule)
+
+lemma Trueprop_code [code]: "Trueprop True \<equiv> Code_Generator.holds"
+  by (auto intro!: equal_intr_rule holds)
+
+declare Trueprop_code [symmetric, code_post]
+
+text \<open>Cases\<close>
+
+lemma Let_case_cert:
+  assumes "CASE \<equiv> (\<lambda>x. Let x f)"
+  shows "CASE x \<equiv> f x"
+  using assms by simp_all
+
+setup \<open>
+  Code.declare_case_global @{thm Let_case_cert} #>
+  Code.declare_undefined_global \<^const_name>\<open>undefined\<close>
+\<close>
+
+declare [[code abort: undefined]]
+
+
 subsubsection \<open>Equality\<close>
+
+lemma [code nbe]:
+  \<open>x = x \<longleftrightarrow> True\<close>
+  by iprover
 
 class equal =
   fixes equal :: "'a \<Rightarrow> 'a \<Rightarrow> bool"
   assumes equal_eq: "equal x y \<longleftrightarrow> x = y"
 begin
 
-lemma equal: "equal = (=)"
+lemma eq_equal [code]: "(=) \<equiv> equal"
+  by (rule eq_reflection) (rule ext, rule ext, rule sym, rule equal_eq)
+
+lemma equal [code_post]: "equal = (=)"
   by (rule ext equal_eq)+
 
 lemma equal_refl: "equal x x \<longleftrightarrow> True"
   unfolding equal by (rule iffI TrueI refl)+
 
-lemma eq_equal: "(=) \<equiv> equal"
-  by (rule eq_reflection) (rule ext, rule ext, rule sym, rule equal_eq)
-
 end
-
-declare eq_equal [symmetric, code_post]
-declare eq_equal [code]
 
 simproc_setup passive equal (HOL.eq) =
   \<open>fn _ => fn _ => fn ct =>
@@ -1955,51 +2033,6 @@ simproc_setup passive equal (HOL.eq) =
     | _ => NONE)\<close>
 
 setup \<open>Code_Preproc.map_pre (Simplifier.add_proc \<^simproc>\<open>equal\<close>)\<close>
-
-
-subsubsection \<open>Generic code generator foundation\<close>
-
-text \<open>Datatype \<^typ>\<open>bool\<close>\<close>
-
-code_datatype True False
-
-lemma [code]:
-  shows "False \<and> P \<longleftrightarrow> False"
-    and "True \<and> P \<longleftrightarrow> P"
-    and "P \<and> False \<longleftrightarrow> False"
-    and "P \<and> True \<longleftrightarrow> P"
-  by simp_all
-
-lemma [code]:
-  shows "False \<or> P \<longleftrightarrow> P"
-    and "True \<or> P \<longleftrightarrow> True"
-    and "P \<or> False \<longleftrightarrow> P"
-    and "P \<or> True \<longleftrightarrow> True"
-  by simp_all
-
-lemma [code]:
-  shows "(False \<longrightarrow> P) \<longleftrightarrow> True"
-    and "(True \<longrightarrow> P) \<longleftrightarrow> P"
-    and "(P \<longrightarrow> False) \<longleftrightarrow> \<not> P"
-    and "(P \<longrightarrow> True) \<longleftrightarrow> True"
-  by simp_all
-
-text \<open>More about \<^typ>\<open>prop\<close>\<close>
-
-lemma [code nbe]:
-  shows "(True \<Longrightarrow> PROP Q) \<equiv> PROP Q"
-    and "(PROP Q \<Longrightarrow> True) \<equiv> Trueprop True"
-    and "(P \<Longrightarrow> R) \<equiv> Trueprop (P \<longrightarrow> R)"
-  by (auto intro!: equal_intr_rule)
-
-lemma Trueprop_code [code]: "Trueprop True \<equiv> Code_Generator.holds"
-  by (auto intro!: equal_intr_rule holds)
-
-declare Trueprop_code [symmetric, code_post]
-
-text \<open>Equality\<close>
-
-declare simp_thms(6) [code nbe]
 
 instantiation itself :: (type) equal
 begin
@@ -2034,20 +2067,6 @@ setup \<open>Sign.add_const_constraint (\<^const_name>\<open>equal\<close>, SOME
 
 setup \<open>Nbe.add_const_alias @{thm equal_alias_cert}\<close>
 
-text \<open>Cases\<close>
-
-lemma Let_case_cert:
-  assumes "CASE \<equiv> (\<lambda>x. Let x f)"
-  shows "CASE x \<equiv> f x"
-  using assms by simp_all
-
-setup \<open>
-  Code.declare_case_global @{thm Let_case_cert} #>
-  Code.declare_undefined_global \<^const_name>\<open>undefined\<close>
-\<close>
-
-declare [[code abort: undefined]]
-
 
 subsubsection \<open>Generic code generator target languages\<close>
 
@@ -2061,14 +2080,10 @@ code_printing
 | constant False \<rightharpoonup>
     (SML) "false" and (OCaml) "false" and (Haskell) "False" and (Scala) "false"
 
-code_reserved SML
-  bool true false
-
-code_reserved OCaml
-  bool
-
-code_reserved Scala
-  Boolean
+code_reserved
+  (SML) bool true false
+  and (OCaml) bool
+  and (Scala) Boolean
 
 code_printing
   constant Not \<rightharpoonup>
@@ -2088,11 +2103,9 @@ code_printing
     and (Haskell) "!(if (_)/ then (_)/ else (_))"
     and (Scala) "!((_) match {/ case true => (_)/ case false => (_)/ })"
 
-code_reserved SML
-  not
-
-code_reserved OCaml
-  not
+code_reserved
+  (SML) not
+  and (OCaml) not
 
 code_identifier
   code_module Pure \<rightharpoonup>
@@ -2170,7 +2183,7 @@ ML \<open>
     fun wrong_prem \<^Const_>\<open>All _ for \<open>Abs (_, _, t)\<close>\<close> = wrong_prem t
       | wrong_prem (Bound _) = true
       | wrong_prem _ = false;
-    val filter_right = filter (not o wrong_prem o HOLogic.dest_Trueprop o hd o Thm.prems_of);
+    val filter_right = filter (not o wrong_prem o HOLogic.dest_Trueprop o hd o Thm.take_prems_of 1);
     fun smp i = funpow i (fn m => filter_right ([spec] RL m)) [mp];
   in
     fun smp_tac ctxt j = EVERY' [dresolve_tac ctxt (smp j), assume_tac ctxt];
@@ -2178,7 +2191,8 @@ ML \<open>
 
   local
     val nnf_ss =
-      simpset_of (put_simpset HOL_basic_ss \<^context> addsimps @{thms simp_thms nnf_simps});
+      HOL_basic_ss
+      |> Simplifier.simpset_map \<^context> (Simplifier.add_simps @{thms simp_thms nnf_simps});
   in
     fun nnf_conv ctxt = Simplifier.rewrite (put_simpset nnf_ss ctxt);
   end

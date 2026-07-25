@@ -643,7 +643,7 @@ begin
 sublocale sum: comm_monoid_set plus 0
   defines sum = sum.F and sum' = sum.G ..
 
-abbreviation Sum ("\<Sum>")
+abbreviation Sum (\<open>\<Sum>\<close>)
   where "\<Sum> \<equiv> sum (\<lambda>x. x)"
 
 end
@@ -651,9 +651,9 @@ end
 text \<open>Now: lots of fancy syntax. First, \<^term>\<open>sum (\<lambda>x. e) A\<close> is written \<open>\<Sum>x\<in>A. e\<close>.\<close>
 
 syntax (ASCII)
-  "_sum" :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b \<Rightarrow> 'b::comm_monoid_add"  ("(3SUM (_/:_)./ _)" [0, 51, 10] 10)
+  "_sum" :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b \<Rightarrow> 'b::comm_monoid_add"  (\<open>(\<open>indent=3 notation=\<open>binder SUM\<close>\<close>SUM (_/:_)./ _)\<close> [0, 51, 10] 10)
 syntax
-  "_sum" :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b \<Rightarrow> 'b::comm_monoid_add"  ("(2\<Sum>(_/\<in>_)./ _)" [0, 51, 10] 10)
+  "_sum" :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b \<Rightarrow> 'b::comm_monoid_add"  (\<open>(\<open>indent=2 notation=\<open>binder \<Sum>\<close>\<close>\<Sum>(_/\<in>_)./ _)\<close> [0, 51, 10] 10)
 
 syntax_consts
   "_sum" \<rightleftharpoons> sum
@@ -665,30 +665,16 @@ translations \<comment> \<open>Beware of argument permutation!\<close>
 text \<open>Instead of \<^term>\<open>\<Sum>x\<in>{x. P}. e\<close> we introduce the shorter \<open>\<Sum>x|P. e\<close>.\<close>
 
 syntax (ASCII)
-  "_qsum" :: "pttrn \<Rightarrow> bool \<Rightarrow> 'a \<Rightarrow> 'a"  ("(3SUM _ |/ _./ _)" [0, 0, 10] 10)
+  "_qsum" :: "pttrn \<Rightarrow> bool \<Rightarrow> 'a \<Rightarrow> 'a"  (\<open>(\<open>indent=3 notation=\<open>binder SUM Collect\<close>\<close>SUM _ |/ _./ _)\<close> [0, 0, 10] 10)
 syntax
-  "_qsum" :: "pttrn \<Rightarrow> bool \<Rightarrow> 'a \<Rightarrow> 'a"  ("(2\<Sum>_ | (_)./ _)" [0, 0, 10] 10)
+  "_qsum" :: "pttrn \<Rightarrow> bool \<Rightarrow> 'a \<Rightarrow> 'a"  (\<open>(\<open>indent=2 notation=\<open>binder \<Sum> Collect\<close>\<close>\<Sum>_ | (_)./ _)\<close> [0, 0, 10] 10)
 
 syntax_consts
   "_qsum" == sum
-
 translations
   "\<Sum>x|P. t" => "CONST sum (\<lambda>x. t) {x. P}"
-
 print_translation \<open>
-  let
-    fun sum_tr' [Abs (x, Tx, t), Const (\<^const_syntax>\<open>Collect\<close>, _) $ Abs (y, Ty, P)] =
-          if x <> y then raise Match
-          else
-            let
-              val x' = Syntax_Trans.mark_bound_body (x, Tx);
-              val t' = subst_bound (x', t);
-              val P' = subst_bound (x', P);
-            in
-              Syntax.const \<^syntax_const>\<open>_qsum\<close> $ Syntax_Trans.mark_bound_abs (x, Tx) $ P' $ t'
-            end
-      | sum_tr' _ = raise Match;
-  in [(\<^const_syntax>\<open>sum\<close>, K sum_tr')] end
+  [(\<^const_syntax>\<open>sum\<close>, K (Collect_binder_tr' \<^syntax_const>\<open>_qsum\<close>))]
 \<close>
 
 
@@ -1415,15 +1401,15 @@ begin
 sublocale prod: comm_monoid_set times 1
   defines prod = prod.F and prod' = prod.G ..
 
-abbreviation Prod ("\<Prod>_" [1000] 999)
-  where "\<Prod>A \<equiv> prod (\<lambda>x. x) A"
+abbreviation Prod (\<open>\<Prod>\<close>)
+  where "\<Prod> \<equiv> prod (\<lambda>x. x)"
 
 end
 
 syntax (ASCII)
-  "_prod" :: "pttrn => 'a set => 'b => 'b::comm_monoid_mult"  ("(4PROD (_/:_)./ _)" [0, 51, 10] 10)
+  "_prod" :: "pttrn => 'a set => 'b => 'b::comm_monoid_mult"  (\<open>(\<open>indent=4 notation=\<open>binder PROD\<close>\<close>PROD (_/:_)./ _)\<close> [0, 51, 10] 10)
 syntax
-  "_prod" :: "pttrn => 'a set => 'b => 'b::comm_monoid_mult"  ("(2\<Prod>(_/\<in>_)./ _)" [0, 51, 10] 10)
+  "_prod" :: "pttrn => 'a set => 'b => 'b::comm_monoid_mult"  (\<open>(\<open>indent=2 notation=\<open>binder \<Prod>\<close>\<close>\<Prod>(_/\<in>_)./ _)\<close> [0, 51, 10] 10)
 
 syntax_consts
   "_prod" == prod
@@ -1435,30 +1421,16 @@ translations \<comment> \<open>Beware of argument permutation!\<close>
 text \<open>Instead of \<^term>\<open>\<Prod>x\<in>{x. P}. e\<close> we introduce the shorter \<open>\<Prod>x|P. e\<close>.\<close>
 
 syntax (ASCII)
-  "_qprod" :: "pttrn \<Rightarrow> bool \<Rightarrow> 'a \<Rightarrow> 'a"  ("(4PROD _ |/ _./ _)" [0, 0, 10] 10)
+  "_qprod" :: "pttrn \<Rightarrow> bool \<Rightarrow> 'a \<Rightarrow> 'a"  (\<open>(\<open>indent=4 notation=\<open>binder PROD Collect\<close>\<close>PROD _ |/ _./ _)\<close> [0, 0, 10] 10)
 syntax
-  "_qprod" :: "pttrn \<Rightarrow> bool \<Rightarrow> 'a \<Rightarrow> 'a"  ("(2\<Prod>_ | (_)./ _)" [0, 0, 10] 10)
+  "_qprod" :: "pttrn \<Rightarrow> bool \<Rightarrow> 'a \<Rightarrow> 'a"  (\<open>(\<open>indent=2 notation=\<open>binder \<Prod> Collect\<close>\<close>\<Prod>_ | (_)./ _)\<close> [0, 0, 10] 10)
 
 syntax_consts
   "_qprod" == prod
-
 translations
   "\<Prod>x|P. t" => "CONST prod (\<lambda>x. t) {x. P}"
-
 print_translation \<open>
-  let
-    fun prod_tr' [Abs (x, Tx, t), Const (\<^const_syntax>\<open>Collect\<close>, _) $ Abs (y, Ty, P)] =
-          if x <> y then raise Match
-          else
-            let
-              val x' = Syntax_Trans.mark_bound_body (x, Tx);
-              val t' = subst_bound (x', t);
-              val P' = subst_bound (x', P);
-            in
-              Syntax.const \<^syntax_const>\<open>_qprod\<close> $ Syntax_Trans.mark_bound_abs (x, Tx) $ P' $ t'
-            end
-      | prod_tr' _ = raise Match;
-  in [(\<^const_syntax>\<open>prod\<close>, K prod_tr')] end
+  [(\<^const_syntax>\<open>prod\<close>, K (Collect_binder_tr' \<^syntax_const>\<open>_qprod\<close>))]
 \<close>
 
 context comm_monoid_mult
@@ -1608,6 +1580,16 @@ next
   qed
 qed
 
+lemma prod_uminus: "(\<Prod>x\<in>A. -f x :: 'a :: comm_ring_1) = (-1) ^ card A * (\<Prod>x\<in>A. f x)"
+  by (induction A rule: infinite_finite_induct) (auto simp: algebra_simps)
+
+lemma prod_diff:
+  fixes f :: "'a \<Rightarrow> 'b :: field"
+  assumes "finite A" "B \<subseteq> A" "\<And>x. x \<in> B \<Longrightarrow> f x \<noteq> 0"
+  shows   "prod f (A - B) = prod f A / prod f B"
+  by (metis assms finite_subset nonzero_eq_divide_eq prod.subset_diff
+      prod_zero_iff)
+
 lemma sum_zero_power [simp]: "(\<Sum>i\<in>A. c i * 0^i) = (if finite A \<and> 0 \<in> A then c 0 else 0)"
   for c :: "nat \<Rightarrow> 'a::division_ring"
   by (induct A rule: infinite_finite_induct) auto
@@ -1740,9 +1722,21 @@ lemma prod_constant [simp]: "(\<Prod>x\<in> A. y) = y ^ card A"
   for y :: "'a::comm_monoid_mult"
   by (induct A rule: infinite_finite_induct) simp_all
 
+lemma prod_diff_swap:
+  fixes f :: "'a \<Rightarrow> 'b :: comm_ring_1"
+  shows "prod (\<lambda>x. f x - g x) A = (-1) ^ card A * prod (\<lambda>x. g x - f x) A"
+  using prod.distrib[of "\<lambda>_. -1" "\<lambda>x. f x - g x" A]
+  by simp
+
 lemma prod_power_distrib: "prod f A ^ n = prod (\<lambda>x. (f x) ^ n) A"
   for f :: "'a \<Rightarrow> 'b::comm_semiring_1"
   by (induct A rule: infinite_finite_induct) (auto simp add: power_mult_distrib)
+
+lemma power_inject_exp':
+  assumes "a \<noteq> 1" "a > (0 :: 'a :: linordered_semidom)"
+  shows   "a ^ m = a ^ n \<longleftrightarrow> m = n"
+  by (metis assms not_less_iff_gr_or_eq order_le_less power_decreasing_iff
+      power_inject_exp)
 
 lemma power_sum: "c ^ (\<Sum>a\<in>A. f a) = (\<Prod>a\<in>A. c ^ f a)"
   by (induct A rule: infinite_finite_induct) (simp_all add: power_add)
@@ -1796,6 +1790,76 @@ next
   also from * have "\<dots> \<le> g (f i) + sum (g \<circ> f) I" by (intro add_left_mono)
   also from insert have "\<dots> = sum (g \<circ> f) (insert i I)" by (simp add: sum.insert_if)
   finally show ?case .
+qed
+
+lemma prod_add:
+  fixes f1 f2 :: "'a \<Rightarrow> 'c :: comm_semiring_1"
+  assumes finite: "finite A"
+  shows   "(\<Prod>x\<in>A. f1 x + f2 x) = (\<Sum>X\<in>Pow A. (\<Prod>x\<in>X. f1 x) * (\<Prod>x\<in>A-X. f2 x))"
+  using assms
+proof (induction A rule: finite_induct)
+  case (insert x A)
+  have "(\<Sum>X\<in>Pow (insert x A). (\<Prod>x\<in>X. f1 x) * (\<Prod>x\<in>insert x A-X. f2 x)) =
+        (\<Sum>X\<in>Pow A. (\<Prod>x\<in>X. f1 x) * (\<Prod>x\<in>insert x A-X. f2 x)) +
+        (\<Sum>X\<in>insert x ` (Pow A). (\<Prod>x\<in>X. f1 x) * (\<Prod>x\<in>insert x A-X. f2 x))"
+    unfolding Pow_insert by (rule sum.union_disjoint) (use insert.hyps in auto)
+  also have "(\<Sum>X\<in>Pow A. (\<Prod>x\<in>X. f1 x) * (\<Prod>x\<in>insert x A-X. f2 x)) =
+             (\<Sum>X\<in>Pow A. f2 x * (\<Prod>x\<in>X. f1 x) * (\<Prod>x\<in>A-X. f2 x))"
+  proof (rule sum.cong)
+    fix X assume X: "X \<in> Pow A"
+    have "(\<Prod>x\<in>X. f1 x) * (\<Prod>x\<in>insert x (A-X). f2 x) = f2 x * (\<Prod>x\<in>X. f1 x) * (\<Prod>x\<in>A-X. f2 x)"
+      by (subst prod.insert) (use insert.hyps finite_subset[of X A] X in \<open>auto simp: mult_ac\<close>)
+    also have "insert x (A - X) = insert x A - X"
+      using insert.hyps X by auto
+    finally show "(\<Prod>x\<in>X. f1 x) * (\<Prod>x\<in>insert x A-X. f2 x) = f2 x * (\<Prod>x\<in>X. f1 x) * (\<Prod>x\<in>A-X. f2 x)" .
+  qed auto
+  also have "(\<Sum>X\<in>insert x ` (Pow A). (\<Prod>x\<in>X. f1 x) * (\<Prod>x\<in>insert x A-X. f2 x)) = 
+             (\<Sum>X\<in>Pow A. (\<Prod>x\<in>insert x X. f1 x) * (\<Prod>x\<in>insert x A-insert x X. f2 x))"
+    by (subst sum.reindex) (use insert.hyps in \<open>auto intro!: inj_onI simp: o_def\<close>)
+  also have "(\<Sum>X\<in>Pow A. (\<Prod>x\<in>insert x X. f1 x) * (\<Prod>x\<in>insert x A-insert x X. f2 x)) =
+             (\<Sum>X\<in>Pow A. f1 x * (\<Prod>x\<in>X. f1 x) * (\<Prod>x\<in>A-X. f2 x))"
+  proof (rule sum.cong)
+    fix X assume X: "X \<in> Pow A"
+    show "(\<Prod>x\<in>insert x X. f1 x) * (\<Prod>x\<in>insert x A-insert x X. f2 x) = 
+          f1 x * (\<Prod>x\<in>X. f1 x) * (\<Prod>x\<in>A-X. f2 x)"
+      by (subst prod.insert) (use insert.hyps finite_subset[of X A] X in auto)
+  qed auto
+  also have "(\<Sum>X\<in>Pow A. f2 x * prod f1 X * prod f2 (A - X)) + 
+             (\<Sum>X\<in>Pow A. f1 x * prod f1 X * prod f2 (A - X)) =
+             (f1 x + f2 x) * (\<Sum>X\<in>Pow A. prod f1 X * prod f2 (A - X))"
+    by (simp add: algebra_simps flip: sum_distrib_left sum_distrib_right)
+  finally show ?case
+    by (subst (asm) insert.IH [symmetric]) (use insert.hyps in simp)
+qed auto
+
+lemma prod_diff_conv_sum:
+  fixes f1 f2 :: "'a \<Rightarrow> 'c :: comm_ring_1"
+  assumes finite: "finite A"
+  shows   "(\<Prod>x\<in>A. f1 x - f2 x) = (\<Sum>X\<in>Pow A. (-1) ^ card X * (\<Prod>x\<in>X. f2 x) * (\<Prod>x\<in>A-X. f1 x))"
+proof -
+  have "(\<Prod>x\<in>A. f1 x - f2 x) = (\<Prod>x\<in>A. -f2 x + f1 x)"
+    by simp
+  also have "\<dots> = (\<Sum>X\<in>Pow A. (\<Prod>x\<in>X. - f2 x) * prod f1 (A - X))"
+    by (rule prod_add) fact+
+  also have "\<dots> = (\<Sum>X\<in>Pow A. (-1) ^ card X * (\<Prod>x\<in>X. f2 x) * prod f1 (A - X))"
+    by (simp add: prod_uminus)
+  finally show ?thesis .
+qed
+
+lemma prod_diff_conv_sum':
+  fixes f1 f2 :: "'a \<Rightarrow> 'c :: comm_ring_1"
+  assumes finite: "finite A"
+  shows   "(\<Prod>x\<in>A. f1 x - f2 x) = (\<Sum>X\<in>Pow A. (-1) ^ (card A - card X) * (\<Prod>x\<in>X. f1 x) * (\<Prod>x\<in>A-X. f2 x))"
+proof -
+  have "(\<Prod>x\<in>A. f1 x - f2 x) = (\<Prod>x\<in>A. f1 x + (-f2 x))"
+    by simp
+  also have "\<dots> = (\<Sum>X\<in>Pow A. (\<Prod>x\<in>X. f1 x) * (\<Prod>x\<in>A-X. -f2 x))"
+    by (rule prod_add) fact+
+  also have "\<dots> = (\<Sum>X\<in>Pow A. (-1) ^ card (A - X) * (\<Prod>x\<in>X. f1 x) * (\<Prod>x\<in>A-X. f2 x))"
+    by (simp add: prod_uminus mult_ac)
+  also have "\<dots> = (\<Sum>X\<in>Pow A. (-1) ^ (card A - card X) * (\<Prod>x\<in>X. f1 x) * (\<Prod>x\<in>A-X. f2 x))"
+    using finite_subset[OF _ assms] by (intro sum.cong refl, subst card_Diff_subset) auto
+  finally show ?thesis .
 qed
 
 end

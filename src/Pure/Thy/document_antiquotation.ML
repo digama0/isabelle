@@ -61,7 +61,7 @@ fun trim_blanks ctxt =
 
 fun trim_lines ctxt =
   if not (Config.get ctxt thy_output_display) then
-    split_lines #> map Symbol.trim_blanks #> space_implode " "
+    split_lines #> map Symbol.trim_blanks #> implode_space
   else I;
 
 fun indent_lines ctxt =
@@ -83,11 +83,12 @@ fun indent ctxt =
   Config.get ctxt thy_output_display ? Pretty.indent (Config.get ctxt thy_output_indent);
 
 fun format ctxt =
-  if Config.get ctxt thy_output_display orelse Config.get ctxt thy_output_break
-  then Pretty.string_of_margin (Config.get ctxt thy_output_margin)
-  else Pretty.unformatted_string_of;
+  let
+    val breakable = Config.get ctxt thy_output_display orelse Config.get ctxt thy_output_break;
+    val ops = Latex.output_ops (SOME (Config.get ctxt thy_output_margin));
+  in not breakable ? Pretty.unbreakable #> Pretty.output ops #> Bytes.content #> Latex.escape end;
 
-fun output ctxt = delimit ctxt #> indent ctxt #> format ctxt #> Output.output;
+fun output ctxt = delimit ctxt #> indent ctxt #> format ctxt #> Latex.output_;
 
 
 (* theory data *)
@@ -110,12 +111,12 @@ val get_antiquotations = Data.get o Proof_Context.theory_of;
 fun print_antiquotations verbose ctxt =
   let
     val (commands, options) = get_antiquotations ctxt;
-    val command_names = map #1 (Name_Space.markup_table verbose ctxt commands);
-    val option_names = map #1 (Name_Space.markup_table verbose ctxt options);
+    val command_names = map #1 (Name_Space.markups_table verbose ctxt commands);
+    val option_names = map #1 (Name_Space.markups_table verbose ctxt options);
   in
-    [Pretty.big_list "document antiquotations:" (map Pretty.mark_str command_names),
-     Pretty.big_list "document antiquotation options:" (map Pretty.mark_str option_names)]
-  end |> Pretty.writeln_chunks;
+    [Pretty.big_list "document antiquotations:" (map Pretty.marks_str command_names),
+     Pretty.big_list "document antiquotation options:" (map Pretty.marks_str option_names)]
+  end |> Pretty.chunks |> Pretty.writeln;
 
 fun check ctxt = #1 o Name_Space.check (Context.Proof ctxt) (#1 (get_antiquotations ctxt));
 fun check_option ctxt = #1 o Name_Space.check (Context.Proof ctxt) (#2 (get_antiquotations ctxt));
@@ -182,7 +183,7 @@ fun eval ctxt pos (opts, src) =
 
     val print_ctxt = Context_Position.set_visible false preview_ctxt;
     val print_modes =
-      space_explode "," (Config.get print_ctxt thy_output_modes) @ [Latex.latexN, Pretty.regularN];
+      space_explode "," (Config.get print_ctxt thy_output_modes) @ [Print_Mode.latex];
   in Print_Mode.with_modes print_modes (fn () => command pos (opts, src) print_ctxt) () end;
 
 in

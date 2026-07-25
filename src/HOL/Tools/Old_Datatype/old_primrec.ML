@@ -8,18 +8,18 @@ Primitive recursive functions on datatypes.
 
 signature OLD_PRIMREC =
 sig
-  val primrec: bool -> (binding * typ option * mixfix) list ->
+  val primrec: {verbose: bool} -> (binding * typ option * mixfix) list ->
     Specification.multi_specs -> local_theory ->
     {types: string list, result: term list * thm list} * local_theory
-  val primrec_cmd: bool -> (binding * string option * mixfix) list ->
+  val primrec_cmd: {verbose: bool} -> (binding * string option * mixfix) list ->
     Specification.multi_specs_cmd -> local_theory ->
     {types: string list, result: term list * thm list} * local_theory
-  val primrec_global: bool -> (binding * typ option * mixfix) list ->
+  val primrec_global: {verbose: bool} -> (binding * typ option * mixfix) list ->
     Specification.multi_specs -> theory -> (term list * thm list) * theory
-  val primrec_overloaded: bool -> (string * (string * typ) * bool) list ->
+  val primrec_overloaded: {verbose: bool} -> (string * (string * typ) * bool) list ->
     (binding * typ option * mixfix) list ->
     Specification.multi_specs -> theory -> (term list * thm list) * theory
-  val primrec_simple: bool -> ((binding * typ) * mixfix) list -> term list -> local_theory ->
+  val primrec_simple: {verbose: bool} -> ((binding * typ) * mixfix) list -> term list -> local_theory ->
     {prefix: string, types: string list, result: term list * thm list} * local_theory
 end;
 
@@ -38,7 +38,7 @@ fun process_eqn is_fixed spec rec_fns =
   let
     val (vs, Ts) = split_list (strip_qnt_vars \<^const_name>\<open>Pure.all\<close> spec);
     val body = strip_qnt_body \<^const_name>\<open>Pure.all\<close> spec;
-    val (vs', _) = fold_map Name.variant vs (Name.make_context (fold_aterms
+    val vs' = vs |> Name.variants (Name.make_context (fold_aterms
       (fn Free (v, _) => insert (op =) v | _ => I) body []));
     val eqn = curry subst_bounds (map2 (curry Free) vs' Ts |> rev) body;
     val (lhs, rhs) = HOLogic.dest_eq (HOLogic.dest_Trueprop eqn)
@@ -148,9 +148,8 @@ fun process_fun descr eqns (i, fname) (fnames, fnss) =
       | SOME (ls, cargs', rs, rhs, eq) =>
           let
             val recs = filter (Old_Datatype_Aux.is_rec_type o snd) (cargs' ~~ cargs);
-            val rargs = map fst recs;
-            val subs = map (rpair dummyT o fst)
-              (rev (Term.rename_wrt_term rhs rargs));
+            val rargs = map (rpair dummyT o fst o fst) recs;
+            val subs = Term.variant_bounds rhs rargs;
             val (rhs', (fnames'', fnss'')) = subst (map2 (fn (x, y) => fn z =>
               (Free x, (Old_Datatype_Aux.body_index y, Free z))) recs subs) rhs (fnames', fnss')
                 handle PrimrecError (s, NONE) => primrec_error_eqn s eq
@@ -288,11 +287,10 @@ fun gen_primrec prep_spec int raw_fixes raw_spec lthy =
     |> primrec_simple int fixes (map snd spec)
     |-> (fn {prefix, types, result = (ts, simps)} =>
       Spec_Rules.add spec_name (Spec_Rules.equational_primrec types) ts simps
+      #> Code.declare_default_eqns (map (rpair true) simps)
       #> fold_map Local_Theory.note (attr_bindings prefix ~~ map single simps)
       #-> (fn simps' => Local_Theory.note (simp_attr_binding prefix, maps snd simps')
-        #-> (fn (_, simps'') => 
-          Code.declare_default_eqns (map (rpair true) simps'')
-          #> pair {types = types, result = (ts, simps'')})))
+        #>> (fn (_, simps'') => {types = types, result = (ts, simps'')})))
   end;
 
 in

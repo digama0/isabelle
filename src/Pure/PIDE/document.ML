@@ -84,7 +84,7 @@ fun make_perspective (required, command_ids, overlays) : perspective =
   overlays = Inttab.make_list overlays};
 
 val no_header: node_header =
-  {master = "", header = Thy_Header.make ("", Position.none) [] [], errors = []};
+  {master = "", header = Thy_Header.make ("", Position.none) [] [] [], errors = []};
 
 val empty_perspective = make_perspective (false, [], []);
 
@@ -120,6 +120,8 @@ fun set_header master header errors =
 
 fun get_header (Node {header, ...}) = header;
 
+val header_options = Options.update_no_pos o #options o #header o get_header;
+
 fun set_keywords keywords =
   map_node (fn (header, _, perspective, entries, result, consolidated) =>
     (header, keywords, perspective, entries, result, consolidated));
@@ -135,9 +137,10 @@ fun read_header node span =
             NONE => I
           | SOME id => Protocol_Message.command_positions_yxml id)
           |> error);
-    val {name = (_, pos), imports = imports1, keywords} = Thy_Header.read_tokens Position.none span;
+    val {name = (_, pos), imports = imports1, options, keywords} =
+      Thy_Header.read_tokens Position.none span;
     val imports = (map #1 imports0 ~~ map #2 imports1) handle ListPair.UnequalLengths => imports0;
-  in Thy_Header.make (name, pos) imports keywords end;
+  in Thy_Header.make (name, pos) imports options keywords end;
 
 fun get_perspective (Node {perspective, ...}) = perspective;
 
@@ -347,7 +350,7 @@ fun new_execution version_id delay_request parallel_prints : execution =
 
 abstype state = State of
  {versions: version Inttab.table,  (*version id -> document content*)
-  blobs: (SHA1.digest * string list) Symtab.table,  (*raw digest -> digest, lines*)
+  blobs: (Message_Digest.T * string list) Symtab.table,  (*raw digest -> digest, lines*)
   commands: (string * blob_digest list * int * Token.T list lazy) Inttab.table,
     (*command id -> name, inlined files, token index of files, command span*)
   execution: execution}  (*current execution process*)
@@ -399,7 +402,7 @@ fun delete_version version_id versions =
 
 fun define_blob digest text =
   map_state (fn (versions, blobs, commands, execution) =>
-    let val blobs' = Symtab.update (digest, (SHA1.fake digest, split_lines text)) blobs
+    let val blobs' = Symtab.update (digest, (Message_Digest.parse digest, split_lines text)) blobs
     in (versions, blobs', commands, execution) end);
 
 fun the_blob (State {blobs, ...}) digest =
@@ -610,8 +613,7 @@ local
 fun init_theory deps node span =
   let
     val master_dir = master_directory node;
-    val header = read_header node span;
-    val imports = #imports header;
+    val header as {imports, options, ...} = read_header node span;
 
     fun maybe_eval_result eval = Command.eval_result_state eval
       handle Fail _ => Toplevel.make_state NONE;
@@ -635,7 +637,12 @@ fun init_theory deps node span =
     val _ = List.app (fn (thy, r) => Context_Position.reports_global thy [r]) parents_reports;
 
     val thy = Resources.begin_theory master_dir header parents;
-    val _ = Output.status [Markup.markup_only Markup.initialized];
+    val ctxt = Proof_Context.init_global thy;
+
+    val default = Options.the_process_default ();
+    val _ = List.app (fn spec => ignore (Completion.check_option_value ctxt spec default)) options;
+
+    val _ = Output.status [YXML.output_markup_only Markup.initialized];
   in thy end;
 
 fun get_special_parent node =
@@ -682,8 +689,9 @@ fun last_common keywords the_command_name node_required node0 node =
                   val visible = command_visible node command_id;
                   val overlays = command_overlays node command_id;
                   val command_name = the_command_name command_id;
+                  val opts = header_options node;
                 in
-                  (case Command.print keywords visible overlays command_name eval prints of
+                  (case Command.print opts keywords visible overlays command_name eval prints of
                     SOME prints' => assign_update_new (command_id, SOME (eval, prints'))
                   | NONE => I)
                 end
@@ -711,14 +719,20 @@ fun new_exec keywords state node proper_init command_id' (assign_update, command
       val blobs = map (resolve_blob state) blob_digests;
       val span = Lazy.force span0;
 
+      val command_is_theory = command_name = Thy_Header.theoryN;
+      val opts = header_options node;
       val eval' =
-        Command.eval keywords (master_directory node) (fn () => the_default illegal_init init span)
+        Command.eval
+          (if command_is_theory then [] else opts)
+          keywords
+          (master_directory node)
+          (fn () => the_default illegal_init init span)
           (blobs, blobs_index) command_id' span (#1 (#2 command_exec));
-      val prints' = perhaps (Command.print keywords visible overlays command_name eval') [];
+      val prints' = perhaps (Command.print opts keywords visible overlays command_name eval') [];
       val exec' = (eval', prints');
 
       val assign_update' = assign_update_new (command_id', SOME exec') assign_update;
-      val init' = if command_name = Thy_Header.theoryN then NONE else init;
+      val init' = if command_is_theory then NONE else init;
     in SOME (assign_update', (command_id', exec'), init') end;
 
 fun removed_execs node0 (command_id, exec_ids) =
@@ -785,10 +799,10 @@ fun print_consolidation options the_command_span node_name (assign_update, node)
             val consolidate =
               Command.print0 {pri = Task_Queue.urgent_pri + 1, print_fn = fn _ => fn _ =>
                 let
-                  val _ = Output.status [Markup.markup_only Markup.consolidating];
+                  val _ = Output.status [YXML.output_markup_only Markup.consolidating];
                   val result = Exn.capture (Thy_Info.apply_presentation context) thy;
                   val _ = Lazy.force (get_consolidated node);
-                  val _ = Output.status [Markup.markup_only Markup.consolidated];
+                  val _ = Output.status [YXML.output_markup_only Markup.consolidated];
                 in Exn.release result end};
             val result_entry =
               (case lookup_entry node id of
@@ -806,7 +820,7 @@ in
 fun update old_version_id new_version_id edits consolidate state =
   Runtime.exn_trace_system (fn () =>
   let
-    val options = Options.default ();
+    val options = Options.default [];
     val the_command_name = #1 o the_command state;
     val the_command_span = Outer_Syntax.make_span o Lazy.force o #4 o the_command state;
 

@@ -15,9 +15,10 @@ object Command {
   /* blobs */
 
   sealed case class Blob(
+    command_offset: Symbol.Offset,
     name: Document.Node.Name,
     src_path: Path,
-    content: Option[(SHA1.Digest, Symbol.Text_Chunk)]
+    content: Option[(Message_Digest.T, Symbol.Text_Chunk)]
   ) {
     def chunk_file: Symbol.Text_Chunk.File =
       Symbol.Text_Chunk.File(name.node)
@@ -48,6 +49,9 @@ object Command {
       args.iterator.foldLeft(empty)(_ + _)
     def merge(args: IterableOnce[Results]): Results =
       args.iterator.foldLeft(empty)(_ ++ _)
+
+    def warned(entry: Entry): Boolean = Protocol.is_warning_or_legacy(entry._2)
+    def failed(entry: Entry): Boolean = Protocol.is_error(entry._2)
   }
 
   final class Results private(private val rep: SortedMap[Long, XML.Elem]) {
@@ -55,6 +59,9 @@ object Command {
     def defined(serial: Long): Boolean = rep.isDefinedAt(serial)
     def get(serial: Long): Option[XML.Elem] = rep.get(serial)
     def iterator: Iterator[Results.Entry] = rep.iterator
+
+    def warned: Boolean = rep.exists(Results.warned)
+    def failed: Boolean = rep.exists(Results.failed)
 
     def + (entry: Results.Entry): Results =
       if (defined(entry._1)) this
@@ -133,6 +140,8 @@ object Command {
     def apply(index: Markup_Index): Markup_Tree =
       rep.getOrElse(index, Markup_Tree.empty)
 
+    def add(markup: Text.Markup): Markups = add(Markup_Index.markup, markup)
+
     def add(index: Markup_Index, markup: Text.Markup): Markups =
       new Markups(rep + (index -> (this(index) + markup)))
 
@@ -196,86 +205,94 @@ object Command {
       Markup_Tree.merge(states.map(_.markup(index)), range, elements)
 
     def merge(command: Command, states: List[State]): State =
-      State(command, states.flatMap(_.status), merge_results(states),
-        merge_exports(states), merge_markups(states))
+      State(command,
+        results = merge_results(states),
+        exports = merge_exports(states),
+        markups = merge_markups(states))
+
+    def apply(
+      command: Command,
+      results: Results = Results.empty,
+      exports: Exports = Exports.empty,
+      markups: Markups = Markups.empty,
+    ): State = {
+      new State(command, results, exports, markups,
+        Document_Status.Command_Status.make(Date.now(),
+          warned = results.warned,
+          failed = results.failed))
+    }
   }
 
-  sealed case class State(
-    command: Command,
-    status: List[Markup] = Nil,
-    results: Results = Results.empty,
-    exports: Exports = Exports.empty,
-    markups: Markups = Markups.empty
+  final class State private[Command](
+    val command: Command,
+    val results: Results,
+    val exports: Exports,
+    val markups: Markups,
+    val document_status: Document_Status.Command_Status
   ) {
-    lazy val initialized: Boolean = status.exists(markup => markup.name == Markup.INITIALIZED)
-    lazy val consolidating: Boolean = status.exists(markup => markup.name == Markup.CONSOLIDATING)
-    lazy val consolidated: Boolean = status.exists(markup => markup.name == Markup.CONSOLIDATED)
+    override def toString: String = "Command.State(" + command + ")"
+    override def hashCode(): Int = ???
+    override def equals(obj: Any): Boolean = ???
 
-    lazy val maybe_consolidated: Boolean = {
-      var touched = false
-      var forks = 0
-      var runs = 0
-      for (markup <- status) {
-        markup.name match {
-          case Markup.FORKED => touched = true; forks += 1
-          case Markup.JOINED => forks -= 1
-          case Markup.RUNNING => touched = true; runs += 1
-          case Markup.FINISHED => runs -= 1
-          case _ =>
-        }
-      }
-      touched && forks == 0 && runs == 0
-    }
-
-    lazy val document_status: Document_Status.Command_Status = {
-      val warnings =
-        if (results.iterator.exists(p => Protocol.is_warning(p._2) || Protocol.is_legacy(p._2)))
-          List(Markup(Markup.WARNING, Nil))
-        else Nil
-      val errors =
-        if (results.iterator.exists(p => Protocol.is_error(p._2)))
-          List(Markup(Markup.ERROR, Nil))
-        else Nil
-      Document_Status.Command_Status.make((warnings ::: errors ::: status).iterator)
-    }
+    def initialized: Boolean = document_status.initialized
+    def consolidating: Boolean = document_status.consolidating
+    def consolidated: Boolean = document_status.consolidated
+    def maybe_consolidated: Boolean = document_status.maybe_consolidated
+    def timings: Document_Status.Command_Timings = document_status.timings
 
     def markup(index: Markup_Index): Markup_Tree = markups(index)
 
     def redirect(other_command: Command): Option[State] = {
       val markups1 = markups.redirect(other_command.id)
       if (markups1.is_empty) None
-      else Some(new State(other_command, markups = markups1))
+      else Some(State(other_command, markups = markups1))
     }
 
-    private def add_status(st: Markup): State =
-      copy(status = st :: status)
+    def exit(id: Document_ID.Generic): Command =
+      new Command(id, command.node_name, command.blobs_info, command.span, command.source,
+        results, exports, markups, document_status)
 
-    private def add_result(entry: Results.Entry): State =
-      copy(results = results + entry)
+    private def add_status(now: Date, st: Markup): State =
+      new State(command, results, exports, markups,
+        document_status.update(now, markups = List(st)))
+
+    private def add_result(now: Date, entry: Results.Entry): State =
+      new State(command, results + entry, exports, markups,
+        document_status.update(now,
+          warned = Results.warned(entry),
+          failed = Results.failed(entry)))
 
     def add_export(entry: Exports.Entry): Option[State] =
-      if (command.node_name.theory == entry._2.theory_name) Some(copy(exports = exports + entry))
+      if (command.node_name.theory == entry._2.theory_name) {
+        Some(new State(command, results, exports + entry, markups, document_status))
+      }
       else None
 
     private def add_markup(
-      status: Boolean,
-      chunk_name: Symbol.Text_Chunk.Name,
-      m: Text.Markup
+      m: Text.Markup,
+      chunk_name: Symbol.Text_Chunk.Name = Symbol.Text_Chunk.Default,
+      status: Boolean = false
     ): State = {
       val markups1 =
         if (status || Document_Status.Command_Status.liberal_elements(m.info.name))
           markups.add(Markup_Index(true, chunk_name), m)
         else markups
-      copy(markups = markups1.add(Markup_Index(false, chunk_name), m))
+      val markups2 = markups1.add(Markup_Index(false, chunk_name), m)
+      new State(command, results, exports, markups2, document_status)
     }
 
     def accumulate(
+        log: Logger,
+        now: Date,
         self_id: Document_ID.Generic => Boolean,
         other_id: (Document.Node.Name, Document_ID.Generic) =>
           Option[(Symbol.Text_Chunk.Id, Symbol.Text_Chunk)],
         message: XML.Elem,
         cache: XML.Cache): State =
       message match {
+        case XML.Elem(markup@Markup(Markup.Command_Timing.name, _), _) =>
+          add_status(now, markup)
+
         case XML.Elem(Markup(Markup.STATUS, _), msgs) =>
           if (command.span.is_theory) this
           else {
@@ -284,10 +301,10 @@ object Command {
                 msg match {
                   case elem @ XML.Elem(markup, Nil) =>
                     state.
-                      add_status(markup).
-                      add_markup(true, Symbol.Text_Chunk.Default, Text.Info(command.core_range, elem))
+                      add_status(now, markup).
+                      add_markup(Text.Info(command.core_range, elem), status = true)
                   case _ =>
-                    Output.warning("Ignored status message: " + msg)
+                    log.warning("Ignored status message: " + msg)
                     state
                 }
             }
@@ -296,7 +313,7 @@ object Command {
         case XML.Elem(Markup(Markup.REPORT, atts0), msgs) =>
           msgs.foldLeft(this) {
             case (state, msg) =>
-              def bad(): Unit = Output.warning("Ignored report message: " + msg)
+              def bad(): Unit = log.warning("Ignored report message: " + msg)
 
               msg match {
                 case XML.Elem(Markup(name, atts), args) =>
@@ -316,7 +333,7 @@ object Command {
                             case Some(range) =>
                               val props = atts.filterNot(Markup.position_property)
                               val elem = cache.elem(XML.Elem(Markup(name, props), args))
-                              state.add_markup(false, target_name, Text.Info(range, elem))
+                              state.add_markup(Text.Info(range, elem), chunk_name = target_name)
                             case None => bad(); state
                           }
                         case _ =>
@@ -333,22 +350,20 @@ object Command {
         case XML.Elem(Markup(name, props), body) =>
           props match {
             case Markup.Serial(i) =>
-              val markup_message =
-                cache.elem(Protocol.make_message(body, name, props = props))
-              val message_markup =
-                cache.elem(XML.elem(Markup(name, props.filter(p => p._1 == Markup.SERIAL))))
+              val markup_message = cache.elem(Protocol.make_message(body, name, props = props))
+              val message_markup = cache.elem(XML.elem(Markup(name, Markup.Serial(i))))
 
-              var st = add_result(i -> markup_message)
+              var st = add_result(now, i -> markup_message)
               if (Protocol.is_inlined(message)) {
                 for {
                   (chunk_name, chunk) <- command.chunks.iterator
                   range <- command.message_positions(self_id, chunk_name, chunk, message)
-                } st = st.add_markup(false, chunk_name, Text.Info(range, message_markup))
+                } st = st.add_markup(Text.Info(range, message_markup), chunk_name = chunk_name)
               }
               st
 
             case _ =>
-              Output.warning("Ignored message without serial number: " + message)
+              log.warning("Ignored message without serial number: " + message)
               this
           }
       }
@@ -367,7 +382,8 @@ object Command {
     span: Command_Span.Span
   ): Command = {
     val (source, span1) = span.compact_source
-    new Command(id, node_name, blobs_info, span1, source, Results.empty, Markups.empty)
+    new Command(id, node_name, blobs_info, span1, source,
+      Results.empty, Exports.empty, Markups.empty, Document_Status.Command_Status.empty)
   }
 
   val empty: Command =
@@ -375,22 +391,17 @@ object Command {
 
   def unparsed(
     source: String,
-    theory: Boolean = false,
+    theory_commands: Option[Int] = None,
     id: Document_ID.Command = Document_ID.none,
     node_name: Document.Node.Name = Document.Node.Name.empty,
     blobs_info: Blobs_Info = Blobs_Info.empty,
     results: Results = Results.empty,
     markups: Markups = Markups.empty
   ): Command = {
-    val (source1, span1) = Command_Span.unparsed(source, theory = theory).compact_source
-    new Command(id, node_name, blobs_info, span1, source1, results, markups)
+    val span = Command_Span.unparsed(source, theory_commands = theory_commands)
+    new Command(id, node_name, blobs_info, span, source, results,
+      Exports.empty, markups, Document_Status.Command_Status.empty)
   }
-
-  def text(source: String): Command = unparsed(source)
-
-  def rich_text(id: Document_ID.Command, results: Results, body: XML.Body): Command =
-    unparsed(XML.content(body), id = id, results = results,
-      markups = Markups.init(Markup_Tree.from_XML(body)))
 
 
   /* edits and perspective */
@@ -432,16 +443,16 @@ object Command {
       case Thy_Header.THEORY =>
         val reader = span.content_reader
         val header = resources.check_thy(node_name, span.content_reader)
-        val imports_pos = header.imports_pos
+        val imports = header.imports
         val raw_imports =
           try {
             val read_imports = Thy_Header.read(node_name, reader).imports.map(_._1)
-            if (imports_pos.length == read_imports.length) read_imports else error("")
+            if (imports.length == read_imports.length) read_imports else error("")
           }
           catch { case _: Throwable => List.fill(header.imports.length)("") }
 
         val errors =
-          for { ((import_name, pos), s) <- imports_pos zip raw_imports if !can_import(import_name) }
+          for { ((import_name, pos), s) <- imports zip raw_imports if !can_import(import_name) }
           yield {
             val completion =
               if (Url.is_base_name(s)) resources.complete_import_name(node_name, s) else Nil
@@ -460,7 +471,7 @@ object Command {
               val src_path = Path.explode(file)
               val name = Document.Node.Name(resources.append_path(node_name.master_dir, src_path))
               val content = get_blob(name).map(blob => (blob.bytes.sha1_digest, blob.chunk))
-              Blob(name, src_path, content)
+              Blob(0, name, src_path, content)
             }).user_error)
         Blobs_Info(blobs, index = loaded_files.index)
     }
@@ -475,7 +486,9 @@ final class Command private(
   val span: Command_Span.Span,
   val source: String,
   val init_results: Command.Results,
-  val init_markups: Command.Markups
+  val init_exports: Command.Exports,
+  val init_markups: Command.Markups,
+  val init_document_status: Document_Status.Command_Status
 ) {
   override def toString: String = id.toString + "/" + span.kind.toString
 
@@ -486,10 +499,8 @@ final class Command private(
   def is_ignored: Boolean = span.kind == Command_Span.Ignored_Span
 
   def is_undefined: Boolean = id == Document_ID.none
-  val is_unparsed: Boolean = span.content.exists(_.is_unparsed)
-  val is_unfinished: Boolean = span.content.exists(_.is_unfinished)
-
-  def potentially_initialized: Boolean = span.name == Thy_Header.THEORY
+  lazy val is_unparsed: Boolean = span.content.exists(_.is_unparsed)
+  lazy val is_unfinished: Boolean = span.content.exists(_.is_unfinished)
 
 
   /* blobs */
@@ -502,10 +513,13 @@ final class Command private(
   def blobs_names: List[Document.Node.Name] =
     for (case Exn.Res(blob) <- blobs) yield blob.name
 
+  def blobs_files: List[(Symbol.Offset, Document.Node.Name)] =
+    for (case Exn.Res(blob) <- blobs) yield (blob.command_offset, blob.name)
+
   def blobs_undefined: List[Document.Node.Name] =
     for (case Exn.Res(blob) <- blobs if blob.content.isEmpty) yield blob.name
 
-  def blobs_defined: List[(Document.Node.Name, SHA1.Digest)] =
+  def blobs_defined: List[(Document.Node.Name, Message_Digest.T)] =
     for (case Exn.Res(blob) <- blobs; (digest, _) <- blob.content) yield (blob.name, digest)
 
   def blobs_changed(doc_blobs: Document.Blobs): Boolean =
@@ -514,9 +528,9 @@ final class Command private(
 
   /* source chunks */
 
-  val chunk: Symbol.Text_Chunk = Symbol.Text_Chunk(source)
+  lazy val chunk: Symbol.Text_Chunk = Symbol.Text_Chunk(source)
 
-  val chunks: Map[Symbol.Text_Chunk.Name, Symbol.Text_Chunk] =
+  lazy val chunks: Map[Symbol.Text_Chunk.Name, Symbol.Text_Chunk] =
     ((Symbol.Text_Chunk.Default -> chunk) ::
       (for (case Exn.Res(blob) <- blobs; (_, file) <- blob.content)
         yield blob.chunk_file -> file)).toMap
@@ -524,7 +538,7 @@ final class Command private(
   def length: Int = source.length
   def range: Text.Range = chunk.range
 
-  val core_range: Text.Range =
+  lazy val core_range: Text.Range =
     Text.Range(0,
       span.content.reverseIterator.takeWhile(_.is_ignored).foldLeft(length)(_ - _.source.length))
 
@@ -608,8 +622,11 @@ final class Command private(
 
   /* accumulated results */
 
-  val init_state: Command.State =
-    Command.State(this, results = init_results, markups = init_markups)
+  lazy val init_state: Command.State =
+    new Command.State(this, init_results, init_exports, init_markups,
+      init_document_status.update(Date.now(),
+        warned = init_results.warned,
+        failed = init_results.failed))
 
-  val empty_state: Command.State = Command.State(this)
+  lazy val empty_state: Command.State = Command.State(this)
 }

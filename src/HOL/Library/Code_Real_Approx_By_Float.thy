@@ -48,33 +48,35 @@ lemma [code]: "real_of_int = Code_Real_Approx_By_Float.real_of_integer \<circ> i
   by (simp add: fun_eq_iff Code_Real_Approx_By_Float.real_of_integer_def real_of_int_def)
 
 qualified definition exp_real :: \<open>real \<Rightarrow> real\<close>
-  where [code_abbrev, code del]: \<open>exp_real = exp\<close>
+  where [code_abbrev, code drop]: \<open>exp_real = exp\<close>
 
 qualified definition sin_real :: \<open>real \<Rightarrow> real\<close>
-  where [code_abbrev, code del]: \<open>sin_real = sin\<close>
+  where [code_abbrev, code drop]: \<open>sin_real = sin\<close>
 
 qualified definition cos_real :: \<open>real \<Rightarrow> real\<close>
-  where [code_abbrev, code del]: \<open>cos_real = cos\<close>
+  where [code_abbrev, code drop]: \<open>cos_real = cos\<close>
 
 qualified definition tan_real :: \<open>real \<Rightarrow> real\<close>
-  where [code_abbrev, code del]: \<open>tan_real = tan\<close>
+  where [code_abbrev, code drop]: \<open>tan_real = tan\<close>
 
 end
 
-lemma [code]: \<open>Ratreal r = (case quotient_of r of (p, q) \<Rightarrow> real_of_int p / real_of_int q)\<close>
-  by (cases r) (simp add: quotient_of_Fract of_rat_rat)
+lemma [code]: \<open>r - s = r + (- s)\<close> for r s :: real
+  by (fact diff_conv_add_uminus)
 
 lemma [code]: \<open>inverse r = 1 / r\<close> for r :: real
   by (fact inverse_eq_divide)
 
-declare [[code drop: \<open>HOL.equal :: real \<Rightarrow> real \<Rightarrow> bool\<close>
+lemma [code]: \<open>Ratreal r = (let (p, q) = quotient_of r in real_of_int p / real_of_int q)\<close>
+  by (cases r) (simp add: quotient_of_Fract of_rat_rat)
+
+declare [[code drop:
+  \<open>HOL.equal :: real \<Rightarrow> real \<Rightarrow> bool\<close>
   \<open>(\<le>) :: real \<Rightarrow> real \<Rightarrow> bool\<close>
   \<open>(<) :: real \<Rightarrow> real \<Rightarrow> bool\<close>
-  \<open>plus :: real \<Rightarrow> real \<Rightarrow> real\<close>
-  \<open>times :: real \<Rightarrow> real \<Rightarrow> real\<close>
+  \<open>(+) :: real \<Rightarrow> real \<Rightarrow> real\<close>
   \<open>uminus :: real \<Rightarrow> real\<close>
-  \<open>minus :: real \<Rightarrow> real \<Rightarrow> real\<close>
-  \<open>divide :: real \<Rightarrow> real \<Rightarrow> real\<close>
+  \<open>(*) :: real \<Rightarrow> real \<Rightarrow> real\<close>
   sqrt
   \<open>ln :: real \<Rightarrow> real\<close>
   pi
@@ -82,7 +84,7 @@ declare [[code drop: \<open>HOL.equal :: real \<Rightarrow> real \<Rightarrow> b
   arccos
   arctan]]
 
-code_reserved SML Real
+code_reserved (SML) Real
 
 code_printing
   type_constructor real \<rightharpoonup>

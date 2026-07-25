@@ -39,7 +39,7 @@ where
 
 partial_function (heap) traverse :: "'a::heap node \<Rightarrow> 'a list Heap"
 where
-  [code del]: "traverse l =
+  "traverse l =
     (case l of Empty \<Rightarrow> return []
      | Node x r \<Rightarrow> do { tl \<leftarrow> Ref.lookup r;
                               xs \<leftarrow> traverse tl;
@@ -956,7 +956,7 @@ definition test_3 where "test_3 =
     return zs
   })"
 
-code_reserved SML upto
+code_reserved (SML) upto
 
 ML_val \<open>@{code test_1} ()\<close>
 ML_val \<open>@{code test_2} ()\<close>

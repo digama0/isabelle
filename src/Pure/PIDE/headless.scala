@@ -10,7 +10,6 @@ package isabelle
 import java.io.{File => JFile}
 
 import scala.annotation.tailrec
-import scala.collection.mutable
 
 
 object Headless {
@@ -47,13 +46,13 @@ object Headless {
   class Session private[Headless](
     session_name: String,
     _session_options: => Options,
-    override val resources: Resources)
-  extends isabelle.Session(_session_options, resources) {
+    _resources: Headless.Resources)
+  extends isabelle.Session {
     session =>
 
-
-    private def loaded_theory(name: Document.Node.Name): Boolean =
-      resources.session_base.loaded_theory(name.theory)
+    override def session_options: Options = _session_options
+    override def interactive: Boolean = true
+    override def resources: Headless.Resources = _resources
 
 
     /* options */
@@ -92,7 +91,7 @@ object Headless {
       def finished: Load_State = Load_State(Nil, Nil, Space.zero)
 
       def count_file(name: Document.Node.Name): Long =
-        if (loaded_theory(name)) 0 else File.size(name.path)
+        if (resources.loaded_theory(name)) 0 else File.size(name.path)
     }
 
     private case class Load_State(
@@ -130,21 +129,23 @@ object Headless {
       load_state: Load_State,
       watchdog_timeout: Time,
       commit: Option[(Document.Snapshot, Document_Status.Node_Status) => Unit],
-      last_update: Time = Time.now(),
+      last_update: Date = Date.now(),
       nodes_status: Document_Status.Nodes_Status = Document_Status.Nodes_Status.empty,
       already_committed: Map[Document.Node.Name, Document_Status.Node_Status] = Map.empty,
       changed_nodes: Set[Document.Node.Name] = Set.empty,
       changed_assignment: Boolean = false,
       result: Option[Exn.Result[Use_Theories_Result]] = None
     ) {
-      def nodes_status_update(state: Document.State, version: Document.Version,
-        domain: Option[Set[Document.Node.Name]] = None,
+      def update_nodes(state: Document.State, version: Document.Version,
+        domain: Set[Document.Node.Name],
         trim: Boolean = false
       ): (Boolean, Use_Theories_State) = {
-        val (nodes_status_changed, nodes_status1) =
-          nodes_status.update(resources, state, version, domain = domain, trim = trim)
-        val st1 = copy(last_update = Time.now(), nodes_status = nodes_status1)
-        (nodes_status_changed, st1)
+        val now = Date.now()
+        val nodes_status1 =
+          nodes_status.update_nodes(
+            now, resources, state, version, domain = Some(domain), trim = trim)
+        val st1 = copy(last_update = now, nodes_status = nodes_status1)
+        (nodes_status1 != nodes_status, st1)
       }
 
       def changed(
@@ -161,7 +162,7 @@ object Headless {
         else copy(changed_nodes = Set.empty, changed_assignment = false)
 
       def watchdog: Boolean =
-        watchdog_timeout > Time.zero && Time.now() - last_update > watchdog_timeout
+        watchdog_timeout > Time.zero && Date.now() - last_update > watchdog_timeout
 
       def finished_result: Boolean = result.isDefined
 
@@ -207,7 +208,7 @@ object Headless {
         version: Document.Version,
         name: Document.Node.Name
       ): Boolean = {
-        loaded_theory(name) ||
+        resources.loaded_theory(name) ||
         nodes_status.quasi_consolidated(name) ||
         (if (commit.isDefined) already_committed.isDefinedAt(name)
          else state.node_consolidated(version, name))
@@ -226,12 +227,12 @@ object Headless {
                 dep_graph.topological_order.foldLeft(already_committed) {
                   case (committed, name) =>
                     def parents_committed: Boolean =
-                      version.nodes(name).header.imports.forall(parent =>
-                        loaded_theory(parent) || committed.isDefinedAt(parent))
+                      version.nodes(name).header.imports.forall({ case (parent, _) =>
+                      resources.loaded_theory(parent) || committed.isDefinedAt(parent) })
                     if (!committed.isDefinedAt(name) && parents_committed &&
                         state.node_consolidated(version, name)) {
                       val snapshot = stable_snapshot(state, version, name)
-                      val status = Document_Status.Node_Status.make(state, version, name)
+                      val status = Document_Status.Node_Status.make(Date.now(), state, version, name)
                       commit_fn(snapshot, status)
                       committed + (name -> status)
                     }
@@ -240,7 +241,7 @@ object Headless {
           }
 
         def committed(name: Document.Node.Name): Boolean =
-          loaded_theory(name) || st1.already_committed.isDefinedAt(name)
+          resources.loaded_theory(name) || st1.already_committed.isDefinedAt(name)
 
         val (load_theories0, load_state1) =
           load_state.next(dep_graph, consolidated(state, version, _))
@@ -252,15 +253,16 @@ object Headless {
           if (!finished_result && load_theories.isEmpty &&
               (stopped || dep_graph.keys_iterator.forall(consolidated(state, version, _)))
           ) {
+            val now = Date.now()
             @tailrec def make_nodes(
               input: List[Document.Node.Name],
               output: List[(Document.Node.Name, Document_Status.Node_Status)]
             ): Option[List[(Document.Node.Name, Document_Status.Node_Status)]] = {
               input match {
                 case name :: rest =>
-                  if (loaded_theory(name)) make_nodes(rest, output)
+                  if (resources.loaded_theory(name)) make_nodes(rest, output)
                   else {
-                    val status = Document_Status.Node_Status.make(state, version, name)
+                    val status = Document_Status.Node_Status.make(now, state, version, name)
                     val ok = if (commit.isDefined) committed(name) else status.consolidated
                     if (stopped || ok) make_nodes(rest, (name -> status) :: output) else None
                   }
@@ -340,7 +342,7 @@ object Headless {
 
       lazy val check_progress = {
         var check_count = 0
-        Event_Timer.request(Time.now(), repeat = Some(check_delay)) {
+        Event_Timer.request(resources.log, Time.now(), repeat = Some(check_delay)) {
           if (progress.stopped) use_theories_state.change(_.cancel_result)
           else {
             check_count += 1
@@ -351,12 +353,15 @@ object Headless {
 
       val consumer = {
         val delay_nodes_status =
-          Delay.first(nodes_status_delay max Time.zero) {
-            progress.nodes_status(use_theories_state.value.nodes_status)
+          resources.Delay.first(nodes_status_delay max Time.zero) {
+            val st = use_theories_state.value
+            val now = progress.now()
+            progress.nodes_status(
+              Progress.Nodes_Status(now, st.dep_graph.topological_order, st.nodes_status))
           }
 
         val delay_commit_clean =
-          Delay.first(commit_cleanup_delay max Time.zero) {
+          resources.Delay.first(commit_cleanup_delay max Time.zero) {
             val clean_theories = use_theories_state.change_result(_.clean_theories)
             if (clean_theories.nonEmpty && session.is_ready) {
               progress.echo("Removing " + clean_theories.length + " theories ...")
@@ -364,7 +369,7 @@ object Headless {
             }
           }
 
-        isabelle.Session.Consumer[isabelle.Session.Commands_Changed](getClass.getName) { changed =>
+        isabelle.Session.Consumer[isabelle.Session.Commands_Changed](this.class_name) { changed =>
           val state = session.get_state()
 
           def apply_changed(st: Use_Theories_State): Use_Theories_State =
@@ -382,8 +387,8 @@ object Headless {
                     else changed_st.changed_nodes
 
                   val (nodes_status_changed, st1) =
-                    st.reset_changed.nodes_status_update(state, version,
-                      domain = Some(domain), trim = changed_st.changed_assignment)
+                    st.reset_changed.update_nodes(state, version, domain,
+                      trim = changed_st.changed_assignment)
 
                   if (nodes_status_delay >= Time.zero && nodes_status_changed) {
                     delay_nodes_status.invoke()
@@ -391,7 +396,8 @@ object Headless {
 
                   val theory_progress =
                     (for {
-                      (name, node_status) <- st1.nodes_status.present().iterator
+                      name <- st1.dep_graph.topological_order.iterator
+                      node_status = st1.nodes_status(name)
                       if !node_status.is_empty && changed_st.changed_nodes(name) &&
                         !st.already_committed.isDefinedAt(name)
                       p1 = node_status.percentage
@@ -448,21 +454,21 @@ object Headless {
     def apply(
       options: Options,
       session_background: Sessions.Background,
-      log: Logger = new Logger
-    ): Resources = new Resources(options, session_background, log = log)
+      log: Logger
+    ): Resources = new Resources(options, session_background, log)
 
     def make(
       options: Options,
       session_name: String,
+      log: Logger,
+      progress: Progress = new Progress,
       session_dirs: List[Path] = Nil,
       include_sessions: List[String] = Nil,
-      progress: Progress = new Progress,
-      log: Logger = new Logger
     ): Resources = {
       val session_background =
         Sessions.background(options, session_name, dirs = session_dirs,
           include_sessions = include_sessions, progress = progress)
-      apply(options, session_background, log = log)
+      apply(options, session_background, log)
     }
 
     final class Theory private[Headless](
@@ -544,7 +550,7 @@ object Headless {
       lazy val theory_graph: Document.Node.Name.Graph[Unit] =
         Document.Node.Name.make_graph(
           for ((name, theory) <- theories.toList)
-          yield ((name, ()), theory.node_header.imports.filter(theories.isDefinedAt)))
+          yield ((name, ()), theory.node_header.imports_no_pos.filter(theories.isDefinedAt)))
 
       def is_required(name: Document.Node.Name): Boolean = required.isDefinedAt(name)
 
@@ -605,8 +611,8 @@ object Headless {
   class Resources private[Headless](
     val options: Options,
     session_background: Sessions.Background,
-    log: Logger = new Logger)
-  extends isabelle.Resources(session_background.check_errors, log = log) {
+    log: Logger)
+  extends isabelle.Resources(session_background.check_errors, log) {
     resources =>
 
     val store: Store = Store(options)
@@ -620,7 +626,8 @@ object Headless {
     ): Session = {
       val session_name = session_background.session_name
       val session = new Session(session_name, options, resources)
-      val session_heaps = ML_Process.session_heaps(store, session_background, logic = session_name)
+
+      val session_heaps = store.session_heaps(session_background, logic = session_name)
 
       progress.echo("Starting session " + session_name + " ...")
       Isabelle_Process.start(

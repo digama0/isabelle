@@ -49,33 +49,34 @@ structure Data = Generic_Data
   type T = simpset * term list;
   val empty = (HOL_ss, allowed_consts);
   fun merge ((ss1, ts1), (ss2, ts2)) =
-    (merge_ss (ss1, ss2), Library.merge (op aconv) (ts1, ts2));
+    (Simplifier.merge_ss (ss1, ss2), Library.merge (op aconv) (ts1, ts2));
 );
 
 val get = Data.get o Context.Proof;
 
 fun add ts = Thm.declaration_attribute (fn th => fn context =>
   context |> Data.map (fn (ss, ts') =>
-     (simpset_map (Context.proof_of context) (fn ctxt => ctxt addsimps [th]) ss,
+     (Simplifier.simpset_map (Context.proof_of context) (Simplifier.add_simp th) ss,
       merge (op aconv) (ts', ts))))
 
 fun del ts = Thm.declaration_attribute (fn th => fn context =>
   context |> Data.map (fn (ss, ts') =>
-     (simpset_map (Context.proof_of context) (fn ctxt => ctxt delsimps [th]) ss,
+     (Simplifier.simpset_map (Context.proof_of context) (Simplifier.del_simp th) ss,
       subtract (op aconv) ts' ts)))
 
 fun simp_thms_conv ctxt =
-  Simplifier.rewrite (put_simpset HOL_basic_ss ctxt addsimps @{thms simp_thms});
+  Simplifier.rewrite (put_simpset HOL_basic_ss ctxt |> Simplifier.add_simps @{thms simp_thms});
 val FWD = Drule.implies_elim_list;
 
 val true_tm = \<^cterm>\<open>True\<close>;
 val false_tm = \<^cterm>\<open>False\<close>;
-val presburger_ss = simpset_of (\<^context> addsimps @{thms zdvd1_eq});
+val presburger_ss = (*TODO: avoid arbitrary starting point for simpset*)
+  \<^context> |> Simplifier.add_simps @{thms zdvd1_eq} |> Simplifier.simpset_of
 val lin_ss =
-  simpset_of (put_simpset presburger_ss \<^context>
-    addsimps (@{thms dvd_eq_mod_eq_0 add.assoc [where 'a = int] add.commute [where 'a = int] add.left_commute [where 'a = int]
-  mult.assoc [where 'a = int] mult.commute [where 'a = int] mult.left_commute [where 'a = int]
-}));
+  presburger_ss
+  |> Simplifier.simpset_map \<^context>
+    (Simplifier.add_simps @{thms dvd_eq_mod_eq_0 add.assoc [where 'a = int] add.commute [where 'a = int] add.left_commute [where 'a = int]
+      mult.assoc [where 'a = int] mult.commute [where 'a = int] mult.left_commute [where 'a = int]});
 
 val iT = HOLogic.intT
 val bT = HOLogic.boolT;
@@ -105,14 +106,13 @@ val [cpmi, cppi] = [@{thm "cpmi"}, @{thm "cppi"}];
 
 val unity_coeff_ex = Thm.instantiate' [SOME \<^ctyp>\<open>int\<close>] [] @{thm "unity_coeff_ex"};
 
-val [zdvd_mono,simp_from_to,all_not_ex] =
-     [@{thm "zdvd_mono"}, @{thm "simp_from_to"}, @{thm "all_not_ex"}];
-
 val [dvd_uminus, dvd_uminus'] = @{thms "uminus_dvd_conv"};
 
 val eval_ss =
-  simpset_of (put_simpset presburger_ss \<^context>
-    addsimps [simp_from_to] delsimps [insert_iff, bex_triv]);
+  presburger_ss
+  |> Simplifier.simpset_map \<^context>
+    (Simplifier.add_simps @{thms simp_from_to}
+    #> Simplifier.del_simps @{thms insert_iff bex_triv});
 fun eval_conv ctxt = Simplifier.rewrite (put_simpset eval_ss ctxt);
 
 (* recognising cterm without moving to terms *)
@@ -376,7 +376,7 @@ fun unify ctxt q =
    let
     val th =
      Simplifier.rewrite (put_simpset lin_ss ctxt)
-      (Thm.apply \<^cterm>\<open>Trueprop\<close> (Thm.apply \<^cterm>\<open>Not\<close>
+      (HOLogic.mk_judgment (Thm.apply \<^cterm>\<open>Not\<close>
            (Thm.apply (Thm.apply \<^cterm>\<open>(=) :: int => _\<close> (Numeral.mk_cnumber \<^ctyp>\<open>int\<close> x))
            \<^cterm>\<open>0::int\<close>)))
    in Thm.equal_elim (Thm.symmetric th) TrueI end;
@@ -408,7 +408,7 @@ fun unify ctxt q =
        val k = l div dest_number c
        val kt = HOLogic.mk_number iT k
        val th1 = inst' [Thm.dest_arg1 t, Thm.dest_arg t]
-             ((Thm.dest_arg t |> funpow 2 Thm.dest_arg1 |> notz) RS zdvd_mono)
+             ((Thm.dest_arg t |> funpow 2 Thm.dest_arg1 |> notz) RS @{thm zdvd_mono})
        val (d',t') = (mulC$kt$d, mulC$kt$r)
        val thc = (provelin ctxt ((HOLogic.eq_const iT)$d'$(lint [] d') |> HOLogic.mk_Trueprop))
                    RS eq_reflection
@@ -469,7 +469,7 @@ let
    let
     val th =
      Simplifier.rewrite (put_simpset lin_ss ctxt)
-      (Thm.apply \<^cterm>\<open>Trueprop\<close>
+      (HOLogic.mk_judgment
            (Thm.apply (Thm.apply dvdc (Numeral.mk_cnumber \<^ctyp>\<open>int\<close> x)) cd))
    in Thm.equal_elim (Thm.symmetric th) TrueI end;
  val dvd =
@@ -481,7 +481,7 @@ let
    end
  val dp =
    let val th = Simplifier.rewrite (put_simpset lin_ss ctxt)
-      (Thm.apply \<^cterm>\<open>Trueprop\<close>
+      (HOLogic.mk_judgment
            (Thm.apply (Thm.apply \<^cterm>\<open>(<) :: int => _\<close> \<^cterm>\<open>0::int\<close>) cd))
    in Thm.equal_elim (Thm.symmetric th) TrueI end;
     (* A and B set *)
@@ -569,9 +569,10 @@ fun integer_nnf_conv ctxt env =
   nnf_conv ctxt then_conv literals_conv [HOLogic.conj, HOLogic.disj] [] env (linearize_conv ctxt);
 
 val conv_ss =
-  simpset_of (put_simpset HOL_basic_ss \<^context>
-    addsimps (@{thms simp_thms} @ take 4 @{thms ex_simps} @
-      [not_all, all_not_ex, @{thm ex_disj_distrib}]));
+  HOL_basic_ss
+  |> Simplifier.simpset_map \<^context>
+    (Simplifier.add_simps (@{thms simp_thms} @ take 4 @{thms ex_simps} @
+      not_all :: @{thms all_not_ex ex_disj_distrib}));
 
 fun conv ctxt p =
   Qelim.gen_qelim_conv ctxt
@@ -704,7 +705,9 @@ val (_, oracle) =
         (t, procedure t))));
 
 val comp_ss =
-  simpset_of (put_simpset HOL_ss \<^context> addsimps @{thms semiring_norm});
+  HOL_ss
+  |> Simplifier.simpset_map \<^context>
+    (Simplifier.add_simps @{thms semiring_norm});
 
 fun strip_objimp ct =
   (case Thm.term_of ct of
@@ -723,8 +726,9 @@ fun strip_objall ct =
 
 local
   val all_maxscope_ss =
-    simpset_of (put_simpset HOL_basic_ss \<^context>
-      addsimps map (fn th => th RS sym) @{thms "all_simps"})
+    HOL_basic_ss
+    |> Simplifier.simpset_map \<^context>
+      (Simplifier.add_simps (map (fn th => th RS sym) @{thms all_simps}))
 in
 fun thin_prems_tac ctxt P =
   simp_tac (put_simpset all_maxscope_ss ctxt) THEN'
@@ -736,7 +740,7 @@ fun thin_prems_tac ctxt P =
      val q = if P c then c else \<^cterm>\<open>False\<close>
      val ng = fold_rev (fn (a,v) => fn t => Thm.apply a (Thm.lambda v t)) qvs
          (fold_rev (fn p => fn q => Thm.apply (Thm.apply \<^cterm>\<open>HOL.implies\<close> p) q) qs q)
-     val g = Thm.apply (Thm.apply \<^cterm>\<open>(==>)\<close> (Thm.apply \<^cterm>\<open>Trueprop\<close> ng)) p'
+     val g = Thm.apply (Thm.apply \<^cterm>\<open>(==>)\<close> (HOLogic.mk_judgment ng)) p'
      val ntac = (case qs of [] => q aconvc \<^cterm>\<open>False\<close>
                          | _ => false)
     in
@@ -812,35 +816,38 @@ fun generalize_tac ctxt f = CSUBGOAL (fn (p, _) => PRIMITIVE (fn st =>
 
 local
 val ss1 =
-  simpset_of (put_simpset comp_ss \<^context>
-    addsimps @{thms simp_thms} @
-            [@{thm "nat_numeral"} RS sym, @{thm int_dvd_int_iff [symmetric]}, @{thm "of_nat_add"}, @{thm "of_nat_mult"}]
-        @ map (fn r => r RS sym) [@{thm "int_int_eq"}, @{thm "zle_int"}, @{thm "of_nat_less_iff" [where ?'a = int]}]
-    |> Splitter.add_split @{thm "zdiff_int_split"})
+  comp_ss
+  |> Simplifier.simpset_map \<^context>
+    (Simplifier.add_simps (@{thms simp_thms} @
+            (@{thm nat_numeral} RS sym) :: @{thms int_dvd_int_iff [symmetric] of_nat_add of_nat_mult}
+        @ map (fn r => r RS sym) @{thms int_int_eq zle_int of_nat_less_iff [where ?'a = int]})
+    #> Splitter.add_split @{thm zdiff_int_split})
 
 val ss2 =
-  simpset_of (put_simpset HOL_basic_ss \<^context>
-    addsimps [@{thm "nat_0_le"}, @{thm "of_nat_numeral"},
-              @{thm "all_nat"}, @{thm "ex_nat"}, @{thm "zero_le_numeral"},
-              @{thm "le_numeral_extra"(3)}, @{thm "of_nat_0"}, @{thm "of_nat_1"}, @{thm "Suc_eq_plus1"}]
-    |> fold Simplifier.add_cong [@{thm "conj_le_cong"}, @{thm "imp_le_cong"}])
+  HOL_basic_ss
+  |> Simplifier.simpset_map \<^context>
+    (Simplifier.add_simps @{thms nat_0_le of_nat_numeral
+              all_nat ex_nat zero_le_numeral
+              le_numeral_extra(3) of_nat_0 of_nat_1 Suc_eq_plus1}
+    #> fold Simplifier.add_cong @{thms conj_le_cong imp_le_cong})
 val div_mod_ss =
-  simpset_of (put_simpset HOL_basic_ss \<^context>
-    addsimps @{thms simp_thms
+  HOL_basic_ss
+  |> Simplifier.simpset_map \<^context>
+    (Simplifier.add_simps @{thms simp_thms
       mod_eq_0_iff_dvd mod_add_left_eq mod_add_right_eq
       mod_add_eq div_add1_eq [symmetric] div_add1_eq [symmetric]
       mod_self mod_by_0 div_by_0
       div_0 mod_0 div_by_1 mod_by_1
       div_by_Suc_0 mod_by_Suc_0 Suc_eq_plus1
       ac_simps}
-   |> Simplifier.add_proc \<^simproc>\<open>cancel_div_mod_nat\<close>
-   |> Simplifier.add_proc \<^simproc>\<open>cancel_div_mod_int\<close>)
+    #> Simplifier.add_proc \<^simproc>\<open>cancel_div_mod_nat\<close>
+    #> Simplifier.add_proc \<^simproc>\<open>cancel_div_mod_int\<close>)
 val splits_ss =
-  simpset_of (put_simpset comp_ss \<^context>
-    addsimps [@{thm minus_div_mult_eq_mod [symmetric]}]
-    |> fold Splitter.add_split
-      [@{thm "split_zdiv"}, @{thm "split_zmod"}, @{thm "split_div'"},
-       @{thm "split_min"}, @{thm "split_max"}, @{thm "abs_split"}])
+  comp_ss
+  |> Simplifier.simpset_map \<^context>
+    (Simplifier.add_simp @{thm minus_div_mult_eq_mod [symmetric]}
+    #> fold Splitter.add_split
+        @{thms split_zdiv split_zmod split_div' split_min split_max abs_split})
 in
 
 fun nat_to_int_tac ctxt =
@@ -870,7 +877,9 @@ fun finish_tac ctxt q = SUBGOAL (fn (_, i) =>
 fun tac elim add_ths del_ths = Subgoal.FOCUS_PARAMS (fn {context = ctxt, ...} =>
   let
     val simpset_ctxt =
-      put_simpset (fst (get ctxt)) ctxt delsimps del_ths addsimps add_ths
+      put_simpset (fst (get ctxt)) ctxt
+        |> Simplifier.del_simps del_ths
+        |> Simplifier.add_simps add_ths
   in
     Method.insert_tac ctxt (rev (Named_Theorems.get ctxt \<^named_theorems>\<open>arith\<close>))
     THEN_ALL_NEW Object_Logic.full_atomize_tac ctxt

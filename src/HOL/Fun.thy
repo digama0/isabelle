@@ -45,11 +45,11 @@ code_printing
 
 subsection \<open>The Composition Operator \<open>f \<circ> g\<close>\<close>
 
-definition comp :: "('b \<Rightarrow> 'c) \<Rightarrow> ('a \<Rightarrow> 'b) \<Rightarrow> 'a \<Rightarrow> 'c"  (infixl "\<circ>" 55)
+definition comp :: "('b \<Rightarrow> 'c) \<Rightarrow> ('a \<Rightarrow> 'b) \<Rightarrow> 'a \<Rightarrow> 'c"  (infixl \<open>\<circ>\<close> 55)
   where "f \<circ> g = (\<lambda>x. f (g x))"
 
 notation (ASCII)
-  comp  (infixl "o" 55)
+  comp  (infixl \<open>o\<close> 55)
 
 lemma comp_apply [simp]: "(f \<circ> g) x = f (g x)"
   by (simp add: comp_def)
@@ -102,7 +102,7 @@ code_printing
 
 subsection \<open>The Forward Composition Operator \<open>fcomp\<close>\<close>
 
-definition fcomp :: "('a \<Rightarrow> 'b) \<Rightarrow> ('b \<Rightarrow> 'c) \<Rightarrow> 'a \<Rightarrow> 'c"  (infixl "\<circ>>" 60)
+definition fcomp :: "('a \<Rightarrow> 'b) \<Rightarrow> ('b \<Rightarrow> 'c) \<Rightarrow> 'a \<Rightarrow> 'c"  (infixl \<open>\<circ>>\<close> 60)
   where "f \<circ>> g = (\<lambda>x. g (f x))"
 
 lemma fcomp_apply [simp]:  "(f \<circ>> g) x = g (f x)"
@@ -123,7 +123,7 @@ lemma fcomp_comp: "fcomp f g = comp g f"
 code_printing
   constant fcomp \<rightharpoonup> (Eval) infixl 1 "#>"
 
-no_notation fcomp (infixl "\<circ>>" 60)
+no_notation fcomp (infixl \<open>\<circ>>\<close> 60)
 
 
 subsection \<open>Mapping functions\<close>
@@ -229,18 +229,8 @@ lemma inj_onD: "inj_on f A \<Longrightarrow> f x = f y \<Longrightarrow> x \<in>
   unfolding inj_on_def by blast
 
 lemma inj_on_subset:
-  assumes "inj_on f A"
-    and "B \<subseteq> A"
-  shows "inj_on f B"
-proof (rule inj_onI)
-  fix a b
-  assume "a \<in> B" and "b \<in> B"
-  with assms have "a \<in> A" and "b \<in> A"
-    by auto
-  moreover assume "f a = f b"
-  ultimately show "a = b"
-    using assms by (auto dest: inj_onD)
-qed
+  "\<lbrakk> inj_on f A; B \<subseteq> A \<rbrakk> \<Longrightarrow> inj_on f B"
+unfolding inj_on_def by blast
 
 lemma comp_inj_on: "inj_on f A \<Longrightarrow> inj_on g (f ` A) \<Longrightarrow> inj_on (g \<circ> f) A"
   by (simp add: comp_def inj_on_def)
@@ -260,9 +250,6 @@ lemma inj_singleton [simp]: "inj_on (\<lambda>x. {x}) A"
 
 lemma inj_on_empty[iff]: "inj_on f {}"
   by (simp add: inj_on_def)
-
-lemma subset_inj_on: "inj_on f B \<Longrightarrow> A \<subseteq> B \<Longrightarrow> inj_on f A"
-  unfolding inj_on_def by blast
 
 lemma inj_on_Un: "inj_on f (A \<union> B) \<longleftrightarrow> inj_on f A \<and> inj_on f B \<and> f ` (A - B) \<inter> f ` (B - A) = {}"
   unfolding inj_on_def by (blast intro: sym)
@@ -304,6 +291,7 @@ proof (rule inj_onI)
     using lin [of x y] ne by (force simp: dual_order.order_iff_strict)
 qed
 
+text \<open>type class version of the above\<close>
 lemma linorder_inj_onI':
   fixes A :: "'a :: linorder set"
   assumes "\<And>i j. i \<in> A \<Longrightarrow> j \<in> A \<Longrightarrow> i < j \<Longrightarrow> f i \<noteq> f j"
@@ -313,11 +301,22 @@ lemma linorder_inj_onI':
 lemma linorder_injI:
   assumes "\<And>x y::'a::linorder. x < y \<Longrightarrow> f x \<noteq> f y"
   shows "inj f"
-    \<comment> \<open>Courtesy of Stephan Merz\<close>
 using assms by (simp add: linorder_inj_onI')
+
+lemma linorder_inj_on_iff:
+  fixes A :: "'a :: linorder set"
+  shows "inj_on f A \<longleftrightarrow> (\<forall>i j. i \<in> A \<longrightarrow> j \<in> A \<longrightarrow> i < j \<longrightarrow> f i \<noteq> f j)"  (is "?L = ?R")
+proof
+  assume rhs: ?R
+  then show ?L
+    by (blast intro: linorder_inj_onI')
+qed (auto simp: inj_on_def)
 
 lemma inj_on_image_Pow: "inj_on f A \<Longrightarrow>inj_on (image f) (Pow A)"
   unfolding Pow_def inj_on_def by blast
+
+lemma inj_on_vimage_image: "inj_on (\<lambda>b. f -` {b}) (f ` A)"
+using inj_on_def by fastforce
 
 lemma bij_betw_image_Pow: "bij_betw f A B \<Longrightarrow> bij_betw (image f) (Pow A) (Pow B)"
   by (auto simp add: bij_betw_def inj_on_image_Pow image_Pow_surj)
@@ -367,6 +366,15 @@ lemma bij_betw_singleton_iff [simp]: "bij_betw f {x} {y} \<longleftrightarrow> f
 
 lemma bij_betw_singletonI [intro]: "f x = y \<Longrightarrow> bij_betw f {x} {y}"
   by auto
+
+lemma bij_betw_imp_empty_iff: "bij_betw f A B \<Longrightarrow> A = {} \<longleftrightarrow> B = {}"
+  unfolding bij_betw_def by blast
+
+lemma bij_betw_imp_Ex_iff: "bij_betw f {x. P x} {x. Q x} \<Longrightarrow> (\<exists>x. P x) \<longleftrightarrow> (\<exists>x. Q x)"
+  unfolding bij_betw_def by blast
+
+lemma bij_betw_imp_Bex_iff: "bij_betw f {x\<in>A. P x} {x\<in>B. Q x} \<Longrightarrow> (\<exists>x\<in>A. P x) \<longleftrightarrow> (\<exists>x\<in>B. Q x)"
+  unfolding bij_betw_def by blast
 
 lemma bij_betw_apply: "\<lbrakk>bij_betw f A B; a \<in> A\<rbrakk> \<Longrightarrow> f a \<in> B"
   unfolding bij_betw_def by auto
@@ -816,18 +824,12 @@ lemma translation_subtract_Int:
   "(\<lambda>x. x - a) ` (s \<inter> t) = ((\<lambda>x. x - a) ` s) \<inter> ((\<lambda>x. x - a) ` t)"
 by(rule image_Int)(simp add: inj_on_def diff_eq_eq)
 
-end
-
-(* TODO: prove in group_add *)
-context ab_group_add
-begin
-
 lemma translation_Compl:
   "(+) a ` (- t) = - ((+) a ` t)"
 proof (rule set_eqI)
   fix b
   show "b \<in> (+) a ` (- t) \<longleftrightarrow> b \<in> - (+) a ` t"
-    by (auto simp: image_iff algebra_simps intro!: bexI [of _ "b - a"])
+    by (auto simp: image_iff algebra_simps intro!: bexI [of _ "- a + b"])
 qed
 
 end
@@ -840,18 +842,22 @@ definition fun_upd :: "('a \<Rightarrow> 'b) \<Rightarrow> 'a \<Rightarrow> 'b \
 
 nonterminal updbinds and updbind
 
+open_bundle update_syntax
+begin
+
 syntax
-  "_updbind" :: "'a \<Rightarrow> 'a \<Rightarrow> updbind"             ("(2_ :=/ _)")
-  ""         :: "updbind \<Rightarrow> updbinds"             ("_")
-  "_updbinds":: "updbind \<Rightarrow> updbinds \<Rightarrow> updbinds" ("_,/ _")
-  "_Update"  :: "'a \<Rightarrow> updbinds \<Rightarrow> 'a"            ("_/'((_)')" [1000, 0] 900)
-
+  "_updbind" :: "'a \<Rightarrow> 'a \<Rightarrow> updbind"             (\<open>(\<open>indent=2 notation=\<open>mixfix update\<close>\<close>_ :=/ _)\<close>)
+  ""         :: "updbind \<Rightarrow> updbinds"             (\<open>_\<close>)
+  "_updbinds":: "updbind \<Rightarrow> updbinds \<Rightarrow> updbinds" (\<open>_,/ _\<close>)
+  "_Update"  :: "'a \<Rightarrow> updbinds \<Rightarrow> 'a"
+    (\<open>(\<open>open_block notation=\<open>mixfix function update\<close>\<close>_/'((2_)'))\<close> [1000, 0] 900)
 syntax_consts
-  "_updbind" "_updbinds" "_Update" \<rightleftharpoons> fun_upd
-
+  "_Update" \<rightleftharpoons> fun_upd
 translations
   "_Update f (_updbinds b bs)" \<rightleftharpoons> "_Update (_Update f b) bs"
   "f(x:=y)" \<rightleftharpoons> "CONST fun_upd f x y"
+
+end
 
 (* Hint: to define the sum of two functions (or maps), use case_sum.
          A nice infix syntax could be defined by
@@ -1043,10 +1049,10 @@ abbreviation strict_mono_on :: "'a set \<Rightarrow> ('a \<Rightarrow> 'b :: ord
   where "strict_mono_on A \<equiv> monotone_on A (<) (<)"
 
 abbreviation antimono_on :: "'a set \<Rightarrow> ('a \<Rightarrow> 'b :: ord) \<Rightarrow> bool"
-  where "antimono_on A \<equiv> monotone_on A (\<le>) (\<ge>)"
+  where "antimono_on A \<equiv> monotone_on A (\<le>) (\<lambda>x y. y \<le> x)"
 
 abbreviation strict_antimono_on :: "'a set \<Rightarrow> ('a \<Rightarrow> 'b :: ord) \<Rightarrow> bool"
-  where "strict_antimono_on A \<equiv> monotone_on A (<) (>)"
+  where "strict_antimono_on A \<equiv> monotone_on A (<) (\<lambda>x y. y < x)"
 
 lemma mono_on_def[no_atp]: "mono_on A f \<longleftrightarrow> (\<forall>r s. r \<in> A \<and> s \<in> A \<and> r \<le> s \<longrightarrow> f r \<le> f s)"
   by (auto simp add: monotone_on_def)
@@ -1077,16 +1083,6 @@ lemma mono_on_subset: "mono_on A f \<Longrightarrow> B \<subseteq> A \<Longright
 
 end
 
-lemma mono_on_greaterD:
-  assumes "mono_on A g" "x \<in> A" "y \<in> A" "g x > (g (y::_::linorder) :: _ :: linorder)"
-  shows "x > y"
-proof (rule ccontr)
-  assume "\<not>x > y"
-  hence "x \<le> y" by (simp add: not_less)
-  from assms(1-3) and this have "g x \<le> g y" by (rule mono_onD)
-  with assms(4) show False by simp
-qed
-
 context order begin
 
 abbreviation mono :: "('a \<Rightarrow> 'b::order) \<Rightarrow> bool"
@@ -1097,6 +1093,9 @@ abbreviation strict_mono :: "('a \<Rightarrow> 'b::order) \<Rightarrow> bool"
 
 abbreviation antimono :: "('a \<Rightarrow> 'b::order) \<Rightarrow> bool"
   where "antimono \<equiv> monotone (\<le>) (\<lambda>x y. y \<le> x)"
+
+abbreviation strict_antimono :: "('a \<Rightarrow> 'b::preorder) \<Rightarrow> bool"
+  where "strict_antimono \<equiv> monotone (<) (\<lambda>x y. y < x)"
 
 lemma mono_def[no_atp]: "mono f \<longleftrightarrow> (\<forall>x y. x \<le> y \<longrightarrow> f x \<le> f y)"
   by (simp add: monotone_on_def)
@@ -1145,62 +1144,54 @@ proof
   from assms show "f x \<ge> f y" by (simp add: antimono_def)
 qed
 
+end
+
 lemma mono_imp_mono_on: "mono f \<Longrightarrow> mono_on A f"
   by (rule monotone_on_subset[OF _ subset_UNIV])
 
-lemma strict_mono_mono [dest?]:
-  assumes "strict_mono f"
-  shows "mono f"
-proof (rule monoI)
-  fix x y
-  assume "x \<le> y"
-  show "f x \<le> f y"
-  proof (cases "x = y")
-    case True then show ?thesis by simp
-  next
-    case False with \<open>x \<le> y\<close> have "x < y" by simp
-    with assms strict_monoD have "f x < f y" by auto
-    then show ?thesis by simp
-
-  qed
+lemma strict_mono_on_imp_mono_on: "strict_mono_on A f \<Longrightarrow> mono_on A f"
+  for f :: "'a::order \<Rightarrow> 'b::preorder"
+proof (intro mono_onI)
+  fix r s :: 'a assume asm: "r \<le> s" "strict_mono_on A f" "r \<in> A" "s \<in> A"
+  from this(1) consider "r < s" | "r = s" by fastforce
+  then show "f r \<le> f s"
+  proof(cases)
+    case 1
+    from strict_mono_onD[OF asm(2-4) this] show ?thesis by (fact order.strict_implies_order)
+  qed simp
 qed
 
+lemma strict_mono_mono [dest?]:
+  "strict_mono f \<Longrightarrow> mono f"
+  by (fact strict_mono_on_imp_mono_on)
+
 lemma mono_on_ident: "mono_on S (\<lambda>x. x)"
-  by (simp add: monotone_on_def)
+  by (intro monotone_onI)
+
+lemma mono_on_id: "mono_on S id"
+  unfolding id_def by (fact mono_on_ident)
 
 lemma strict_mono_on_ident: "strict_mono_on S (\<lambda>x. x)"
-  by (simp add: monotone_on_def)
+  by (intro monotone_onI)
+
+lemma strict_mono_on_id: "strict_mono_on S id"
+  unfolding id_def by (fact strict_mono_on_ident)
 
 lemma mono_on_const:
-  fixes a :: "'b::order" shows "mono_on S (\<lambda>x. a)"
-  by (simp add: mono_on_def)
+  fixes a :: "'b::preorder" shows "mono_on S (\<lambda>x. a)"
+  by (intro monotone_onI order.refl)
 
 lemma antimono_on_const:
-  fixes a :: "'b::order" shows "antimono_on S (\<lambda>x. a)"
-  by (simp add: monotone_on_def)
+  fixes a :: "'b::preorder" shows "antimono_on S (\<lambda>x. a)"
+  by (intro monotone_onI order.refl)
 
-end
 
 context linorder begin
 
-lemma mono_invE:
-  fixes f :: "'a \<Rightarrow> 'b::order"
-  assumes "mono f"
-  assumes "f x < f y"
-  obtains "x \<le> y"
-proof
-  show "x \<le> y"
-  proof (rule ccontr)
-    assume "\<not> x \<le> y"
-    then have "y \<le> x" by simp
-    with \<open>mono f\<close> obtain "f y \<le> f x" by (rule monoE)
-    with \<open>f x < f y\<close> show False by simp
-  qed
-qed
-
-lemma mono_strict_invE:
-  fixes f :: "'a \<Rightarrow> 'b::order"
-  assumes "mono f"
+lemma mono_on_strict_invE:
+  fixes f :: "'a \<Rightarrow> 'b::preorder"
+  assumes "mono_on S f"
+  assumes "x \<in> S" "y \<in> S"
   assumes "f x < f y"
   obtains "x < y"
 proof
@@ -1208,63 +1199,85 @@ proof
   proof (rule ccontr)
     assume "\<not> x < y"
     then have "y \<le> x" by simp
-    with \<open>mono f\<close> obtain "f y \<le> f x" by (rule monoE)
-    with \<open>f x < f y\<close> show False by simp
+    with \<open>mono_on S f\<close> \<open>x \<in> S\<close> \<open>y \<in> S\<close> have "f y \<le> f x" by (simp only: monotone_onD)
+    with \<open>f x < f y\<close> show False by (simp add: preorder_class.less_le_not_le)
   qed
 qed
 
-lemma strict_mono_eq:
-  assumes "strict_mono f"
+corollary mono_on_invE:
+  fixes f :: "'a \<Rightarrow> 'b::preorder"
+  assumes "mono_on S f"
+  assumes "x \<in> S" "y \<in> S"
+  assumes "f x < f y"
+  obtains "x \<le> y"
+  using assms mono_on_strict_invE[of S f x y thesis] by simp
+
+lemma strict_mono_on_eq:
+  assumes "strict_mono_on S (f::'a \<Rightarrow> 'b::preorder)"
+  assumes "x \<in> S" "y \<in> S"
   shows "f x = f y \<longleftrightarrow> x = y"
 proof
   assume "f x = f y"
   show "x = y" proof (cases x y rule: linorder_cases)
-    case less with assms strict_monoD have "f x < f y" by auto
+    case less with assms have "f x < f y" by (simp add: monotone_onD)
     with \<open>f x = f y\<close> show ?thesis by simp
   next
     case equal then show ?thesis .
   next
-    case greater with assms strict_monoD have "f y < f x" by auto
+    case greater with assms have "f y < f x" by (simp add: monotone_onD)
     with \<open>f x = f y\<close> show ?thesis by simp
   qed
 qed simp
 
-lemma strict_mono_less_eq:
-  assumes "strict_mono f"
+lemma strict_mono_on_less_eq:
+  assumes "strict_mono_on S (f::'a \<Rightarrow> 'b::preorder)"
+  assumes "x \<in> S" "y \<in> S"
   shows "f x \<le> f y \<longleftrightarrow> x \<le> y"
 proof
   assume "x \<le> y"
-  with assms strict_mono_mono monoD show "f x \<le> f y" by auto
+  then show "f x \<le> f y"
+    using nless_le[of x y] monotone_onD[OF assms] order_less_imp_le[of "f x" "f y"]
+    by blast
 next
   assume "f x \<le> f y"
-  show "x \<le> y" proof (rule ccontr)
-    assume "\<not> x \<le> y" then have "y < x" by simp
-    with assms strict_monoD have "f y < f x" by auto
-    with \<open>f x \<le> f y\<close> show False by simp
+  show "x \<le> y"
+  proof (rule ccontr)
+    assume "\<not> x \<le> y"
+    then have "y < x" by simp
+    with assms have "f y < f x" by (simp add: monotone_onD)
+    with \<open>f x \<le> f y\<close> show False by (simp add: preorder_class.less_le_not_le)
   qed
 qed
 
-lemma strict_mono_less:
-  assumes "strict_mono f"
+lemma strict_mono_on_less:
+  assumes "strict_mono_on S (f::'a \<Rightarrow> _::preorder)"
+  assumes "x \<in> S" "y \<in> S"
   shows "f x < f y \<longleftrightarrow> x < y"
-  using assms
-    by (auto simp add: less_le Orderings.less_le strict_mono_eq strict_mono_less_eq)
+  using assms strict_mono_on_eq[of S f x y]
+  by (auto simp add: strict_mono_on_less_eq preorder_class.less_le_not_le)
+
+lemmas mono_invE = mono_on_invE[OF _ UNIV_I UNIV_I]
+lemmas mono_strict_invE = mono_on_strict_invE[OF _ UNIV_I UNIV_I]
+lemmas strict_mono_eq = strict_mono_on_eq[OF _ UNIV_I UNIV_I]
+lemmas strict_mono_less_eq = strict_mono_on_less_eq[OF _ UNIV_I UNIV_I]
+lemmas strict_mono_less = strict_mono_on_less[OF _ UNIV_I UNIV_I]
 
 end
 
 lemma strict_mono_inv:
-  fixes f :: "('a::linorder) \<Rightarrow> ('b::linorder)"
-  assumes "strict_mono f" and "surj f" and inv: "\<And>x. g (f x) = x"
-  shows "strict_mono g"
+  fixes f :: "('a::linorder) \<Rightarrow> ('b::preorder)"
+  assumes "strict_mono_on UNIV f" and "surj f" and inv: "\<And>x. g (f x) = x"
+  shows "strict_mono_on UNIV g"
 proof
   fix x y :: 'b assume "x < y"
   from \<open>surj f\<close> obtain x' y' where [simp]: "x = f x'" "y = f y'" by blast
-  with \<open>x < y\<close> and \<open>strict_mono f\<close> have "x' < y'" by (simp add: strict_mono_less)
+  with \<open>x < y\<close> and \<open>strict_mono_on UNIV f\<close> have "x' < y'" by (simp add: strict_mono_less)
   with inv show "g x < g y" by simp
 qed
 
 lemma strict_mono_on_imp_inj_on:
-  assumes "strict_mono_on A (f :: (_ :: linorder) \<Rightarrow> (_ :: preorder))"
+  fixes f :: "'a::linorder \<Rightarrow> 'b::preorder"
+  assumes "strict_mono_on A f"
   shows "inj_on f A"
 proof (rule inj_onI)
   fix x y assume "x \<in> A" "y \<in> A" "f x = f y"
@@ -1274,7 +1287,8 @@ proof (rule inj_onI)
 qed
 
 lemma strict_mono_on_leD:
-  assumes "strict_mono_on A (f :: (_ :: linorder) \<Rightarrow> _ :: preorder)" "x \<in> A" "y \<in> A" "x \<le> y"
+  fixes f :: "'a::order \<Rightarrow> 'b::preorder"
+  assumes "strict_mono_on A f" "x \<in> A" "y \<in> A" "x \<le> y"
   shows "f x \<le> f y"
 proof (cases "x = y")
   case True
@@ -1287,19 +1301,15 @@ next
 qed
 
 lemma strict_mono_on_eqD:
-  fixes f :: "(_ :: linorder) \<Rightarrow> (_ :: preorder)"
+  fixes f :: "'c::linorder \<Rightarrow> 'd::preorder"
   assumes "strict_mono_on A f" "f x = f y" "x \<in> A" "y \<in> A"
   shows "y = x"
   using assms by (cases rule: linorder_cases) (auto dest: strict_mono_onD)
 
-lemma strict_mono_on_imp_mono_on:
-  "strict_mono_on A (f :: (_ :: linorder) \<Rightarrow> _ :: preorder) \<Longrightarrow> mono_on A f"
-  by (rule mono_onI, rule strict_mono_on_leD)
-
 lemma mono_imp_strict_mono:
-  fixes f :: "'a::order \<Rightarrow> 'b::order"
+  fixes f :: "'a::preorder \<Rightarrow> 'b::order"
   shows "\<lbrakk>mono_on S f; inj_on f S\<rbrakk> \<Longrightarrow> strict_mono_on S f"
-  by (auto simp add: monotone_on_def order_less_le inj_on_eq_iff)
+  by (auto simp add: monotone_on_def less_imp_le order_less_le inj_on_eq_iff)
 
 lemma strict_mono_iff_mono:
   fixes f :: "'a::linorder \<Rightarrow> 'b::order"
@@ -1310,9 +1320,9 @@ proof
 qed (auto intro: mono_imp_strict_mono)
 
 lemma antimono_imp_strict_antimono:
-  fixes f :: "'a::order \<Rightarrow> 'b::order"
+  fixes f :: "'a::preorder \<Rightarrow> 'b::order"
   shows "\<lbrakk>antimono_on S f; inj_on f S\<rbrakk> \<Longrightarrow> strict_antimono_on S f"
-  by (auto simp add: monotone_on_def order_less_le inj_on_eq_iff)
+  by (auto simp add: monotone_on_def less_imp_le order_less_le inj_on_eq_iff)
 
 lemma strict_antimono_iff_antimono:
   fixes f :: "'a::linorder \<Rightarrow> 'b::order"
@@ -1337,6 +1347,26 @@ lemma (in semilattice_inf) mono_inf: "mono f \<Longrightarrow> f (A \<sqinter> B
 lemma (in semilattice_sup) mono_sup: "mono f \<Longrightarrow> f A \<squnion> f B \<le> f (A \<squnion> B)"
   for f :: "'a \<Rightarrow> 'b::semilattice_sup"
   by (auto simp add: mono_def intro: Lattices.sup_least)
+
+lemma monotone_on_sup_fun:
+  fixes f g :: "_ \<Rightarrow> _:: semilattice_sup"
+  shows "monotone_on A P (\<le>) f \<Longrightarrow> monotone_on A P (\<le>) g \<Longrightarrow> monotone_on A P (\<le>) (f \<squnion> g)"
+  by (auto intro: monotone_onI sup_mono dest: monotone_onD simp: sup_fun_def)
+
+lemma monotone_on_inf_fun:
+  fixes f g :: "_ \<Rightarrow> _:: semilattice_inf"
+  shows "monotone_on A P (\<le>) f \<Longrightarrow> monotone_on A P (\<le>) g \<Longrightarrow> monotone_on A P (\<le>) (f \<sqinter> g)"
+  by (auto intro: monotone_onI inf_mono dest: monotone_onD simp: inf_fun_def)
+
+lemma antimonotone_on_sup_fun:
+  fixes f g :: "_ \<Rightarrow> _:: semilattice_sup"
+  shows "monotone_on A P (\<ge>) f \<Longrightarrow> monotone_on A P (\<ge>) g \<Longrightarrow> monotone_on A P (\<ge>) (f \<squnion> g)"
+  by (auto intro: monotone_onI sup_mono dest: monotone_onD simp: sup_fun_def)
+
+lemma antimonotone_on_inf_fun:
+  fixes f g :: "_ \<Rightarrow> _:: semilattice_inf"
+  shows "monotone_on A P (\<ge>) f \<Longrightarrow> monotone_on A P (\<ge>) g \<Longrightarrow> monotone_on A P (\<ge>) (f \<sqinter> g)"
+  by (auto intro: monotone_onI inf_mono dest: monotone_onD simp: inf_fun_def)
 
 lemma (in linorder) min_of_mono: "mono f \<Longrightarrow> min (f m) (f n) = f (min m n)"
   by (auto simp: mono_def Orderings.min_def min_def intro: Orderings.antisym)
@@ -1390,7 +1420,7 @@ simproc_setup fun_upd2 ("f(v := w, x := y)") = \<open>
           | find t = NONE
       in gen_fun_upd A B x y (find f) end
 
-    val ss = simpset_of \<^context>
+    val ss = Simplifier.simpset_of \<^context>
   in
     fn _ => fn ctxt => fn ct =>
       let val t = Thm.term_of ct in

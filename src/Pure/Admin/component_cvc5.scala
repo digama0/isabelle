@@ -19,17 +19,17 @@ object Component_CVC5 {
 
   val platforms: List[Download_Platform] =
     List(
-      Download_Platform("arm64-darwin", "cvc5-macOS-arm64-static-2024-03-20-ef2bc3f.zip"),
-      Download_Platform("arm64-linux", "cvc5-Linux-arm64-static-2024-03-20-ef2bc3f.zip"),
-      Download_Platform("x86_64-darwin", "cvc5-macOS-static-2024-03-20-ef2bc3f.zip"),
-      Download_Platform("x86_64-linux", "cvc5-Linux-static-2024-03-20-ef2bc3f.zip"),
-      Download_Platform("x86_64-windows", "cvc5-Win64-static-2024-03-20-ef2bc3f.zip"))
+      Download_Platform("arm64-darwin", "cvc5-macOS-arm64-static.zip"),
+      Download_Platform("arm64-linux", "cvc5-Linux-arm64-static.zip"),
+      Download_Platform("x86_64-darwin", "cvc5-macOS-x86_64-static.zip"),
+      Download_Platform("x86_64-linux", "cvc5-Linux-x86_64-static.zip"),
+      Download_Platform("x86_64-windows", "cvc5-Win64-x86_64-static.zip"))
 
 
   /* build cvc5 */
 
   val default_url = "https://github.com/cvc5/cvc5/releases/download"
-  val default_version = "latest"
+  val default_version = "1.2.0"
 
   def build_cvc5(
     base_url: String = default_url,
@@ -48,7 +48,7 @@ object Component_CVC5 {
 
     for (platform <- platforms) {
       Isabelle_System.with_tmp_dir("download") { download_dir =>
-        val download = base_url + "/" + version + "/" + platform.download_name
+        val download = base_url + "/cvc5-" + version + "/" + platform.download_name
 
         val archive_name =
           Url.get_base_name(platform.download_name) getOrElse
@@ -59,11 +59,22 @@ object Component_CVC5 {
         Isabelle_System.make_directory(platform_dir)
 
         val exe_path = Path.explode("cvc5").exe_if(platform.is_windows)
+        val exe_bin_path = Path.explode("cvc5-bin").exe_if(platform.is_windows)
+
+        val exe = platform_dir + exe_path
+        val exe_bin = platform_dir + exe_bin_path
 
         Isabelle_System.download_file(download, archive_path, progress = progress)
         Isabelle_System.extract(archive_path, download_dir, strip = true)
-        Isabelle_System.copy_file(download_dir + Path.basic("bin") + exe_path, platform_dir)
-        File.set_executable(platform_dir + exe_path)
+
+        Isabelle_System.copy_file(download_dir + Path.basic("bin") + exe_path, exe_bin)
+        File.set_executable(exe_bin)
+
+        File.write(exe, """#!/usr/bin/env bash
+
+"$CVC5_HOME/cvc5-bin" "$@"
+""")
+        File.set_executable(exe)
       }
     }
 
@@ -86,11 +97,9 @@ fi
     /* README */
 
     File.write(component_dir.README,
-      """This distribution of cvc5 was assembled from official downloads
-from """ + base_url + """ for macOS, Linux,
-and Windows, with ARM64 support on macOS and Linux.
-
-The change id is ef2bc3f735df (3 weeks after cvc5-1.1.2).
+      """This distribution of cvc5 was assembled from official downloads from
+""" + base_url + """ --- the static.zip variants
+for macOS, Linux, and Windows, with ARM64 support on macOS and Linux.
 
 The downloaded files were renamed and made executable.
 

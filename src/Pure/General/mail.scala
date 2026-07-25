@@ -6,11 +6,12 @@ Support for sending text mails via SMTP.
 
 package isabelle
 
+import scala.language.unsafeNulls
 
 import java.util.{Properties => JProperties}
 import jakarta.mail.internet.{InternetAddress, MimeMessage}
-import jakarta.mail.{AuthenticationFailedException, Authenticator, Message, MessagingException,
-  PasswordAuthentication, Transport as JTransport, Session => JSession}
+import jakarta.mail.{Authenticator, Message, PasswordAuthentication, Transport => JTransport,
+  Session => JSession}
 
 
 object Mail {
@@ -72,11 +73,12 @@ object Mail {
     def check(): Unit = {
       val transport = mail_session.getTransport("smtp")
       try {
-        transport.connect(smtp_host, smtp_port, user, password)
+        transport.connect(smtp_host, smtp_port,
+          if (user.nonEmpty) user else null, if (password.nonEmpty) password else null)
         transport.close()
       }
       catch {
-        case exn: Throwable => error("Could not connect to SMTP server: " + exn.getMessage)
+        case exn: Throwable => error("Could not connect to SMTP server: " + Exn.message(exn))
       }
     }
 
@@ -98,7 +100,7 @@ object Mail {
       }
 
       try { JTransport.send(message) }
-      catch { case exn: Throwable => error("Sending mail failed: " + exn.getMessage) }
+      catch { case exn: Throwable => error("Sending mail failed: " + Exn.message(exn)) }
     }
   }
 }

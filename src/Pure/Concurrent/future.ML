@@ -111,8 +111,8 @@ fun is_finished x = is_some (peek x);
 val _ =
   ML_system_pp (fn depth => fn pretty => fn x =>
     (case peek x of
-      NONE => PolyML.PrettyString "<future>"
-    | SOME (Exn.Exn _) => PolyML.PrettyString "<failed>"
+      NONE => ML_Pretty.str "<future>"
+    | SOME (Exn.Exn _) => ML_Pretty.str "<failed>"
     | SOME (Exn.Res y) => pretty (y, depth)));
 
 
@@ -442,6 +442,7 @@ fun future_job group atts (e: unit -> 'a) =
   let
     val result = Single_Assignment.var "future" : 'a result;
     val pos = Position.thread_data ();
+    val options_update = Options.inherit_thread_update ();
     val context = Context.get_generic_context ();
     fun job ok =
       let
@@ -449,7 +450,9 @@ fun future_job group atts (e: unit -> 'a) =
           if ok then
             Exn.capture_body (fn () =>
               Thread_Attributes.with_attributes atts (fn _ =>
-                (Position.setmp_thread_data pos o Context.setmp_generic_context context) e ()))
+                (Position.setmp_thread_data pos o
+                  options_update o
+                  Context.setmp_generic_context context) e ()))
           else Isabelle_Thread.interrupt_exn;
       in assign_result group result (identify_result pos res) end;
   in (result, job) end;
@@ -597,7 +600,7 @@ fun enabled () =
 val relevant = (fn [] => false | [_] => false | _ => enabled ());
 
 fun proofs_enabled n =
-  ! Multithreading.parallel_proofs >= n andalso is_some (worker_task ()) andalso enabled ();
+  Interactive.parallel_proofs () >= n andalso is_some (worker_task ()) andalso enabled ();
 
 fun proofs_enabled_timing t =
   proofs_enabled 1 andalso Time.toReal t >= Options.default_real "parallel_subproofs_threshold";

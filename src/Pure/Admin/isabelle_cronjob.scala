@@ -10,13 +10,14 @@ package isabelle
 import java.nio.file.Files
 
 import scala.annotation.tailrec
-import scala.collection.mutable
 
 
 object Isabelle_Cronjob {
   /* global resources: owned by main cronjob */
 
-  val backup = "isabelle.in.tum.de:cronjob"
+  val backup_host = "isabelle.in.tum.de"
+  val backup_dir: Path = Path.explode("cronjob")
+  val log_path: Path = Path.explode("log")
   val main_dir: Path = Path.explode("~/cronjob")
   val main_state_file: Path = main_dir + Path.explode("run/main.state")
   val build_release_log: Path = main_dir + Path.explode("run/build_release.log")
@@ -27,7 +28,7 @@ object Isabelle_Cronjob {
   val afp_repos: Path = main_dir + Path.explode("AFP")
 
   lazy val isabelle_hg: Mercurial.Repository = Mercurial.self_repository()
-  lazy val afp_hg: Mercurial.Repository = Mercurial.repository(afp_repos)
+  lazy val afp_hg: Mercurial.Repository = Mercurial.this_repository(afp_repos)
 
   val mailman_archives_dir = Path.explode("~/cronjob/Mailman")
 
@@ -65,10 +66,10 @@ object Isabelle_Cronjob {
         File.write(logger.log_dir + Build_Log.log_filename("isabelle_identify", logger.start_date),
           Build_Log.Identify.content(logger.start_date, Some(get_rev()), Some(get_afp_rev())))
 
-        Isabelle_System.bash(
-          File.bash_path(Component_Rsync.local_program) +
-            """ -a --include="*/" --include="plain_identify*" --exclude="*" """ +
-            Bash.string(backup + "/log/.") + " " + File.bash_path(main_dir) + "/log/.").check
+        using(SSH.open_session(logger.options, host = backup_host)) { ssh =>
+          ssh.read_directory(backup_dir + log_path, main_dir + log_path, direct = true,
+            filter = List("+ */", "+ plain_identify*", "- *"))
+        }
 
         val cronjob_log = isabelle_devel + Path.basic("cronjob-main.log")
         if (!cronjob_log.is_file) {
@@ -79,10 +80,9 @@ object Isabelle_Cronjob {
   val exit: Logger_Task =
     Logger_Task("exit",
       { logger =>
-        Isabelle_System.bash(
-          File.bash_path(Component_Rsync.local_program) +
-            " -a " + File.bash_path(main_dir) + "/log/." + " " + Bash.string(backup) + "/log/.")
-            .check
+        using(SSH.open_session(logger.options, host = backup_host)) { ssh =>
+          ssh.write_directory(backup_dir + log_path, main_dir + log_path, direct = true)
+        }
       })
 
 
@@ -111,7 +111,7 @@ object Isabelle_Cronjob {
             val context = Build_Release.Release_Context(target_dir, progress = progress)
             Build_Release.build_release_archive(context, rev)
             Build_Release.build_release(logger.options, context, afp_rev = afp_rev,
-              build_sessions = List(Isabelle_System.getenv("ISABELLE_LOGIC")),
+              build_sessions = List(Isabelle_System.default_logic()),
               website = Some(website_dir))
           }
         )
@@ -346,8 +346,12 @@ object Isabelle_Cronjob {
         args = "-a -d '~~/src/Benchmarks'")),
       List(Remote_Build("Linux B", "lxbroy10", history = 90,
         options = "-m32 -B -M1x4,2,4,6", args = "-N -g timing")),
+      List(Remote_Build("Linux C", "linux-netcup-g12", history = 90,
+        options = "-m32 -B -M1x4,2x4,4x2,8", args = "-a -d '~~/src/Benchmarks'",
+        count = () => 2)),
       List(
-        Remote_Build("macOS 11 Big Sur (Intel)", "mini1",
+        Remote_Build("macOS 12 Monterey (Intel)", "mini1-monterey",
+          java_heap = "8g",
           options = "-m32 -B -M1x2,2,4 -p pide_session=false" +
             " -e ISABELLE_OCAML=ocaml -e ISABELLE_OCAMLC=ocamlc -e ISABELLE_OCAML_SETUP=true" +
             " -e ISABELLE_GHC_SETUP=true" +
@@ -369,16 +373,19 @@ object Isabelle_Cronjob {
           detect = Build_Log.Prop.build_tags.toString + " = " + SQL.string("AFP"))),
       List(
         Remote_Build("macOS 14 Sonoma, quick_and_dirty", "mini2-sonoma",
+          java_heap = "8g",
           options = "-m32 -M4 -t quick_and_dirty -p pide_session=false",
           args = "-a -o quick_and_dirty",
           detect = Build_Log.Prop.build_tags.toString + " = " + SQL.string("quick_and_dirty"),
           count = () => 1),
         Remote_Build("macOS 14 Sonoma, skip_proofs", "mini2-sonoma",
+          java_heap = "8g",
           options = "-m32 -M4 -t skip_proofs -p pide_session=false", args = "-a -o skip_proofs",
           detect = Build_Log.Prop.build_tags.toString + " = " + SQL.string("skip_proofs"),
           count = () => 1)),
       List(
         Remote_Build("macOS 13 Ventura (ARM)", "mini3",
+          java_heap = "8g",
           history_base = "build_history_base_arm",
           options = "-a -m32 -B -M1x4,2x2,4 -p pide_session=false" +
             " -e ISABELLE_GHC_SETUP=true" +
@@ -458,7 +465,8 @@ object Isabelle_Cronjob {
     current_log.file.delete
 
     private val thread: Consumer_Thread[String] =
-      Consumer_Thread.fork("cronjob: logger", daemon = true)(
+      Consumer_Thread.fork("cronjob: logger",
+        daemon = true,
         consume =
           { (text: String) =>
             // critical

@@ -512,7 +512,7 @@ fun query_internal ctxt algorithm num_facts num_feats (fact_names, featss, depss
       |> map fst
   in
     (trace_msg ctxt (fn () => "MaSh query internal " ^ commas (map fst goal_feats) ^ " from {" ^
-       elide_string 1000 (space_implode " " (Vector.foldr (op ::) [] fact_names)) ^ "}");
+       elide_string 1000 (implode_space (Vector.foldr (op ::) [] fact_names)) ^ "}");
      (case algorithm of
        MaSh_NB => nb ()
      | MaSh_kNN => knn ()
@@ -545,7 +545,7 @@ fun unmeta_chars accum [] = String.implode (rev accum)
   | unmeta_chars accum (c :: cs) = unmeta_chars (c :: accum) cs
 
 val encode_str = String.translate meta_char
-val encode_strs = map encode_str #> space_implode " "
+val encode_strs = map encode_str #> implode_space
 
 fun decode_str s =
   if String.isSubstring "%" s then unmeta_chars [] (String.explode s) else s;
@@ -866,7 +866,7 @@ fun run_prover_for_mash ctxt params prover goal_name facts goal =
     val problem =
       {comment = "Goal: " ^ goal_name, state = Proof.init ctxt, goal = goal, subgoal = 1,
        subgoal_count = 1, factss = [("", facts)], has_already_found_something = K false,
-       found_something = K ()}
+       found_something = K (), memoize_fun_call = (fn f => f)}
     val slice = hd (get_slices ctxt prover)
   in
     get_minimizing_prover ctxt MaSh (K ()) prover params problem slice

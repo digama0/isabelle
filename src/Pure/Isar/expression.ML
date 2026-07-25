@@ -34,7 +34,7 @@ sig
       * Element.context_i list * Proof.context) * ((string * typ) list * Proof.context)
   val add_locale: binding -> binding -> Bundle.name list ->
     expression_i -> Element.context_i list -> theory -> string * local_theory
-  val add_locale_cmd: binding -> binding -> (xstring * Position.T) list ->
+  val add_locale_cmd: binding -> binding -> Bundle.xname list ->
     expression -> Element.context list -> theory -> string * local_theory
 
   (* Processing of locale expressions *)
@@ -66,7 +66,7 @@ type expression = (xstring * Position.T, string) expr * (binding * string option
 
 (** Internalise locale names in expr **)
 
-fun check_expr thy instances = map (apfst (Locale.check thy)) instances;
+fun check_expr ctxt instances = map (apfst (Locale.check ctxt)) instances;
 
 
 (** Parameters of expression **)
@@ -378,7 +378,7 @@ fun prep_full_context_statement
   let
     val thy = Proof_Context.theory_of ctxt1;
 
-    val (raw_insts, fixed) = parameters_of thy strict (apfst (prep_expr thy) raw_import);
+    val (raw_insts, fixed) = parameters_of thy strict (apfst (prep_expr ctxt1) raw_import);
 
     fun prep_insts_cumulative (loc, (prfx, (inst, eqns))) (i, insts, eqnss, ctxt) =
       let
@@ -794,7 +794,7 @@ fun assumes_to_notes (Assumes asms) axms =
 fun defines_to_notes ctxt (Defines defs) =
       Notes ("", map (fn (a, (def, _)) =>
         (a, [([Assumption.assume ctxt (Thm.cterm_of ctxt def)],
-          [Attrib.internal @{here} (K Locale.witness_add)])])) defs)
+          [Attrib.internal \<^here> (K Locale.witness_add)])])) defs)
   | defines_to_notes _ e = e;
 
 val is_hyp = fn Assumes _ => true | Defines _ => true | _ => false;
@@ -846,7 +846,7 @@ fun gen_add_locale prep_include prep_decl
       if is_some asm then
         [("", [((Binding.suffix_name ("_" ^ axiomsN) binding, []),
           [([Assumption.assume pred_ctxt (Thm.cterm_of pred_ctxt (the asm))],
-            [Attrib.internal @{here} (K Locale.witness_add)])])])]
+            [Attrib.internal \<^here> (K Locale.witness_add)])])])]
       else [];
 
     val notes' =
@@ -874,7 +874,7 @@ fun gen_add_locale prep_include prep_decl
 in
 
 val add_locale = gen_add_locale (K I) cert_declaration;
-val add_locale_cmd = gen_add_locale Bundle.check read_declaration;
+val add_locale_cmd = gen_add_locale Bundle.check_name read_declaration;
 
 end;
 

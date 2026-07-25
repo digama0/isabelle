@@ -68,6 +68,7 @@ sig
   val make_set: key list -> set
   type 'a cache_ops = {apply: key -> 'a, reset: unit -> unit, size: unit -> int}
   val unsynchronized_cache: (key -> 'a) -> 'a cache_ops
+  val apply_unsynchronized_cache: (key -> 'a) -> key -> 'a
 end;
 
 functor Table(Key: KEY): TABLE =
@@ -518,9 +519,7 @@ end;
 (* membership operations *)
 
 fun member eq tab (key, x) =
-  (case lookup tab key of
-    NONE => false
-  | SOME y => eq (x, y));
+  retrieve {result = fn (_, y) => eq (x, y), no_result = false} tab key;
 
 fun insert eq (key, x) =
   modify key (fn NONE => x | SOME y => if eq (x, y) then raise SAME else raise DUP key);
@@ -554,7 +553,7 @@ fun merges eq tabs = Library.foldl (merge eq) (empty, tabs);
 
 (* list tables *)
 
-fun lookup_list tab key = these (lookup tab key);
+fun lookup_list tab key = retrieve {result = #2, no_result = []} tab key;
 
 fun cons_list (key, x) tab = modify key (fn NONE => [x] | SOME xs => x :: xs) tab;
 
@@ -612,17 +611,14 @@ fun unsynchronized_cache f =
     fun total_size () = size (! cache1) + size (! cache2);
   in {apply = apply, reset = reset, size = total_size} end;
 
+fun apply_unsynchronized_cache f = #apply (unsynchronized_cache f);
+
 
 (* ML pretty-printing *)
 
 val _ =
   ML_system_pp (fn depth => fn pretty => fn tab =>
-    ML_Pretty.to_polyml
-      (ML_Pretty.enum "," "{" "}"
-        (ML_Pretty.pair
-          (ML_Pretty.from_polyml o ML_system_pretty)
-          (ML_Pretty.from_polyml o pretty))
-        (dest tab, depth)));
+    ML_Pretty.enum "," "{" "}" (ML_Pretty.pair ML_system_pretty pretty) (dest tab, depth));
 
 
 (*final declarations of this structure!*)

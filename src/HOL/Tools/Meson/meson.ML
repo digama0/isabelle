@@ -16,7 +16,7 @@ sig
   val size_of_subgoals: thm -> int
   val has_too_many_clauses: Proof.context -> term -> bool
   val make_cnf: thm list -> thm -> Proof.context -> thm list * Proof.context
-  val finish_cnf: thm list -> thm list
+  val finish_cnf: bool -> thm list -> thm list
   val presimplified_consts : string list
   val presimplify: simp_options -> Proof.context -> thm -> thm
   val make_nnf: simp_options -> Proof.context -> thm -> thm
@@ -277,7 +277,7 @@ fun notequal_lits_count \<^Const_>\<open>disj for P Q\<close> = notequal_lits_co
 (*Simplify a clause by applying reflexivity to its negated equality literals*)
 fun refl_clause th =
   let val neqs = notequal_lits_count (HOLogic.dest_Trueprop (Thm.concl_of th))
-  in  zero_var_indexes (refl_clause_aux neqs th)  end
+  in  refl_clause_aux neqs th  end
   handle TERM _ => th;  (*probably dest_Trueprop on a weird theorem*)
 
 
@@ -408,8 +408,11 @@ fun cnf old_skolem_ths ctxt (th, ths) =
 fun make_cnf old_skolem_ths th ctxt =
   cnf old_skolem_ths ctxt (th, [])
 
-(*Generalization, removal of redundant equalities, removal of tautologies.*)
-fun finish_cnf ths = filter (not o is_taut) (map refl_clause ths);
+(*Generalization, optional removal of redundant equalities, removal of tautologies.*)
+fun finish_cnf refl ths = ths
+  |> refl ? map refl_clause
+  |> map zero_var_indexes
+  |> filter (not o is_taut)
 
 
 (**** Generation of contrapositives ****)
@@ -539,9 +542,10 @@ fun nnf_extra_simps ({if_simps, ...} : simp_options) =
 (* FIXME: "let_simp" is probably redundant now that we also rewrite with
   "Let_def [abs_def]". *)
 fun nnf_ss simp_options =
-  simpset_of (put_simpset HOL_basic_ss \<^context>
-    addsimps (nnf_extra_simps simp_options)
-    |> fold Simplifier.add_proc
+  HOL_basic_ss
+  |> Simplifier.simpset_map \<^context> (
+    Simplifier.add_simps (nnf_extra_simps simp_options)
+    #> fold Simplifier.add_proc
       [\<^simproc>\<open>defined_All\<close>, \<^simproc>\<open>defined_Ex\<close>, \<^simproc>\<open>neq\<close>, \<^simproc>\<open>let_simp\<close>])
 
 val presimplified_consts =
@@ -555,7 +559,7 @@ fun presimplify (simp_options as {let_simps, ...} : simp_options) ctxt =
   #> let_simps ? rewrite_rule ctxt @{thms Let_def [abs_def]}
 
 fun make_nnf simp_options ctxt th =
-  (case Thm.prems_of th of
+  (case Thm.take_prems_of 1 th of
     [] => th |> presimplify simp_options ctxt |> make_nnf1 ctxt
   | _ => raise THM ("make_nnf: premises in argument", 0, [th]));
 
@@ -682,10 +686,10 @@ fun make_horns ths =
   discrimination as to their size!  With BEST_FIRST, fails for problem 41.*)
 
 fun best_prolog_tac ctxt sizef horns =
-    BEST_FIRST (has_fewer_prems 1, sizef) (prolog_step_tac ctxt horns 1);
+    BEST_FIRST (Thm.no_prems, sizef) (prolog_step_tac ctxt horns 1);
 
 fun depth_prolog_tac ctxt horns =
-    DEPTH_FIRST (has_fewer_prems 1) (prolog_step_tac ctxt horns 1);
+    DEPTH_FIRST Thm.no_prems (prolog_step_tac ctxt horns 1);
 
 (*Return all negative clauses, as possible goal clauses*)
 fun gocls cls = name_thms "Goal#" (map make_goal (neg_clauses cls));
@@ -701,8 +705,8 @@ fun MESON preskolem_tac mkcl cltac ctxt i st =
     (EVERY [Object_Logic.atomize_prems_tac ctxt 1,
             resolve_tac ctxt @{thms ccontr} 1,
             preskolem_tac,
-            Subgoal.FOCUS (fn {context = ctxt', prems = negs, ...} =>
-                      EVERY1 [skolemize_prems_tac simp_options_all_true ctxt' negs,
+            Subgoal.FOCUS (fn {context = ctxt', prems = usings_and_neg_conj, ...} =>
+                      EVERY1 [skolemize_prems_tac simp_options_all_true ctxt' usings_and_neg_conj,
                               Subgoal.FOCUS (cltac o mkcl o #prems) ctxt']) ctxt 1]) i st
   handle THM _ => no_tac st;    (*probably from make_meta_clause, not first-order*)
 
@@ -714,7 +718,7 @@ fun best_meson_tac sizef ctxt =
   MESON all_tac (make_clauses ctxt)
     (fn cls =>
          THEN_BEST_FIRST (resolve_tac ctxt (gocls cls) 1)
-                         (has_fewer_prems 1, sizef)
+                         (Thm.no_prems, sizef)
                          (prolog_step_tac ctxt (make_horns cls) 1))
     ctxt
 
@@ -736,14 +740,14 @@ fun depth_meson_tac ctxt =
 fun prolog_step_tac' ctxt horns =
     let val horn0s = (*0 subgoals vs 1 or more*)
             take_prefix Thm.no_prems horns
-        val nrtac = resolve_from_net_tac ctxt (Tactic.build_net horns)
+        val nrtac = Bires.resolve_from_net_tac ctxt (Bires.build_net horns)
     in  fn i => eq_assume_tac i ORELSE
                 match_tac ctxt horn0s i ORELSE  (*no backtracking if unit MATCHES*)
                 ((assume_tac ctxt i APPEND nrtac i) THEN check_tac)
     end;
 
 fun iter_deepen_prolog_tac ctxt horns =
-    ITER_DEEPEN iter_deepen_limit (has_fewer_prems 1) (prolog_step_tac' ctxt horns);
+    ITER_DEEPEN iter_deepen_limit Thm.no_prems (prolog_step_tac' ctxt horns);
 
 fun iter_deepen_meson_tac ctxt ths = ctxt |> MESON all_tac (make_clauses ctxt)
   (fn cls =>
@@ -758,7 +762,7 @@ fun iter_deepen_meson_tac ctxt ths = ctxt |> MESON all_tac (make_clauses ctxt)
               ["clauses:"] @ map (Thm.string_of_thm ctxt) horns))
         in
           THEN_ITER_DEEPEN iter_deepen_limit
-            (resolve_tac ctxt goes 1) (has_fewer_prems 1) (prolog_step_tac' ctxt horns)
+            (resolve_tac ctxt goes 1) Thm.no_prems (prolog_step_tac' ctxt horns)
         end));
 
 fun meson_tac ctxt ths =

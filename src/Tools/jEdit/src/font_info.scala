@@ -6,13 +6,14 @@ Font information, derived from main jEdit view font.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
 
 import java.awt.Font
 
-import org.gjt.sp.jedit.{jEdit, View}
+import org.gjt.sp.jedit.jEdit
 
 
 object Font_Info {
@@ -31,8 +32,10 @@ object Font_Info {
   def main_size(scale: Double = 1.0): Float =
     restrict_size(jEdit.getIntegerProperty("view.fontsize", 16).toFloat * scale.toFloat)
 
-  def main(scale: Double = 1.0): Font_Info =
-    Font_Info(main_family(), main_size(scale))
+  def main(scale: Double = 1.0, zoom: Zoom = null): Font_Info =
+    Font_Info(main_family(), main_size(if (zoom == null) scale else scale * zoom.scale))
+
+  class Zoom extends GUI.Zoom { tooltip = "Zoom factor for output font size" }
 
 
   /* incremental size change */
@@ -47,13 +50,13 @@ object Font_Info {
         jEdit.setIntegerProperty("view.fontsize", size)
         jEdit.propertiesChanged()
         jEdit.saveSettings()
-        jEdit.getActiveView().getStatus.setMessageAndClear("Text font size: " + size)
+        jEdit.getActiveView.getStatus.setMessageAndClear("Text font size: " + size)
       }
     }
 
     // owned by GUI thread
     private var steps = 0
-    private val delay = Delay.last(PIDE.session.input_delay, gui = true) {
+    private val delay = GUI.Delay.last(PIDE.session.input_delay) {
       change_size { size =>
         var i = size.round
         while (steps != 0 && i > 0) {
@@ -76,11 +79,6 @@ object Font_Info {
       change_size(_ => size)
     }
   }
-
-
-  /* zoom */
-
-  class Zoom extends GUI.Zoom { tooltip = "Zoom factor for output font size" }
 }
 
 sealed case class Font_Info(family: String, size: Float) {

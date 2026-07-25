@@ -18,7 +18,7 @@ definition typerep_of :: "'a \<Rightarrow> typerep" where
 end
 
 syntax
-  "_TYPEREP" :: "type => logic"  ("(1TYPEREP/(1'(_')))")
+  "_TYPEREP" :: "type => logic"  (\<open>(\<open>indent=1 notation=\<open>mixfix TYPEREP\<close>\<close>TYPEREP/(1'(_')))\<close>)
 syntax_consts
   "_TYPEREP" \<rightleftharpoons> typerep
 
@@ -48,7 +48,7 @@ let
 fun add_typerep tyco thy =
   let
     val sorts = replicate (Sign.arity_number thy tyco) \<^sort>\<open>typerep\<close>;
-    val vs = Name.invent_names Name.context "'a" sorts;
+    val vs = Name.invent_types_global sorts;
     val ty = Type (tyco, map TFree vs);
     val lhs = \<^Const>\<open>typerep ty\<close> $ Free ("T", Term.itselfT ty);
     val rhs = \<^Const>\<open>Typerep\<close> $ HOLogic.mk_literal tyco
@@ -58,7 +58,7 @@ fun add_typerep tyco thy =
     thy
     |> Class.instantiation ([tyco], vs, \<^sort>\<open>typerep\<close>)
     |> `(fn lthy => Syntax.check_term lthy eq)
-    |-> (fn eq => Specification.definition NONE [] [] (Binding.empty_atts, eq))
+    |-> (fn eq => Specification.definition {verbose = false} NONE [] [] (Binding.empty_atts, eq))
     |> snd
     |> Class.prove_instantiation_exit (fn ctxt => Class.intro_classes_tac ctxt [])
   end;
@@ -90,7 +90,8 @@ code_printing
   type_constructor typerep \<rightharpoonup> (Eval) "Term.typ"
 | constant Typerep \<rightharpoonup> (Eval) "Term.Type/ (_, _)"
 
-code_reserved Eval Term
+code_reserved
+  (Eval) Term
 
 hide_const (open) typerep Typerep
 

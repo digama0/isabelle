@@ -18,20 +18,24 @@ signature PRINT_MODE =
 sig
   include BASIC_PRINT_MODE
   val input: string
-  val ASCII: string
   val internal: string
+  val ASCII: string
+  val PIDE: string
+  val latex: string
   val setmp: string list -> ('a -> 'b) -> 'a -> 'b
   val with_modes: string list -> ('a -> 'b) -> 'a -> 'b
-  val closure: ('a -> 'b) -> 'a -> 'b
   val add_modes: string list -> unit
+  val PIDE_enabled: unit -> bool
 end;
 
 structure Print_Mode: PRINT_MODE =
 struct
 
 val input = "input";
-val ASCII = "ASCII";
 val internal = "internal";
+val ASCII = "ASCII";
+val PIDE = "PIDE";
+val latex = "latex";
 
 val print_mode = Unsynchronized.ref ([]: string list);
 val print_mode_var = Thread_Data.var () : string list Thread_Data.var;
@@ -48,9 +52,11 @@ fun print_mode_active mode = member (op =) (print_mode_value ()) mode;
 fun setmp modes f x = Thread_Data.setmp print_mode_var (SOME modes) f x;
 
 fun with_modes modes f x = setmp (modes @ print_mode_value ()) f x;
-fun closure f = with_modes [] f;
 
 fun add_modes modes = Unsynchronized.change print_mode (append modes);
+
+fun PIDE_enabled () =
+  find_first (fn mode => mode = PIDE orelse mode = "") (print_mode_value ()) = SOME PIDE;
 
 end;
 

@@ -20,11 +20,11 @@ definition make_cert :: "['s step_type, 's list, 's] \<Rightarrow> 's certificat
 lemma [code]:
   "is_target step phi pc' =
     list_ex (\<lambda>pc. pc' \<noteq> pc+1 \<and> List.member (map fst (step pc (phi!pc))) pc') [0..<length phi]"
-by (force simp: list_ex_iff member_def is_target_def)
+  by (force simp: list_ex_iff is_target_def)
 
 
 locale lbvc = lbv + 
-  fixes phi :: "'a list" ("\<phi>")
+  fixes phi :: "'a list" (\<open>\<phi>\<close>)
   fixes c   :: "'a list" 
   defines cert_def: "c \<equiv> make_cert step \<phi> \<bottom>"
 

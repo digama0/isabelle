@@ -21,7 +21,7 @@ Features:
 signature INDUCTIVE =
 sig
   type result =
-    {preds: term list, elims: thm list, raw_induct: thm,
+    {preds: term list, elims: thm list, raw_induct: thm, def: thm, mono: thm,
      induct: thm, inducts: thm list, intrs: thm list, eqs: thm list}
   val transform_result: morphism -> result -> result
   type info = {names: string list, coind: bool} * result
@@ -35,15 +35,15 @@ sig
   val mk_cases: Proof.context -> term -> thm
   val inductive_forall_def: thm
   val rulify: Proof.context -> thm -> thm
-  val inductive_cases: (Attrib.binding * term list) list -> bool -> local_theory ->
+  val inductive_cases: {verbose: bool} -> (Attrib.binding * term list) list -> local_theory ->
     (string * thm list) list * local_theory
-  val inductive_cases_cmd: (Attrib.binding * string list) list -> bool -> local_theory ->
+  val inductive_cases_cmd: {verbose: bool} -> (Attrib.binding * string list) list -> local_theory ->
     (string * thm list) list * local_theory
   val ind_cases_rules: Proof.context ->
     string list -> (binding * string option * mixfix) list -> thm list
-  val inductive_simps: (Attrib.binding * term list) list -> bool -> local_theory ->
+  val inductive_simps: {verbose: bool} -> (Attrib.binding * term list) list -> local_theory ->
     (string * thm list) list * local_theory
-  val inductive_simps_cmd: (Attrib.binding * string list) list -> bool -> local_theory ->
+  val inductive_simps_cmd: {verbose: bool} -> (Attrib.binding * string list) list -> local_theory ->
     (string * thm list) list * local_theory
   type flags =
     {quiet_mode: bool, verbose: bool, alt_name: binding, coind: bool,
@@ -180,17 +180,18 @@ fun select_disj_tac ctxt =
 (** context data **)
 
 type result =
-  {preds: term list, elims: thm list, raw_induct: thm,
+  {preds: term list, elims: thm list, raw_induct: thm, def: thm, mono: thm,
    induct: thm, inducts: thm list, intrs: thm list, eqs: thm list};
 
-fun transform_result phi {preds, elims, raw_induct: thm, induct, inducts, intrs, eqs} =
+fun transform_result phi {preds, elims, raw_induct: thm, induct, inducts, intrs, eqs, def, mono} =
   let
     val term = Morphism.term phi;
     val thm = Morphism.thm phi;
     val fact = Morphism.fact phi;
   in
-   {preds = map term preds, elims = fact elims, raw_induct = thm raw_induct,
-    induct = thm induct, inducts = fact inducts, intrs = fact intrs, eqs = fact eqs}
+   {preds = map term preds, elims = fact elims, raw_induct = thm raw_induct, def = thm def,
+    induct = thm induct, inducts = fact inducts, intrs = fact intrs, eqs = fact eqs,
+    mono = thm mono}
   end;
 
 type info = {names: string list, coind: bool} * result;
@@ -237,10 +238,10 @@ fun print_inductives verbose ctxt =
     [Pretty.block
       (Pretty.breaks
         (Pretty.str "(co)inductives:" ::
-          map (Pretty.mark_str o #1)
-            (Name_Space.markup_entries verbose ctxt space consts))),
+          map (Pretty.marks_str o #1)
+            (Name_Space.markups_entries verbose ctxt space consts))),
      Pretty.big_list "monotonicity rules:" (map (Thm.pretty_thm_item ctxt) monos)]
-  end |> Pretty.writeln_chunks;
+  end |> Pretty.chunks |> Pretty.writeln;
 
 
 (* inductive info *)
@@ -332,13 +333,13 @@ val bad_ind_occ = "Inductive predicate occurs in argument of inductive predicate
 
 val bad_app = "Inductive predicate must be applied to parameter(s) ";
 
-fun atomize_term thy = Raw_Simplifier.rewrite_term thy inductive_atomize [];
+fun atomize_term thy = Simplifier.rewrite_term thy inductive_atomize [];
 
 in
 
 fun check_rule ctxt cs params ((binding, att), rule) =
   let
-    val params' = Term.variant_frees rule (Logic.strip_params rule);
+    val params' = Variable.variant_names (Variable.declare_names rule ctxt) (Logic.strip_params rule);
     val frees = rev (map Free params');
     val concl = subst_bounds (frees, Logic.strip_assums_concl rule);
     val prems = map (curry subst_bounds frees) (Logic.strip_assums_hyp rule);
@@ -580,7 +581,7 @@ fun simp_case_tac ctxt i =
 
 in
 
-fun mk_cases_tac ctxt = ALLGOALS (simp_case_tac ctxt) THEN prune_params_tac ctxt;
+fun mk_cases_tac ctxt = ALLGOALS (simp_case_tac ctxt) THEN Simplifier.prune_params_tac ctxt;
 
 fun mk_cases ctxt prop =
   let
@@ -606,7 +607,7 @@ end;
 
 (* inductive_cases *)
 
-fun gen_inductive_cases prep_att prep_prop args int lthy =
+fun gen_inductive_cases prep_att prep_prop {verbose} args lthy =
   let
     val thmss =
       map snd args
@@ -616,8 +617,7 @@ fun gen_inductive_cases prep_att prep_prop args int lthy =
         args thmss;
     val (res, lthy') = lthy |> Local_Theory.notes facts
     val _ =
-      Proof_Display.print_results
-        {interactive = int, pos = Position.thread_data (), proof_state = false}
+      Proof_Display.print_results {verbose = verbose, pos = Position.thread_data ()}
         lthy' ((Thm.theoremK, ""), res); 
   in (res, lthy') end;
 
@@ -672,15 +672,14 @@ fun mk_simp_eq ctxt prop =
 
 (* inductive simps *)
 
-fun gen_inductive_simps prep_att prep_prop args int lthy =
+fun gen_inductive_simps prep_att prep_prop {verbose} args lthy =
   let
     val facts = args |> map (fn ((a, atts), props) =>
       ((a, map (prep_att lthy) atts),
         map (Thm.no_attributes o single o mk_simp_eq lthy o prep_prop lthy) props));
     val (res, lthy') = lthy |> Local_Theory.notes facts
     val _ =
-      Proof_Display.print_results
-        {interactive = int, pos = Position.thread_data (), proof_state = false}
+      Proof_Display.print_results {verbose = verbose, pos = Position.thread_data ()}
         lthy' ((Thm.theoremK, ""), res)
   in (res, lthy') end;
 
@@ -925,12 +924,12 @@ fun mk_ind_def quiet_mode skip_mono alt_name coind cs intr_ts monos params cname
     val predT = replicate k HOLogic.boolT ---> argTs ---> HOLogic.boolT;
     val fp_const = if coind then \<^Const>\<open>gfp predT\<close> else \<^Const>\<open>lfp predT\<close>;
 
+    val ctxt1 = fold Variable.declare_names intr_ts lthy
     val p :: xs =
-      map Free (Variable.variant_frees lthy intr_ts
+      map Free (Variable.variant_names ctxt1
         (("p", predT) :: (mk_names "x" (length argTs) ~~ argTs)));
-    val bs =
-      map Free (Variable.variant_frees lthy (p :: xs @ intr_ts)
-        (map (rpair HOLogic.boolT) (mk_names "b" k)));
+    val ctxt2 = fold Variable.declare_names (p :: xs) ctxt1
+    val bs = map Free (Variable.variant_names ctxt2 (map (rpair HOLogic.boolT) (mk_names "b" k)));
 
     fun subst t =
       (case dest_predicate cs params t of
@@ -994,15 +993,15 @@ fun mk_ind_def quiet_mode skip_mono alt_name coind cs intr_ts monos params cname
            fold_rev lambda params (fp_const $ fp_fun)))
       ||> Proof_Context.restore_naming lthy;
     val fp_def' =
-      Simplifier.rewrite (put_simpset HOL_basic_ss lthy' addsimps [fp_def])
+      Simplifier.rewrite (put_simpset HOL_basic_ss lthy' |> Simplifier.add_simp fp_def)
         (Thm.cterm_of lthy' (list_comb (rec_const, params)));
     val specs =
       if is_auxiliary then
         map_index (fn (i, ((b, mx), c)) =>
           let
             val Ts = arg_types_of (length params) c;
-            val xs =
-              map Free (Variable.variant_frees lthy' intr_ts (mk_names "x" (length Ts) ~~ Ts));
+            val ctxt = fold Variable.declare_names intr_ts lthy';
+            val xs = map Free (Variable.variant_names ctxt (mk_names "x" (length Ts) ~~ Ts));
           in
             ((b, mx),
               ((Thm.make_def_binding internals b, []), fold_rev lambda (params @ xs)
@@ -1152,6 +1151,8 @@ fun add_ind_def {quiet_mode, verbose, alt_name, coind, no_elim, no_ind, skip_mon
        raw_induct = rulify lthy3 raw_induct,
        induct = induct,
        inducts = inducts,
+       def = fp_def,
+       mono = mono,
        eqs = eqs'};
 
     val lthy4 = lthy3
@@ -1312,14 +1313,14 @@ val _ =
     (ind_decl true);
 
 val _ =
-  Outer_Syntax.local_theory' \<^command_keyword>\<open>inductive_cases\<close>
+  Outer_Syntax.local_theory \<^command_keyword>\<open>inductive_cases\<close>
     "create simplified instances of elimination rules"
-    (Parse.and_list1 Parse_Spec.simple_specs >> (#2 ooo inductive_cases_cmd));
+    (Parse.and_list1 Parse_Spec.simple_specs >> (#2 oo inductive_cases_cmd {verbose = true}));
 
 val _ =
-  Outer_Syntax.local_theory' \<^command_keyword>\<open>inductive_simps\<close>
+  Outer_Syntax.local_theory \<^command_keyword>\<open>inductive_simps\<close>
     "create simplification rules for inductive predicates"
-    (Parse.and_list1 Parse_Spec.simple_specs >> (#2 ooo inductive_simps_cmd));
+    (Parse.and_list1 Parse_Spec.simple_specs >> (#2 oo inductive_simps_cmd {verbose = true}));
 
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>print_inductives\<close>

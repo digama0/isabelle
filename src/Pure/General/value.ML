@@ -13,8 +13,6 @@ sig
   val print_int: int -> string
   val parse_real: string -> real
   val print_real: real -> string
-  val parse_time: string -> Time.time
-  val print_time: Time.time -> string
 end;
 
 structure Value: VALUE =
@@ -76,22 +74,10 @@ fun parse_real s =
   | NONE => raise Fail ("Bad real " ^ quote s));
 
 fun print_real x =
-  let val s = signed_string_of_real x in
-    (case space_explode "." s of
-      [a, b] => if forall_string (fn c => c = "0") b then a else s
-    | _ => s)
+  let val y = Real.floor x in
+    (case Real.compareReal (x, Real.fromInt y) of
+      IEEEReal.EQUAL => print_int y
+    | _ => signed_string_of_real x)
   end;
-
-
-(* time *)
-
-fun parse_time s =
-  (case Time.fromString s of
-    SOME x => x
-  | NONE => raise Fail ("Bad time " ^ quote s));
-
-fun print_time x =
-  if x < Time.zeroTime then "-" ^ Time.toString (Time.zeroTime - x)
-  else Time.toString x;
 
 end;

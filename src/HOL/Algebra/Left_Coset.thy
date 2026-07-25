@@ -7,11 +7,12 @@ imports Coset
 begin
 
 definition
-  LCOSETS  :: "[_, 'a set] \<Rightarrow> ('a set)set"   ("lcosets\<index> _" [81] 80)
+  LCOSETS  :: "[_, 'a set] \<Rightarrow> ('a set)set"
+    (\<open>(\<open>open_block notation=\<open>prefix lcosets\<close>\<close>lcosets\<index> _)\<close> [81] 80)
   where "lcosets\<^bsub>G\<^esub> H = (\<Union>a\<in>carrier G. {a <#\<^bsub>G\<^esub> H})"
 
 definition
-  LFactGroup :: "[('a,'b) monoid_scheme, 'a set] \<Rightarrow> ('a set) monoid" (infixl "LMod" 65)
+  LFactGroup :: "[('a,'b) monoid_scheme, 'a set] \<Rightarrow> ('a set) monoid" (infixl \<open>LMod\<close> 65)
     \<comment> \<open>Actually defined for groups rather than monoids\<close>
    where "LFactGroup G H = \<lparr>carrier = lcosets\<^bsub>G\<^esub> H, mult = set_mult G, one = H\<rparr>"
 
@@ -94,7 +95,7 @@ lemma (in group) inj_on_f':
 
 lemma (in group) inj_on_f'':
     "\<lbrakk>H \<subseteq> carrier G;  a \<in> carrier G\<rbrakk> \<Longrightarrow> inj_on (\<lambda>y. inv a \<otimes> y) (a <# H)"
-  by (meson inj_on_cmult inv_closed l_coset_subset_G subset_inj_on)
+  by (meson inj_on_cmult inv_closed l_coset_subset_G inj_on_subset)
 
 lemma (in group) inj_on_g':
     "\<lbrakk>H \<subseteq> carrier G;  a \<in> carrier G\<rbrakk> \<Longrightarrow> inj_on (\<lambda>y. a \<otimes> y) H"

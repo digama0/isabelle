@@ -25,6 +25,7 @@ sig
   val none: T
   val start: T
   val label: string -> T -> T
+  val label_interpreted: T -> T
   val file_only: string -> T
   val file: string -> T
   val line_file_only: int -> string -> T
@@ -43,7 +44,8 @@ sig
   val def_properties_of: T -> Properties.T
   val entity_markup: string -> string * T -> Markup.T
   val make_entity_markup: {def: bool} -> serial -> string -> string * T -> Markup.T
-  val markup: T -> Markup.T -> Markup.T
+  val markup_properties: T -> Markup.T -> Markup.T
+  val markup: T -> Markup.T
   val is_reported: T -> bool
   val is_reported_range: T -> bool
   val reported_text: T -> Markup.T -> string -> string
@@ -53,13 +55,12 @@ sig
   type report_text = report * string
   val reports_text: report_text list -> unit
   val reports: report list -> unit
-  val store_reports: report_text list Unsynchronized.ref ->
-    T list -> ('a -> Markup.T list) -> 'a -> unit
   val append_reports: report_text list Unsynchronized.ref -> report list -> unit
   val here_strs: T -> string * string
   val here: T -> string
   val here_list: T list -> string
   type range = T * T
+  val range_ord: range ord
   val no_range: range
   val no_range_position: T -> T
   val range_position: range -> T
@@ -159,6 +160,8 @@ fun label label (Pos {line, offset, end_offset, props = {label = _, file, id}}) 
   Pos {line = line, offset = offset, end_offset = end_offset,
     props = {label = label, file = file, id = id}};
 
+val label_interpreted = label Markup.interpretedN;
+
 fun file_only name = Pos {line = 0, offset = 0, end_offset = 0, props = file_props name};
 fun file name = Pos {line = 1, offset = 1, end_offset = 0, props = file_props name};
 
@@ -241,7 +244,8 @@ fun make_entity_markup {def} serial kind (name, pos) =
       else (Markup.refN, Value.print_int serial) :: def_properties_of pos;
   in Markup.entity kind name |> Markup.properties props end;
 
-val markup = Markup.properties o properties_of;
+val markup_properties = Markup.properties o properties_of;
+fun markup pos = markup_properties pos Markup.position;
 
 
 (* reports *)
@@ -249,23 +253,24 @@ val markup = Markup.properties o properties_of;
 fun is_reported pos = is_some (offset_of pos) andalso is_some (id_of pos);
 fun is_reported_range pos = is_reported pos andalso is_some (end_offset_of pos);
 
-fun reported_text pos m txt = if is_reported pos then Markup.markup (markup pos m) txt else "";
-fun report_text pos markup txt = Output.report [reported_text pos markup txt];
+fun reported_text pos m txt =
+  if is_reported pos then Markup.markup (markup_properties pos m) txt else "";
+
+fun report_text pos markup txt =
+  if Print_Mode.PIDE_enabled () then Output.report [reported_text pos markup txt] else ();
+
 fun report pos markup = report_text pos markup "";
 
 type report = T * Markup.T;
 type report_text = report * string;
 
-val reports_text =
-  map (fn ((pos, m), txt) => if is_reported pos then Markup.markup (markup pos m) txt else "")
-  #> Output.report;
+fun reports_text args =
+  if Print_Mode.PIDE_enabled () then
+    Output.report (args |> map (fn ((pos, m), txt) =>
+      if is_reported pos then Markup.markup (markup_properties pos m) txt else ""))
+  else ();
 
 val reports = map (rpair "") #> reports_text;
-
-fun store_reports _ [] _ _ = ()
-  | store_reports (r: report_text list Unsynchronized.ref) ps markup x =
-      let val ms = markup x
-      in Unsynchronized.change r (fold (fn p => fold (fn m => cons ((p, m), "")) ms) ps) end;
 
 fun append_reports (r: report_text list Unsynchronized.ref) reports =
   Unsynchronized.change r (append (map (rpair "") reports));
@@ -281,13 +286,8 @@ fun here_strs pos =
   | _ => if is_reported pos then ("", "\092<^here>") else ("", ""));
 
 fun here pos =
-  let
-    val props = properties_of pos;
-    val (s1, s2) = here_strs pos;
-  in
-    if s2 = "" then ""
-    else s1 ^ Markup.markup (Markup.properties props Markup.position) s2
-  end;
+  let val (s1, s2) = here_strs pos
+  in if s2 = "" then "" else s1 ^ Markup.markup (markup pos) s2 end;
 
 val here_list = map here #> distinct (op =) #> implode;
 
@@ -295,6 +295,8 @@ val here_list = map here #> distinct (op =) #> implode;
 (* range *)
 
 type range = T * T;
+
+val range_ord = prod_ord ord ord;
 
 val no_range = (none, none);
 

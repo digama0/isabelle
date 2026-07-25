@@ -8,18 +8,18 @@ theory Sfun
   imports Cfun
 begin
 
-pcpodef ('a, 'b) sfun (infixr "\<rightarrow>!" 0) = "{f :: 'a \<rightarrow> 'b. f\<cdot>\<bottom> = \<bottom>}"
+pcpodef ('a::pcpo, 'b::pcpo) sfun (infixr \<open>\<rightarrow>!\<close> 0) = "{f :: 'a \<rightarrow> 'b. f\<cdot>\<bottom> = \<bottom>}"
   by simp_all
 
 type_notation (ASCII)
-  sfun  (infixr "->!" 0)
+  sfun  (infixr \<open>->!\<close> 0)
 
 text \<open>TODO: Define nice syntax for abstraction, application.\<close>
 
-definition sfun_abs :: "('a \<rightarrow> 'b) \<rightarrow> ('a \<rightarrow>! 'b)"
+definition sfun_abs :: "('a::pcpo \<rightarrow> 'b::pcpo) \<rightarrow> ('a \<rightarrow>! 'b)"
   where "sfun_abs = (\<Lambda> f. Abs_sfun (strictify\<cdot>f))"
 
-definition sfun_rep :: "('a \<rightarrow>! 'b) \<rightarrow> 'a \<rightarrow> 'b"
+definition sfun_rep :: "('a::pcpo \<rightarrow>! 'b::pcpo) \<rightarrow> 'a \<rightarrow> 'b"
   where "sfun_rep = (\<Lambda> f. Rep_sfun f)"
 
 lemma sfun_rep_beta: "sfun_rep\<cdot>f = Rep_sfun f"

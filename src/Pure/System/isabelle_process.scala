@@ -20,22 +20,22 @@ object Isabelle_Process {
     eval_main: String = "",
     modes: List[String] = Nil,
     cwd: Path = Path.current,
-    env: JMap[String, String] = Isabelle_System.settings()
+    env: JMap[String, String] = Isabelle_System.Settings.env()
   ): Isabelle_Process = {
     val channel = System_Channel()
-    val process =
+    val (process_options, process) =
       try {
-        val ml_options =
+        val channel_options =
           options.
             string.update("system_channel_address", channel.address).
             string.update("system_channel_password", channel.password)
-        ML_Process(ml_options, session_background, session_heaps,
+        ML_Process(channel_options, session_background, session_heaps,
           use_prelude = use_prelude, eval_main = eval_main,
           modes = modes, cwd = cwd, env = env)
       }
       catch { case exn @ ERROR(_) => channel.shutdown(); throw exn }
 
-    val isabelle_process = new Isabelle_Process(session, process)
+    val isabelle_process = new Isabelle_Process(session, process, process_options)
     process.stdin.close()
     session.start(receiver => new Prover(receiver, session.cache, channel, process))
 
@@ -43,12 +43,12 @@ object Isabelle_Process {
   }
 }
 
-class Isabelle_Process private(session: Session, process: Bash.Process) {
+class Isabelle_Process private(session: Session, process: Bash.Process, val options: Options) {
   private val startup = Future.promise[String]
   private val terminated = Future.promise[Process_Result]
 
   session.phase_changed +=
-    Session.Consumer(getClass.getName) {
+    Session.Consumer(this.class_name) {
       case Session.Ready =>
         startup.fulfill("")
       case Session.Terminated(result) =>

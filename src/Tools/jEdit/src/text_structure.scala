@@ -6,6 +6,7 @@ Text structure based on Isabelle/Isar outer syntax.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
@@ -14,14 +15,13 @@ import java.util.{List => JList}
 import org.gjt.sp.jedit.indent.{IndentRule, IndentAction}
 import org.gjt.sp.jedit.textarea.{TextArea, StructureMatcher, Selection}
 import org.gjt.sp.jedit.buffer.JEditBuffer
-import org.gjt.sp.jedit.Buffer
 
 
 object Text_Structure {
   /* token navigator */
 
   class Navigator(syntax: Outer_Syntax, buffer: JEditBuffer, comments: Boolean) {
-    val limit: Int = PIDE.options.value.int("jedit_structure_limit") max 0
+    val limit: Int = PIDE.options.int("jedit_structure_limit") max 0
 
     def iterator(line: Int, lim: Int = limit): Iterator[Text.Info[Token]] = {
       val it = Token_Markup.line_token_iterator(syntax, buffer, line, line + lim)
@@ -88,7 +88,7 @@ object Text_Structure {
 
           val script_indent: Text.Info[Token] => Int = {
             val opt_rendering: Option[JEdit_Rendering] =
-              if (PIDE.options.value.bool("jedit_indent_script"))
+              if (PIDE.options.bool("jedit_indent_script"))
                 GUI_Thread.now {
                   (for {
                     text_area <- JEdit_Lib.jedit_text_areas(buffer)
@@ -96,7 +96,7 @@ object Text_Structure {
                   } yield rendering).nextOption()
                 }
               else None
-            val limit = PIDE.options.value.int("jedit_indent_script_limit")
+            val limit = PIDE.options.int("jedit_indent_script_limit")
             (info: Text.Info[Token]) =>
               opt_rendering match {
                 case Some(rendering) if keywords.is_command(info.info, Keyword.prf_script) =>

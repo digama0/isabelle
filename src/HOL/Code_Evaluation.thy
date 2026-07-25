@@ -47,17 +47,14 @@ lemma valapp_code [code, code_unfold]:
 subsubsection \<open>Syntax\<close>
 
 definition termify :: "'a \<Rightarrow> term" where
-  [code del]: "termify x = dummy_term"
+  [code drop]: "termify x = dummy_term"
 
 abbreviation valtermify :: "'a \<Rightarrow> 'a \<times> (unit \<Rightarrow> term)" where
   "valtermify x \<equiv> (x, \<lambda>u. termify x)"
 
 bundle term_syntax
 begin
-
-notation App (infixl "<\<cdot>>" 70)
-  and valapp (infixl "{\<cdot>}" 70)
-
+notation App (infixl \<open><\<cdot>>\<close> 70) and valapp (infixl \<open>{\<cdot>}\<close> 70)
 end
 
 
@@ -91,7 +88,8 @@ code_printing
 
 ML_file \<open>Tools/code_evaluation.ML\<close>
 
-code_reserved Eval Code_Evaluation
+code_reserved
+  (Eval) Code_Evaluation
 
 ML_file \<open>~~/src/HOL/Tools/value_command.ML\<close>
 
@@ -110,15 +108,17 @@ instance ..
 
 end
 
-declare [[code drop: rec_term case_term
-  "term_of :: typerep \<Rightarrow> _" "term_of :: term \<Rightarrow> _" "term_of :: String.literal \<Rightarrow> _"
-  "term_of :: _ Predicate.pred \<Rightarrow> term" "term_of :: _ Predicate.seq \<Rightarrow> term"]]
+declare [[code drop:
+  "term_of :: typerep \<Rightarrow> _"
+  "term_of :: term \<Rightarrow> _"
+  "term_of :: integer \<Rightarrow> _"
+  "term_of :: String.literal \<Rightarrow> _"
+  "term_of :: _ Predicate.pred \<Rightarrow> _"
+  "term_of :: _ Predicate.seq \<Rightarrow> _"]]
 
 code_printing
   constant "term_of :: integer \<Rightarrow> term" \<rightharpoonup> (Eval) "HOLogic.mk'_number/ HOLogic.code'_integerT"
 | constant "term_of :: String.literal \<Rightarrow> term" \<rightharpoonup> (Eval) "HOLogic.mk'_literal"
-
-declare [[code drop: "term_of :: integer \<Rightarrow> _"]]
 
 lemma term_of_integer [unfolded typerep_fun_def typerep_num_def typerep_integer_def, code]:
   "term_of (i :: integer) =
@@ -131,7 +131,8 @@ lemma term_of_integer [unfolded typerep_fun_def typerep_num_def typerep_integer_
        (term_of (- i)))"
   by (rule term_of_anything [THEN meta_eq_to_obj_eq])
 
-code_reserved Eval HOLogic
+code_reserved
+  (Eval) HOLogic
 
 
 subsection \<open>Generic reification\<close>
@@ -142,7 +143,7 @@ ML_file \<open>~~/src/HOL/Tools/reification.ML\<close>
 subsection \<open>Diagnostic\<close>
 
 definition tracing :: "String.literal \<Rightarrow> 'a \<Rightarrow> 'a" where
-  [code del]: "tracing s x = x"
+  "tracing s x = x"
 
 code_printing
   constant "tracing :: String.literal => 'a => 'a" \<rightharpoonup> (Eval) "Code'_Evaluation.tracing"

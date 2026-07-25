@@ -21,7 +21,9 @@ object XML {
   case class End(name: String) extends Trav
 
   sealed abstract class Tree extends Trav {
-    override def toString: String = string_of_tree(this)
+    override def toString: String =
+      try { string_of_tree(this) }
+      catch { case ERROR(_) => "<malformed>" }
   }
   type Body = List[Tree]
   case class Elem(markup: Markup, body: Body) extends Tree with Trav {
@@ -71,7 +73,7 @@ object XML {
 
   def elem(markup: Markup): XML.Elem = XML.Elem(markup, Nil)
   def elem(name: String, body: Body): XML.Elem = XML.Elem(Markup(name, Nil), body)
-  def elem(name: String): XML.Elem = XML.Elem(Markup(name, Nil), Nil)
+  def elem(name: String): XML.Elem = XML.elem(name, Nil)
 
   val no_text: Text = Text("")
   val newline: Text = Text("\n")
@@ -139,6 +141,28 @@ object XML {
   }
 
 
+  /* filter markup elements */
+
+  def filter_elements(xml: XML.Body,
+    remove: Markup.Elements = Markup.Elements.empty,
+    expose: Markup.Elements = Markup.Elements.empty
+  ): XML.Body = {
+    def filter(ts: XML.Body): XML.Body =
+      ts flatMap {
+        case XML.Wrapped_Elem(markup, body1, body2) =>
+          if (remove(markup.name)) Nil
+          else if (expose(markup.name)) filter(body2)
+          else List(XML.Wrapped_Elem(markup, body1, filter(body2)))
+        case XML.Elem(markup, body) =>
+          if (remove(markup.name)) Nil
+          else if (expose(markup.name)) filter(body)
+          else List(XML.Elem(markup, filter(body)))
+        case t => List(t)
+      }
+    filter(xml)
+  }
+
+
   /* traverse text */
 
   def traverse_text[A](body: Body, a: A, op: (A, String) => A): A = {
@@ -155,14 +179,6 @@ object XML {
   def text_length(body: Body): Int = traverse_text(body, 0, (n, s) => n + s.length)
   def symbol_length(body: Body): Int = traverse_text(body, 0, (n, s) => n + Symbol.length(s))
 
-  def content_is_empty(body: Body): Boolean =
-    traverse_text(body, true, (b, s) => b && s.isEmpty)
-
-  def content_lines(body: Body): Int = {
-    val n = traverse_text(body, 0, (n, s) => n + Library.count_newlines(s))
-    if (n == 0 && content_is_empty(body)) 0 else n + 1
-  }
-
   def content(body: Body): String =
     Library.string_builder(hint = text_length(body)) { text =>
       traverse_text(body, (), (_, s) => text.append(s))
@@ -178,16 +194,13 @@ object XML {
 
   class Output(builder: StringBuilder) extends Traversal {
     def string(str: String, permissive: Boolean = false): Unit = {
-      if (str == null) { builder ++= str }
-      else {
-        str foreach {
-          case '<' => builder ++= "&lt;"
-          case '>' => builder ++= "&gt;"
-          case '&' => builder ++= "&amp;"
-          case '"' if !permissive => builder ++= "&quot;"
-          case '\'' if !permissive => builder ++= "&apos;"
-          case c => builder += c
-        }
+      str foreach {
+        case '<' => builder ++= "&lt;"
+        case '>' => builder ++= "&gt;"
+        case '&' => builder ++= "&amp;"
+        case '"' if !permissive => builder ++= "&quot;"
+        case '\'' if !permissive => builder ++= "&apos;"
+        case c => builder += c
       }
     }
 
@@ -247,7 +260,8 @@ object XML {
       else
         lookup(x) match {
           case Some(y) => y
-          case None => store(x.map(p => (Library.isolate_substring(p._1).intern, cache_string(p._2))))
+          case None =>
+            store(x.map(p => (Library.isolate_substring(p._1).intern.nn, cache_string(p._2))))
         }
     }
 
@@ -342,8 +356,7 @@ object XML {
 
     val tree: T[XML.Tree] = (t => List(t))
 
-    val properties: T[Properties.T] =
-      (props => List(XML.Elem(Markup(":", props), Nil)))
+    val properties: T[Properties.T] = (props => List(XML.elem(Markup(":", props))))
 
     val string: T[String] = XML.string
 

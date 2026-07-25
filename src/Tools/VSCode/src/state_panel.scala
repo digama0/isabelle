@@ -14,10 +14,11 @@ object State_Panel {
   private val make_id = Counter.make()
   private val instances = Synchronized(Map.empty[Counter.ID, State_Panel])
 
-  def init(server: Language_Server): Unit = {
+  def init(id: LSP.Id, server: Language_Server): Unit = {
     val instance = new State_Panel(server)
     instances.change(_ + (instance.id -> instance))
     instance.init()
+    instance.init_response(id)
   }
 
   def exit(id: Counter.ID): Unit = {
@@ -39,6 +40,11 @@ object State_Panel {
   def auto_update(id: Counter.ID, enabled: Boolean): Unit =
     instances.value.get(id).foreach(state =>
       state.server.editor.send_dispatcher(state.auto_update(Some(enabled))))
+
+  def set_margin(id: Counter.ID, margin: Double): Unit =
+    instances.value.get(id).foreach(state => {
+      state.pretty_panel.value.update_margin(margin)
+    })
 }
 
 
@@ -47,31 +53,26 @@ class State_Panel private(val server: Language_Server) {
 
   val id: Counter.ID = State_Panel.make_id()
 
-  private def output(content: String): Unit =
-    server.channel.write(LSP.State_Output(id, content, auto_update_enabled.value))
+  private def init_response(id: LSP.Id): Unit =
+    server.channel.write(LSP.State_Init.reply(id, this.id))
 
 
   /* query operation */
 
   private val output_active = Synchronized(true)
+  private val pretty_panel =
+    Synchronized(Pretty_Text_Panel(
+      server.session,
+      server.channel,
+      (content, decorations) =>
+        LSP.State_Output(id, content, auto_update_enabled.value, decorations)
+    ))
 
   private val print_state =
     new Query_Operation(server.editor, (), "print_state", _ => (),
-      (_, _, body) =>
-        if (output_active.value && body.nonEmpty){
-          val node_context =
-            new Browser_Info.Node_Context {
-              override def make_ref(props: Properties.T, body: XML.Body): Option[XML.Elem] =
-                for {
-                  thy_file <- Position.Def_File.unapply(props)
-                  def_line <- Position.Def_Line.unapply(props)
-                  source <- server.resources.source_file(thy_file)
-                  uri = File.uri(Path.explode(source).absolute_file)
-                } yield HTML.link(uri.toString + "#" + def_line, body)
-            }
-          val elements = Browser_Info.extra_elements.copy(entity = Markup.Elements.full)
-          val html = node_context.make_html(elements, Pretty.separate(body))
-          output(HTML.source(html).toString)
+      output =>
+        if (output_active.value && output.proper) {
+          pretty_panel.value.refresh(output.messages)
         })
 
   def locate(): Unit = print_state.locate_query()
@@ -79,7 +80,7 @@ class State_Panel private(val server: Language_Server) {
   def update(): Unit = {
     server.editor.current_node_snapshot(()) match {
       case Some(snapshot) =>
-        (server.editor.current_command((), snapshot), print_state.get_location) match {
+        (server.editor.current_command(snapshot), print_state.get_location) match {
           case (Some(command1), Some(command2)) if command1.id == command2.id =>
           case _ => print_state.apply_query(Nil)
         }
@@ -103,11 +104,10 @@ class State_Panel private(val server: Language_Server) {
   }
 
 
-
   /* main */
 
   private val main =
-    Session.Consumer[Any](getClass.getName) {
+    Session.Consumer[Session.Commands_Changed | Session.Caret_Focus.type](this.class_name) {
       case changed: Session.Commands_Changed =>
         if (changed.assignment) auto_update()
 

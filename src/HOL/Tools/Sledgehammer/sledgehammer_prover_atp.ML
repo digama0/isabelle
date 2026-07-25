@@ -98,12 +98,23 @@ fun suffix_of_mode Auto_Try = "_try"
   | suffix_of_mode MaSh = ""
   | suffix_of_mode Minimize = "_min"
 
+fun tptp_logic_of_atp_format CNF = "CNF"
+  | tptp_logic_of_atp_format CNF_UEQ = "CNF"
+  | tptp_logic_of_atp_format FOF = "FOF"
+  | tptp_logic_of_atp_format (TFF (Monomorphic, Without_FOOL)) = "TF0"
+  | tptp_logic_of_atp_format (TFF (Polymorphic, Without_FOOL)) = "TF1"
+  | tptp_logic_of_atp_format (TFF (Monomorphic, With_FOOL _)) = "TX0"
+  | tptp_logic_of_atp_format (TFF (Polymorphic, With_FOOL _)) = "TX1"
+  | tptp_logic_of_atp_format (THF (Monomorphic, _, _)) = "TH0"
+  | tptp_logic_of_atp_format (THF (Polymorphic, _, _)) = "TH1"
+  | tptp_logic_of_atp_format (DFG _) = "DFG"
+
 fun run_atp mode name
     ({debug, verbose, overlord, abduce = abduce_max_candidates, strict, max_mono_iters,
       max_new_mono_instances, isar_proofs, compress, try0, smt_proofs, minimize, slices, timeout,
       preplay_timeout, spy, ...} : params)
     ({comment, state, goal, subgoal, subgoal_count, factss, has_already_found_something,
-      found_something} : prover_problem)
+      found_something, memoize_fun_call} : prover_problem)
     slice =
   let
     val (basic_slice as (slice_size, abduce, _, _, _),
@@ -130,17 +141,29 @@ fun run_atp mode name
         (Config.get ctxt atp_problem_dest_dir,
          Config.get ctxt atp_proof_dest_dir,
          Config.get ctxt atp_problem_prefix)
-    val problem_file_name =
-      Path.basic (problem_prefix ^ (if overlord then "" else serial_string ()) ^
-        suffix_of_mode mode ^ "_" ^ string_of_int subgoal)
-      |> Path.ext "p"
+
+    val (problem_file_name, proof_file_name) =
+    let
+      val base_name =
+        problem_prefix ^ (if overlord then "" else serial_string ()) ^
+        suffix_of_mode mode ^ "_" ^ string_of_int subgoal
+    in
+      (base_name, suffix "_proof" base_name)
+      |> apply2 Path.basic
+      |> apply2 (Path.ext "p")
+    end
+
     val prob_path =
       if problem_dest_dir = "" then
         File.tmp_path problem_file_name
-      else if File.exists (Path.explode problem_dest_dir) then
-        Path.explode problem_dest_dir + problem_file_name
       else
-        error ("No such directory: " ^ quote problem_dest_dir)
+        let val problem_dest_dir_path = Path.explode problem_dest_dir in
+          if File.is_dir problem_dest_dir_path then
+            problem_dest_dir_path + problem_file_name
+          else
+            error ("No such directory: " ^ quote problem_dest_dir)
+        end
+
     val executable =
       (case find_first (fn var => getenv var <> "") (fst exec) of
         SOME var =>
@@ -203,35 +226,76 @@ fun run_atp mode name
           (state, subgoal, name, "Generating ATP problem in " ^
              string_of_int (Time.toMilliseconds elapsed) ^ " ms"))
 
-        val args = arguments abduce full_proofs extra run_timeout prob_path
-        val command = space_implode " " (File.bash_path executable :: args)
+        val make_args = arguments abduce full_proofs extra run_timeout
+        fun make_command args = implode_space (File.bash_path executable :: args)
+        val args = make_args prob_path
+        val command = make_command args
 
-        fun run_command () =
-          if exec = isabelle_scala_function then
-            let val {output, timing} = SystemOnTPTP.run_system_encoded args
-            in (output, timing) end
-          else
-            let val res = Isabelle_System.bash_process (Bash.script command |> Bash.redirect)
-            in (Process_Result.out res, Process_Result.timing_elapsed res) end
+        val lines_of_atp_problem =
+          lines_of_atp_problem good_format (fn () => atp_problem_term_order_info atp_problem)
+            atp_problem
 
-        val _ = atp_problem
-          |> lines_of_atp_problem good_format (fn () => atp_problem_term_order_info atp_problem)
+        val () = lines_of_atp_problem
           |> (exec <> isabelle_scala_function) ?
             cons ("% " ^ command ^ "\n" ^ (if comment = "" then "" else "% " ^ comment ^ "\n"))
           |> File.write_list prob_path
 
+        fun run_command () =
+          let
+            val sledgehammer_persistent_data_dir =
+              Options.default_string \<^system_option>\<open>sledgehammer_persistent_data_dir\<close>
+            val env =
+              if sledgehammer_persistent_data_dir = "" then
+                []
+              else
+                let
+                  val tptp_logic = tptp_logic_of_atp_format good_format
+                  val thy_long_name = Context.theory_long_name thy
+                  val session_name = Long_Name.qualifier thy_long_name
+                  val dir =
+                    Path.expand (Path.explode sledgehammer_persistent_data_dir +
+                      Path.explode (name ^ "-" ^ session_name) +
+                      Path.explode tptp_logic)
+                in [("SLH_PERSISTENT_DATA_DIR", Path.implode dir)] end
+
+            val f = fn _ =>
+              if exec = isabelle_scala_function then
+                let val {output, ...} = SystemOnTPTP.run_system_encoded args
+                in output end
+              else
+                Bash.script command
+                  |> Bash.putenv env
+                  |> Bash.redirect
+                  |> Isabelle_System.bash_process
+                  |> Process_Result.out
+            (* Hackish: The following lines try to make the TPTP problem and command line more
+            deterministic and constant. *)
+            val hackish_lines = drop 2 lines_of_atp_problem
+            val hackish_command = make_command (make_args (Path.basic "fake_prob_path.p"))
+            val arg = cat_lines (hackish_command :: hackish_lines)
+          in
+            Timing.timing (memoize_fun_call f) arg
+          end
+
         val local_name = name |> perhaps (try (unprefix remote_prefix))
 
         val ((output, run_time), ((atp_proof, tstplike_proof), outcome)) =
-          Timeout.apply generous_run_timeout run_command ()
-          |>> overlord ?
-            (fn output => prefix ("% " ^ command ^ "\n% " ^ timestamp () ^ "\n") output)
-          |> (fn accum as (output, _) =>
-            (accum,
-             extract_tstplike_proof_and_outcome verbose proof_delims known_failures output
-             |>> `(atp_proof_of_tstplike_proof false local_name atp_problem)
-             handle UNRECOGNIZED_ATP_PROOF () => (([], ""), SOME ProofUnparsable)))
-          handle Timeout.TIMEOUT _ => (("", run_timeout), (([], ""), SOME TimedOut))
+          let
+            val ({elapsed, ...}, output) = Timeout.apply generous_run_timeout run_command ()
+            val output =
+              if overlord then
+                prefix ("% " ^ command ^ "\n% " ^ timestamp () ^ "\n") output
+              else
+                output
+            val output2 =
+              extract_tstplike_proof_and_outcome verbose proof_delims known_failures output
+              |>> `(atp_proof_of_tstplike_proof false local_name atp_problem)
+              handle UNRECOGNIZED_ATP_PROOF () => (([], ""), SOME ProofUnparsable)
+          in
+            ((output, elapsed), output2)
+          end
+          handle
+              Timeout.TIMEOUT _ => (("", run_timeout), (([], ""), SOME TimedOut))
             | ERROR msg => (("", Time.zeroTime), (([], ""), SOME (UnknownError msg)))
 
         val atp_abduce_candidates =
@@ -259,21 +323,15 @@ fun run_atp mode name
        too. *)
     fun clean_up () = if problem_dest_dir = "" then (try File.rm prob_path; ()) else ()
     fun export (_, (output, _, _, _, _, _, _, _), _) =
-      let
-        val proof_dest_dir_path = Path.explode proof_dest_dir
-        val make_export_file_name =
-          Path.split_ext
-          #> apfst (Path.explode o suffix "_proof" o Path.implode)
-          #> swap
-          #> uncurry Path.ext
-      in
-        if proof_dest_dir = "" then
-          Output.system_message "don't export proof"
-        else if File.exists proof_dest_dir_path then
-          File.write (proof_dest_dir_path + make_export_file_name problem_file_name) output
-        else
-          error ("No such directory: " ^ quote proof_dest_dir)
-      end
+      if proof_dest_dir = "" then
+        Output.system_message "don't export proof"
+      else
+        let val proof_dest_dir_path = Path.explode proof_dest_dir in
+          if File.is_dir proof_dest_dir_path then
+            File.write (proof_dest_dir_path + proof_file_name) output
+          else
+            error ("No such directory: " ^ quote proof_dest_dir)
+        end
 
     val ((_, pool, lifted, sym_tab),
          (_, run_time, used_from, atp_problem, tstplike_proof, atp_proof,
@@ -290,22 +348,23 @@ fun run_atp mode name
             if mode = Normal andalso not (is_conjecture_used_in_proof atp_proof)
                andalso not (Logic.get_goal (Thm.prop_of goal) subgoal aconv @{prop False}) then
               warning ("Derived \"False\" from these facts alone: " ^
-                space_implode " " (map fst used_facts))
+                implode_space (map fst used_facts))
             else
               ()
 
           val needs_full_types = is_typed_helper_used_in_atp_proof atp_proof
-          val preferred = Metis_Method (NONE, NONE)
+          val needs_lam_defs =
+            good_lam_trans = keep_lamsN orelse is_lam_def_used_in_atp_proof atp_proof
+          val preferred = Metis_Method (NONE, NONE, [])
           val preferred_methss =
             (preferred,
              if try0 then
-               bunches_of_proof_methods ctxt smt_proofs needs_full_types
-                 (if atp_proof_prefers_lifting atp_proof then liftingN else opaque_liftingN)
+               bunches_of_proof_methods ctxt smt_proofs needs_full_types needs_lam_defs
              else
-               [[preferred]])
+               bunches_of_metis_methods ctxt needs_full_types needs_lam_defs)
         in
           (NONE, used_facts, preferred_methss,
-           fn preplay =>
+           fn preplay_outcome =>
               let
                 val _ = if verbose then writeln "Generating proof text..." else ()
 
@@ -328,11 +387,15 @@ fun run_atp mode name
                       |> local_name = zipperpositionN ? regroup_zipperposition_skolems
                       |> factify_atp_proof (map fst used_from) hyp_ts concl_t
                   in
-                    (verbose, (metis_type_enc, metis_lam_trans), preplay_timeout, compress, try0,
-                     minimize, full_atp_proof, goal)
+                    (verbose, (metis_type_enc, metis_lam_trans, []), preplay_timeout, compress,
+                     try0, minimize, full_atp_proof, goal)
                   end
 
-                val one_line_params = (preplay (), proof_banner mode name, subgoal, subgoal_count)
+                val preplay_result = preplay_outcome
+                  |> the_default
+                    (map (apfst Pretty.str) used_facts,
+                     (preferred, Play_Timed_Out Time.zeroTime))
+                val one_line_params = (preplay_result, proof_banner mode name, subgoal, subgoal_count)
                 val num_chained = length (#facts (Proof.goal state))
               in
                 proof_text ctxt debug isar_proofs smt_proofs isar_params num_chained

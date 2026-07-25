@@ -69,7 +69,7 @@ object Build_Manager {
   case class User_Build(
     user: String,
     afp_rev: Option[String] = None,
-    prefs: List[Options.Spec] = Nil,
+    prefs: Options.Update = Nil,
     requirements: Boolean = false,
     all_sessions: Boolean = false,
     base_sessions: List[String] = Nil,
@@ -364,7 +364,7 @@ object Build_Manager {
           val timeout = Time.ms(res.long(Pending.timeout))
           val other_settings = split_lines(res.string(Pending.other_settings))
           val uuid = res.string(Pending.uuid)
-          val submit_date = res.date(Pending.submit_date)
+          val submit_date = res.the_date(Pending.submit_date)
           val priority = Priority.valueOf(res.string(Pending.priority))
           val isabelle_rev = res.string(Pending.isabelle_rev)
           val extra_components =
@@ -487,7 +487,7 @@ object Build_Manager {
           val components = space_explode(',', res.string(Running.components)).map(Component.parse)
           val timeout = Time.ms(res.long(Running.timeout))
           val user = res.get_string(Running.user)
-          val start_date = res.date(Running.start_date)
+          val start_date = res.the_date(Running.start_date)
           val cancelled = res.bool(Running.cancelled)
 
           val job = Job(UUID.make(uuid), kind, id, build_cluster, hostnames, components, timeout,
@@ -570,7 +570,7 @@ object Build_Manager {
           val status = Status.valueOf(res.string(Finished.status))
           val uuid = res.get_string(Finished.uuid).map(UUID.make)
           val build_host = res.string(Finished.build_host)
-          val start_date = res.date(Finished.start_date)
+          val start_date = res.the_date(Finished.start_date)
           val end_date = res.get_date(Finished.end_date)
           val isabelle_version = res.get_string(Finished.isabelle_version)
           val afp_version = res.get_string(Finished.afp_version)
@@ -639,7 +639,7 @@ object Build_Manager {
     def progress: Progress = new File_Progress(log_file)
 
     private def read_gz(file: Path, ext: String): Option[(String, String)] =
-      if (!File.is_gz(file.file_name) || file.drop_ext.get_ext != ext) None
+      if (!File.is_gz(file) || file.drop_ext.get_ext != ext) None
       else Some(file.drop_ext.drop_ext.file_name -> File.read_gzip(file))
 
     def read: Report.Data = {
@@ -664,7 +664,7 @@ object Build_Manager {
         val log_opts = "--graph --color always"
         val rev1 = "children(" + rev0 + ")"
         val cmd = repository.command_line("log", Mercurial.opt_rev(rev1 + ":" + rev), log_opts)
-        val log = Isabelle_System.bash("export HGPLAINEXCEPT=color\n" + cmd).check.out
+        val log = Isabelle_System.bash(Bash.exports("HGPLAINEXCEPT=color") + cmd).check.out
         if (log.nonEmpty) File.write_gzip(dir + Path.basic(component).ext(log_ext).gz, log)
       }
 
@@ -677,7 +677,7 @@ object Build_Manager {
       if (rev0.nonEmpty && rev.nonEmpty) {
         val diff_opts = "--noprefix --nodates --ignore-all-space --color always"
         val cmd = repository.command_line("diff", Mercurial.opt_rev(rev0 + ":" + rev), diff_opts)
-        val diff = Isabelle_System.bash("export HGPLAINEXCEPT=color\n" + cmd).check.out
+        val diff = Isabelle_System.bash(Bash.exports("HGPLAINEXCEPT=color") + cmd).check.out
         if (diff.nonEmpty) File.write_gzip(dir + Path.basic(component).ext(diff_ext).gz, diff)
       }
 
@@ -711,7 +711,7 @@ object Build_Manager {
 
   /** running build manager processes **/
 
-  abstract class Loop_Process[A](name: String, store: Store, progress: Progress)
+  abstract class Loop_Process[A](name: String, store: Store, progress: Progress = new Progress)
     extends Runnable {
     val options = store.options
 
@@ -719,7 +719,7 @@ object Build_Manager {
       try { store.open_database() }
       catch { case exn: Throwable => close(); throw exn }
 
-    def close(): Unit = Option(_database).foreach(_.close())
+    def close(): Unit = proper_value(_database).foreach(_.close())
 
     protected var _state = State()
 
@@ -740,8 +740,8 @@ object Build_Manager {
     def stopped(a: A): Boolean = progress.stopped
 
     private val interrupted = Synchronized(false)
-    private def sleep(time_limit: Time): Unit =
-      interrupted.timed_access(_ => Some(time_limit), b => if (b) Some((), false) else None)
+    private def sleep(until: Time): Unit =
+      interrupted.timed_access(_ => Some(until), b => if (b) Some((), false) else None)
     def interrupt(): Unit = interrupted.change(_ => true)
 
     @tailrec private def loop(a: A): Unit =
@@ -794,7 +794,8 @@ object Build_Manager {
           Future.fork(
             process_future.join_result match {
               case Exn.Res(process) => process.run()
-              case Exn.Exn(exn) => Process_Result(Process_Result.RC.interrupt).error(exn.getMessage)
+              case Exn.Exn(exn) =>
+                Process_Result(Process_Result.RC.interrupt).error(Exn.message(exn))
             })
 
         copy(
@@ -808,7 +809,8 @@ object Build_Manager {
         for (future <- result_futures.get(name) if future.is_finished) yield
           future.join_result match {
             case Exn.Res(result) => result
-            case Exn.Exn(exn) => Process_Result(Process_Result.RC.interrupt).error(exn.getMessage)
+            case Exn.Exn(exn) =>
+              Process_Result(Process_Result.RC.interrupt).error(Exn.message(exn))
           }
 
       private def do_terminate(name: String): Boolean = {
@@ -864,14 +866,17 @@ object Build_Manager {
   class Runner(
     store: Store,
     build_hosts: List[Build_Cluster.Host],
-    isabelle_repository: Mercurial.Repository,
-    sync_dirs: List[Sync.Dir],
-    progress: Progress
+    isabelle_repository: Mercurial.Repository = Mercurial.self_repository(),
+    sync_dirs: List[Sync.Dir] = Nil,
+    progress: Progress = new Progress
   ) extends Loop_Process[Runner.State]("Runner", store, progress) {
     val rsync_context = Rsync.Context()
 
     private def sync(repository: Mercurial.Repository, rev: String, target: Path): String = {
-      repository.pull()
+      val pull_result = Exn.capture(repository.pull())
+      if (Exn.is_exn(pull_result)) {
+        echo_error_message("Could not read from repository: " + Exn.message(Exn.the_exn(pull_result)))
+      }
 
       if (rev.nonEmpty) repository.sync(rsync_context, target, rev = rev)
 
@@ -965,8 +970,8 @@ object Build_Manager {
 
               Some(context)
             case Exn.Exn(exn) =>
-              context.report.progress.echo_error_message("Failed to start job: " + exn.getMessage)
-              echo_error_message("Failed to start " + task.uuid + ": " + exn.getMessage)
+              context.report.progress.echo_error_message("Failed to start job: " + Exn.message(exn))
+              echo_error_message("Failed to start " + task.uuid + ": " + Exn.message(exn))
 
               Isabelle_System.rm_tree(context.task_dir)
 
@@ -1063,11 +1068,11 @@ object Build_Manager {
   }
 
   class Poller(
-    ci_jobs: List[Build_CI.Job],
     store: Store,
-    isabelle_repository: Mercurial.Repository,
-    sync_dirs: List[Sync.Dir],
-    progress: Progress
+    ci_jobs: List[Build_CI.Job] = Nil,
+    isabelle_repository: Mercurial.Repository = Mercurial.self_repository(),
+    sync_dirs: List[Sync.Dir] = Nil,
+    progress: Progress = new Progress
   ) extends Loop_Process[Poller.State]("Poller", store, progress) {
 
     override def delay = options.seconds("build_manager_poll_delay")
@@ -1112,7 +1117,7 @@ object Build_Manager {
       else {
         state.next.join_result match {
           case Exn.Exn(exn) =>
-            echo_error_message("Could not reach repository: " + exn.getMessage)
+            echo_error_message("Could not reach repository: " + Exn.message(exn))
             Poller.State(state.current, poll)
           case Exn.Res(next) =>
             if (state.current != next) {
@@ -1125,9 +1130,9 @@ object Build_Manager {
   }
 
   class Timer(
-    ci_jobs: List[Build_CI.Job],
     store: Store,
-    progress: Progress
+    ci_jobs: List[Build_CI.Job] = Nil,
+    progress: Progress = new Progress
   ) extends Loop_Process[Date]("Timer", store, progress) {
 
     override def delay = options.seconds("build_manager_timer_delay")
@@ -1135,7 +1140,7 @@ object Build_Manager {
     private def add_tasks(previous: Date, next: Date): Unit = synchronized_database("add_tasks") {
       for (ci_job <- ci_jobs)
         ci_job.trigger match {
-          case Build_CI.Timed(in_interval) if in_interval(previous, next) =>
+          case timer: Build_CI.Timed if timer.next(previous, next) =>
             val task = CI_Build.task(ci_job)
             echo("Triggered task " + task.kind)
             _state = _state.add_pending(task)
@@ -1199,10 +1204,10 @@ object Build_Manager {
   }
 
   class Web_Server(
-    port: Int,
     store: Store,
     build_hosts: List[Build_Cluster.Host],
-    progress: Progress
+    port: Int = 0,
+    progress: Progress = new Progress
   ) extends Loop_Process[Unit]("Web_Server", store, progress) {
     import Web_App.*
     import Web_Server.*
@@ -1411,7 +1416,7 @@ object Build_Manager {
         def render_diff(data: Report.Data, components: List[Component]): XML.Body =
           par(List(page_link(Page.BUILD, "back to build", Markup.Name(build.name)))) ::
           (for (component <- components if !component.is_local) yield {
-            val infos = 
+            val infos =
               data.component_logs.toMap.get(component.name).toList.flatMap(colored) :::
               data.component_diffs.toMap.get(component.name).toList.flatMap(colored)
 
@@ -1508,7 +1513,7 @@ object Build_Manager {
           Web_App.More_HTML.icon("data:image/x-icon;base64," + logo.encode_base64.text),
           HTML.style_file("https://hawkz.github.io/gdcss/gd.css"),
           HTML.style("""
-:root { 
+:root {
   --color-secondary: var(--color-tertiary);
   --color-secondary-hover: var(--color-tertiary-hover);
 }
@@ -1537,7 +1542,7 @@ html { background-color: white; }"""))
       if (task.build_cluster) store.options.string("build_cluster_identifier") else store.identifier
 
     def open_ssh(): SSH.System = {
-      if (task.build_cluster) store.open_ssh()
+      if (task.build_cluster) store.open_cluster_ssh()
       else Library.the_single(task.build_hosts).open_ssh(store.options)
     }
   }
@@ -1561,7 +1566,7 @@ html { background-color: white; }"""))
       try {
         val rsync_context = Rsync.Context(ssh = ssh)
         val source = File.standard_path(context.task_dir)
-        Rsync.exec(rsync_context, clean = true, args = List("--", Url.direct_path(source),
+        rsync_context.exec(clean = true, args = List("--", Url.direct_path(source),
           rsync_context.target(_dir))).check
 
         Isabelle_System.rm_tree(context.task_dir)
@@ -1592,11 +1597,11 @@ html { background-color: white; }"""))
       }
       catch { case exn: Throwable => close(); throw exn }
 
-    def cancel(): Unit = Option(_process).foreach(_.interrupt())
-    def terminate(): Unit = Option(_process).foreach(_.terminate())
+    def cancel(): Unit = proper_value(_process).foreach(_.interrupt())
+    def terminate(): Unit = proper_value(_process).foreach(_.terminate())
 
     def close(): Unit = {
-      Option(_dir).foreach(ssh.rm_tree)
+      proper_value(_dir).foreach(ssh.rm_tree)
       Isabelle_System.rm_tree(context.task_dir)
       ssh.close()
     }
@@ -1617,31 +1622,24 @@ html { background-color: white; }"""))
 
   case class Store(options: Options) {
     val base_dir = Path.explode(options.string("build_manager_dir"))
-    val identifier = options.string("build_manager_identifier")
-    val address = Url(options.string("build_manager_address"))
+    val address = {
+      Url(proper_string(options.string("build_manager_address")) getOrElse
+        "https://" + options.string("build_manager_ssh_host"))
+    }
 
     val pending = base_dir + Path.basic("pending")
-    val finished = base_dir + Path.basic("finished")
 
     def task_dir(task: Task) = pending + Path.basic(task.uuid.toString)
-    def report(kind: String, id: Long): Report =
-      Report(kind, id, finished + Path.make(List(kind, id.toString)))
 
     def sync_permissions(dir: Path, ssh: SSH.System = SSH.Local): Unit = {
       ssh.execute("chmod -R g+rwx " + File.bash_path(dir))
-      ssh.execute("chown -R :" + ssh_group + " " + File.bash_path(dir))
+      ssh.execute("chown -R :" + unix_group + " " + File.bash_path(dir))
     }
 
     def init_dirs(): Unit =
       List(pending, finished).foreach(dir => sync_permissions(Isabelle_System.make_directory(dir)))
 
-    val ssh_group: String = options.string("build_manager_ssh_group")
-
-    def open_ssh(): SSH.Session =
-      SSH.open_session(options,
-        host = options.string("build_manager_ssh_host"),
-        port = options.int("build_manager_ssh_port"),
-        user = options.string("build_manager_ssh_user"))
+    val unix_group: String = options.string("build_manager_group")
 
     def open_database(server: SSH.Server = SSH.no_server): PostgreSQL.Database =
       PostgreSQL.open_database_server(options, server = server,
@@ -1653,6 +1651,30 @@ html { background-color: white; }"""))
         ssh_host = options.string("build_manager_database_ssh_host"),
         ssh_port = options.int("build_manager_database_ssh_port"),
         ssh_user = options.string("build_manager_database_ssh_user"))
+
+
+    /* server */
+
+    val identifier = options.string("build_manager_identifier")
+
+    val finished = base_dir + Path.basic("finished")
+    def report(kind: String, id: Long): Report =
+      Report(kind, id, finished + Path.make(List(kind, id.toString)))
+
+    def open_cluster_ssh(): SSH.Session =
+      SSH.open_session(options,
+        host = options.string("build_manager_cluster_ssh_host"),
+        port = options.int("build_manager_cluster_ssh_port"),
+        user = options.string("build_manager_cluster_ssh_user"))
+
+
+    /* client */
+
+    def open_ssh(): SSH.Session =
+      SSH.open_session(options,
+        host = options.string("build_manager_ssh_host"),
+        port = options.int("build_manager_ssh_port"),
+        user = options.string("build_manager_ssh_user"))
 
     def open_postgresql_server(): SSH.Server =
       PostgreSQL.open_server(options,
@@ -1676,7 +1698,6 @@ html { background-color: white; }"""))
     progress: Progress = new Progress
   ): Unit = {
     val store = Store(options)
-    val isabelle_repository = Mercurial.self_repository()
     val ci_jobs = space_explode(',', options.string("build_manager_ci_jobs")).map(Build_CI.the_job)
 
     progress.echo_if(ci_jobs.nonEmpty, "Managing ci jobs: " + commas_quote(ci_jobs.map(_.name)))
@@ -1686,13 +1707,13 @@ html { background-color: white; }"""))
         create = true, label = "Build_Manager.build_manager") { store.init_dirs() })
 
     val processes = List(
-      new Runner(store, build_hosts, isabelle_repository, sync_dirs, progress),
-      new Poller(ci_jobs, store, isabelle_repository, sync_dirs, progress),
-      new Timer(ci_jobs, store, progress),
-      new Web_Server(port, store, build_hosts, progress))
+      new Runner(store, build_hosts, sync_dirs = sync_dirs, progress = progress),
+      new Poller(store, ci_jobs, sync_dirs = sync_dirs, progress = progress),
+      new Timer(store, ci_jobs, progress = progress),
+      new Web_Server(store, build_hosts, port = port, progress = progress))
 
     val threads = processes.map(Isabelle_Thread.create(_))
-    POSIX_Interrupt.handler {
+    Exn.Interrupt.signal_handler {
       progress.stop()
       processes.foreach(_.interrupt())
     } {
@@ -1704,24 +1725,13 @@ html { background-color: white; }"""))
 
   /* Isabelle tool wrapper */
 
-  private def show_options(relevant_options: List[String], options: Options): String =
-    cat_lines(relevant_options.flatMap(options.get).map(_.print))
-
-  private val notable_server_options =
-    List(
-      "build_manager_dir",
-      "build_manager_address",
-      "build_manager_ssh_host",
-      "build_manager_ssh_group",
-      "build_manager_ci_jobs")
-
   val isabelle_tool = Isabelle_Tool("build_manager", "run build manager", Scala_Project.here,
     { args =>
       var afp_root: Option[Path] = None
       val dirs = new mutable.ListBuffer[Path]
       val build_hosts = new mutable.ListBuffer[Build_Cluster.Host]
       var options = Options.init()
-      var port = 8080
+      var port = 0
 
       val getopts = Getopts("""
 Usage: isabelle build_manager [OPTIONS]
@@ -1734,9 +1744,8 @@ Usage: isabelle build_manager [OPTIONS]
     -o OPTION    override Isabelle system OPTION (via NAME=VAL or NAME)
     -p PORT      explicit web server port
 
-  Run Isabelle build manager. Notable system options:
-
-""" + Library.indent_lines(2, show_options(notable_server_options, options)) + "\n",
+  Run Isabelle build manager.
+""",
         "A:" -> (arg => afp_root = Some(if (arg == ":") AFP.BASE else Path.explode(arg))),
         "D:" -> (arg => dirs += Path.explode(arg)),
         "H:" -> (arg => build_hosts ++= Build_Cluster.Host.parse(Registry.global, arg)),
@@ -1878,7 +1887,7 @@ Usage: isabelle build_manager_database [OPTIONS]
     fresh_build: Boolean = false,
     session_groups: List[String] = Nil,
     sessions: List[String] = Nil,
-    prefs: List[Options.Spec] = Nil,
+    prefs: Options.Update = Nil,
     exclude_sessions: List[String] = Nil,
     verbose: Boolean = false,
     rev: String = "",
@@ -1894,7 +1903,7 @@ Usage: isabelle build_manager_database [OPTIONS]
     progress.interrupt_handler {
       using(store.open_ssh()) { ssh =>
         val user = ssh.execute("whoami").check.out
-        
+
         val build_config = User_Build(user, afp_rev, prefs, requirements, all_sessions,
           base_sessions, exclude_session_groups, exclude_sessions, session_groups, sessions,
           build_heap, clean_build, export_files, fresh_build, presentation, verbose)
@@ -1934,7 +1943,8 @@ Usage: isabelle build_manager_database [OPTIONS]
 
   /* Isabelle tool wrapper */
 
-  val notable_client_options = List("build_manager_ssh_user", "build_manager_ssh_group")
+  private val build_manager_ssh_options =
+    List("build_manager_ssh_user", "build_manager_ssh_host", "build_manager_ssh_port")
 
   val isabelle_tool2 = Isabelle_Tool("build_task", "submit build task for build manager",
     Scala_Project.here,
@@ -1950,11 +1960,14 @@ Usage: isabelle build_manager_database [OPTIONS]
       var export_files = false
       var fresh_build = false
       val session_groups = new mutable.ListBuffer[String]
-      var options = Options.init(specs = Options.Spec.ISABELLE_BUILD_OPTIONS)
+      var options = Options.init(update = Options.Spec.ISABELLE_BUILD_OPTIONS)
       val prefs = new mutable.ListBuffer[Options.Spec]
       var verbose = false
       var rev = ""
       val exclude_sessions = new mutable.ListBuffer[String]
+
+      def show_options: String =
+        cat_lines(build_manager_ssh_options.flatMap(options.get).map(_.print))
 
       val getopts = Getopts("""
 Usage: isabelle build_task [OPTIONS] [SESSIONS ...]
@@ -1972,14 +1985,16 @@ Usage: isabelle build_task [OPTIONS] [SESSIONS ...]
     -f           fresh build
     -g NAME      select session group NAME
     -o OPTION    override Isabelle system OPTION (via NAME=VAL or NAME)
-    -p OPTION    override Isabelle system OPTION for build process (via NAME=VAL or NAME)
+    -p OPTION    override Isabelle system OPTION for build process
+                 (via NAME=VAL or NAME)
     -r REV       explicit revision (default: state of working directory)
     -v           verbose
     -x NAME      exclude session NAME and all descendants
 
-  Submit build task on SSH server. Notable system options:
+  Submit build task on managed server.
 
-""" + Library.indent_lines(2, show_options(notable_client_options, options)) + "\n",
+  Requires SSH access to known host according to system options:
+""" + Library.indent_lines(4, show_options) + "\n",
         "A:" -> (arg => afp_root = Some(if (arg == ":") AFP.BASE else Path.explode(arg))),
         "B:" -> (arg => base_sessions += arg),
         "P" -> (_ => presentation = true),

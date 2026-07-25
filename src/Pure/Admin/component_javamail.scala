@@ -27,16 +27,16 @@ object Component_Javamail {
     override def toString: String = group_id + ":" + artifact_id
 
     def file_name: String = artifact_id + "-" + version + ".jar"
-    def maven_dir: String = group_id.replace('.', '/') + "/" + artifact_id + "/" + version
+    def maven_dir: String = group_id.replacing("." -> "/") + "/" + artifact_id + "/" + version
     def url(repo_url: String): String = repo_url + "/" + maven_dir + "/" + file_name
   }
 
   val jars =
     List(
-      Jar("jakarta.mail", "jakarta.mail-api", "2.1.2"),
-      Jar("jakarta.activation", "jakarta.activation-api", "2.1.2"),
-      Jar("org.eclipse.angus", "angus-mail", "2.0.2"),
-      Jar("org.eclipse.angus", "angus-activation", "2.0.1"))
+      Jar("jakarta.mail", "jakarta.mail-api", "2.1.5"),
+      Jar("jakarta.activation", "jakarta.activation-api", "2.1.4"),
+      Jar("org.eclipse.angus", "angus-mail", "2.0.5"),
+      Jar("org.eclipse.angus", "angus-activation", "2.0.3"))
 
 
   /* build javamail */

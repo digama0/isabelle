@@ -40,10 +40,8 @@ object Update_Tool {
     upd(Markup.Language.outer, xml)
   }
 
-  def default_base_logic: String = Isabelle_System.getenv("ISABELLE_LOGIC")
-
   def update(options: Options,
-    update_options: List[Options.Spec],
+    update_options: Options.Update,
     selection: Sessions.Selection = Sessions.Selection.empty,
     base_logics: List[String] = Nil,
     progress: Progress = new Progress,
@@ -69,7 +67,7 @@ object Update_Tool {
     // test
     options ++ update_options
 
-    def augment_options(name: String): List[Options.Spec] =
+    def augment_options(name: String): Options.Update =
       if (exclude(name)) Nil else update_options
 
 
@@ -89,39 +87,41 @@ object Update_Tool {
 
     /* update */
 
-    var seen_theory = Set.empty[String]
+    progress.interrupt_handler {
+      var seen_theory = Set.empty[String]
 
-    using(Export.open_database_context(store)) { database_context =>
-      for {
-        session <- sessions_structure.build_topological_order
-        if build_results(session).ok && !exclude(session)
-      } {
-        progress.echo("Updating " + session + " ...")
-        val session_options = sessions_structure(session).options
-        val proper_session_theory =
-          build_results.deps(session).proper_session_theories.map(_.theory).toSet
-        using(database_context.open_session0(session)) { session_context =>
-          for {
-            db <- session_context.session_db()
-            theory <- store.read_theories(db, session)
-            if proper_session_theory(theory) && !seen_theory(theory)
-          } {
-            seen_theory += theory
-            val theory_context = session_context.theory(theory)
+      using(Export.open_database_context(store)) { database_context =>
+        for {
+          session <- sessions_structure.build_topological_order
+          if build_results(session).ok && !exclude(session)
+        } {
+          progress.echo("Updating " + session + " ...")
+          val session_options = sessions_structure(session).options
+          val proper_session_theory =
+            build_results.deps(session).proper_session_theories.map(_.theory).toSet
+          using(database_context.open_session0(session)) { session_context =>
             for {
-              theory_snapshot <- Build.read_theory(theory_context)
-              node_name <- theory_snapshot.node_files
-              snapshot = theory_snapshot.switch(node_name)
-              if snapshot.node.source_wellformed
+              db <- session_context.session_db()
+              theory <- store.read_theories(db, session)
+              if proper_session_theory(theory) && !seen_theory(theory)
             } {
-              progress.expose_interrupt()
-              val xml =
-                YXML.parse_body(YXML.bytes_of_body(snapshot.xml_markup(elements = update_elements)))
-              val source1 = XML.content(update_xml(session_options, xml))
-              if (source1 != snapshot.node.source) {
-                val path = Path.explode(node_name.node)
-                progress.echo("File " + quote(File.standard_path(path)))
-                File.write(path, source1)
+              seen_theory += theory
+              val theory_context = session_context.theory(theory)
+              for {
+                theory_snapshot <- Build.read_theory(theory_context)
+                node_name <- theory_snapshot.node_files
+                snapshot = theory_snapshot.switch(node_name)
+                if snapshot.node.source_wellformed
+              } {
+                progress.expose_interrupt()
+                val xml =
+                  YXML.parse_body(YXML.bytes_of_body(snapshot.xml_markup(elements = update_elements)))
+                val source1 = XML.content(update_xml(session_options, xml))
+                if (source1 != snapshot.node.source) {
+                  val path = Path.explode(node_name.node)
+                  progress.echo("File " + quote(File.standard_path(path)))
+                  File.write(path, source1)
+                }
               }
             }
           }
@@ -150,10 +150,10 @@ object Update_Tool {
         var fresh_build = false
         var session_groups: List[String] = Nil
         var max_jobs: Option[Int] = None
-        var base_logics: List[String] = List(default_base_logic)
+        var base_logics: List[String] = List(Isabelle_System.default_logic())
         var no_build = false
         var options = Options.init()
-        var update_options: List[Options.Spec] = Nil
+        var update_options: Options.Update = Nil
         var verbose = false
         var exclude_sessions: List[String] = Nil
 
@@ -173,7 +173,7 @@ Usage: isabelle update [OPTIONS] [SESSIONS ...]
     -g NAME      select session group NAME
     -j INT       maximum number of parallel jobs (default 1)
     -l NAMES     comma-separated list of base logics, to remain unchanged
-                 (default: """ + quote(default_base_logic) + """)
+                 (default: """ + quote(Isabelle_System.default_logic()) + """)
     -n           no build -- take existing session build databases
     -o OPTION    override Isabelle system OPTION (via NAME=VAL or NAME)
     -u OPT       override "update" option for selected sessions
@@ -206,27 +206,25 @@ Usage: isabelle update [OPTIONS] [SESSIONS ...]
         val progress = new Console_Progress(verbose = verbose)
 
         val results =
-          progress.interrupt_handler {
-            update(options, update_options,
-              selection = Sessions.Selection(
-                requirements = requirements,
-                all_sessions = all_sessions,
-                base_sessions = base_sessions,
-                exclude_session_groups = exclude_session_groups,
-                exclude_sessions = exclude_sessions,
-                session_groups = session_groups,
-                sessions = sessions),
-              base_logics = base_logics,
-              progress = progress,
-              build_heap = build_heap,
-              clean_build = clean_build,
-              dirs = dirs,
-              select_dirs = select_dirs,
-              numa_shuffling = Host.numa_check(progress, numa_shuffling),
-              max_jobs = max_jobs,
-              fresh_build = fresh_build,
-              no_build = no_build)
-          }
+          update(options, update_options,
+            selection = Sessions.Selection(
+              requirements = requirements,
+              all_sessions = all_sessions,
+              base_sessions = base_sessions,
+              exclude_session_groups = exclude_session_groups,
+              exclude_sessions = exclude_sessions,
+              session_groups = session_groups,
+              sessions = sessions),
+            base_logics = base_logics,
+            progress = progress,
+            build_heap = build_heap,
+            clean_build = clean_build,
+            dirs = dirs,
+            select_dirs = select_dirs,
+            numa_shuffling = Host.numa_check(progress, numa_shuffling),
+            max_jobs = max_jobs,
+            fresh_build = fresh_build,
+            no_build = no_build)
 
         sys.exit(results.rc)
       })

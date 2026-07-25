@@ -1,5 +1,6 @@
 (*  Title:      Pure/ROOT.ML
     Author:     Makarius
+    UUID:       d5ce53b8-9677-4370-b93c-77a3816d6989
 
 Main entry point for the Isabelle/Pure bootstrap process.
 
@@ -23,6 +24,7 @@ ML_file "General/string.ML";
 ML_file "General/vector.ML";
 ML_file "General/array.ML";
 ML_file "General/symbol_explode.ML";
+ML_file "General/time.ML";
 
 ML_file "Concurrent/multithreading.ML";
 ML_file "Concurrent/unsynchronized.ML";
@@ -80,23 +82,22 @@ ML_file "General/balanced_tree.ML";
 ML_file "General/linear_set.ML";
 ML_file "General/change_table.ML";
 ML_file "General/buffer.ML";
+ML_file "General/path.ML";
+ML_file "General/file_stream.ML";
+ML_file "General/bytes.ML";
+ML_file "PIDE/yxml.ML";
 ML_file "General/pretty.ML";
 ML_file "General/rat.ML";
 ML_file "PIDE/xml.ML";
-ML_file "General/path.ML";
 ML_file "General/url.ML";
 ML_file "System/bash.ML";
-ML_file "General/file_stream.ML";
-ML_file "General/bytes.ML";
 ML_file "General/file.ML";
 ML_file "General/long_name.ML";
 ML_file "General/binding.ML";
 ML_file "General/seq.ML";
-ML_file "General/time.ML";
 ML_file "General/timing.ML";
-ML_file "General/sha1.ML";
 
-ML_file "PIDE/yxml.ML";
+ML_file "ML/ml_process.ML";
 ML_file "ML/ml_profiling.ML";
 ML_file "PIDE/byte_message.ML";
 ML_file "PIDE/protocol_message.ML";
@@ -105,6 +106,7 @@ ML_file "PIDE/document_id.ML";
 ML_file "General/graph.ML";
 
 ML_file "System/options.ML";
+ML_file "PIDE/interactive.ML";
 
 
 subsection "Fundamental structures";
@@ -114,6 +116,9 @@ ML_file "term.ML";
 ML_file "context.ML";
 ML_file "config.ML";
 ML_file "context_position.ML";
+ML_file "General/completion.ML";
+ML_file "General/name_space.ML";
+ML_file "PIDE/markup_kind.ML";
 ML_file "soft_type_system.ML";
 
 
@@ -158,8 +163,6 @@ subsection "Core of tactical proof system";
 ML_file "term_ord.ML";
 ML_file "term_items.ML";
 ML_file "term_subst.ML";
-ML_file "General/completion.ML";
-ML_file "General/name_space.ML";
 ML_file "sorts.ML";
 ML_file "type.ML";
 ML_file "logic.ML";
@@ -196,6 +199,7 @@ ML_file "goal_display.ML";
 ML_file "tactical.ML";
 ML_file "search.ML";
 ML_file "tactic.ML";
+ML_file "bires.ML";
 ML_file "raw_simplifier.ML";
 ML_file "conjunction.ML";
 ML_file "assumption.ML";
@@ -319,6 +323,7 @@ ML_file "Thy/document_antiquotations.ML";
 ML_file "General/graph_display.ML";
 ML_file "pure_syn.ML";
 ML_file "Build/resources.ML";
+ML_file "General/message_digest.ML";
 ML_file "PIDE/command.ML";
 ML_file "PIDE/query_operation.ML";
 ML_file "Thy/thy_info.ML";
@@ -363,6 +368,7 @@ ML_file "Tools/rail.ML";
 ML_file "Tools/rule_insts.ML";
 ML_file "Tools/thy_deps.ML";
 ML_file "Tools/class_deps.ML";
+ML_file "Tools/adhoc_overloading.ML";
 ML_file "Tools/find_theorems.ML";
 ML_file "Tools/find_consts.ML";
 ML_file "Tools/simplifier_trace.ML";
@@ -372,4 +378,3 @@ ML_file "Tools/doc.ML";
 ML_file "Tools/jedit.ML";
 ML_file "Tools/ghc.ML";
 ML_file "Tools/generated_files.ML";
-

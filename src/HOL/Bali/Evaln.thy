@@ -29,15 +29,15 @@ for welltyped, and definitely assigned terms.
 
 inductive
   evaln :: "[prog, state, term, nat, vals, state] \<Rightarrow> bool"
-    ("_\<turnstile>_ \<midarrow>_\<succ>\<midarrow>_\<rightarrow> '(_, _')" [61,61,80,61,0,0] 60)
+    (\<open>_\<turnstile>_ \<midarrow>_\<succ>\<midarrow>_\<rightarrow> '(_, _')\<close> [61,61,80,61,0,0] 60)
   and evarn :: "[prog, state, var, vvar, nat, state] \<Rightarrow> bool"
-    ("_\<turnstile>_ \<midarrow>_=\<succ>_\<midarrow>_\<rightarrow> _" [61,61,90,61,61,61] 60)
+    (\<open>_\<turnstile>_ \<midarrow>_=\<succ>_\<midarrow>_\<rightarrow> _\<close> [61,61,90,61,61,61] 60)
   and eval_n:: "[prog, state, expr, val, nat, state] \<Rightarrow> bool"
-    ("_\<turnstile>_ \<midarrow>_-\<succ>_\<midarrow>_\<rightarrow> _" [61,61,80,61,61,61] 60)
+    (\<open>_\<turnstile>_ \<midarrow>_-\<succ>_\<midarrow>_\<rightarrow> _\<close> [61,61,80,61,61,61] 60)
   and evalsn :: "[prog, state, expr list, val  list, nat, state] \<Rightarrow> bool"
-    ("_\<turnstile>_ \<midarrow>_\<doteq>\<succ>_\<midarrow>_\<rightarrow> _" [61,61,61,61,61,61] 60)
+    (\<open>_\<turnstile>_ \<midarrow>_\<doteq>\<succ>_\<midarrow>_\<rightarrow> _\<close> [61,61,61,61,61,61] 60)
   and execn     :: "[prog, state, stmt, nat, state] \<Rightarrow> bool"
-    ("_\<turnstile>_ \<midarrow>_\<midarrow>_\<rightarrow> _"     [61,61,65,   61,61] 60)
+    (\<open>_\<turnstile>_ \<midarrow>_\<midarrow>_\<rightarrow> _\<close>     [61,61,65,   61,61] 60)
   for G :: prog
 where
 
@@ -197,7 +197,7 @@ declare if_split     [split del] if_split_asm     [split del]
         option.split [split del] option.split_asm [split del]
         not_None_eq [simp del] 
         split_paired_All [simp del] split_paired_Ex [simp del]
-setup \<open>map_theory_simpset (fn ctxt => ctxt delloop "split_all_tac")\<close>
+setup \<open>Simplifier.map_theory_simpset (Simplifier.del_loop "split_all_tac")\<close>
 
 inductive_cases evaln_cases: "G\<turnstile>s \<midarrow>t\<succ>\<midarrow>n\<rightarrow> (v, s')"
 
@@ -238,7 +238,7 @@ declare if_split     [split] if_split_asm     [split]
         option.split [split] option.split_asm [split]
         not_None_eq [simp] 
         split_paired_All [simp] split_paired_Ex [simp]
-declaration \<open>K (Simplifier.map_ss (fn ss => ss addloop ("split_all_tac", split_all_tac)))\<close>
+declaration \<open>K (Simplifier.map_simpset (Simplifier.add_loop ("split_all_tac", split_all_tac)))\<close>
 
 lemma evaln_Inj_elim: "G\<turnstile>s \<midarrow>t\<succ>\<midarrow>n\<rightarrow> (w,s') \<Longrightarrow> case t of In1 ec \<Rightarrow>  
   (case ec of Inl e \<Rightarrow> (\<exists>v. w = In1 v) | Inr c \<Rightarrow> w = \<diamondsuit>)  
@@ -297,48 +297,48 @@ declare evaln_AbruptIs [intro!]
 
 lemma evaln_Callee: "G\<turnstile>Norm s\<midarrow>In1l (Callee l e)\<succ>\<midarrow>n\<rightarrow> (v,s') = False"
 proof -
-  { fix s t v s'
-    assume eval: "G\<turnstile>s \<midarrow>t\<succ>\<midarrow>n\<rightarrow> (v,s')" and
-         normal: "normal s" and
-         callee: "t=In1l (Callee l e)"
-    then have "False" by induct auto
-  }
+  have "False"
+    if eval: "G\<turnstile>s \<midarrow>t\<succ>\<midarrow>n\<rightarrow> (v,s')"
+    and normal: "normal s"
+    and callee: "t=In1l (Callee l e)"
+    for s t v s'
+    using that by induct auto
   then show ?thesis
     by (cases s') fastforce 
 qed
 
 lemma evaln_InsInitE: "G\<turnstile>Norm s\<midarrow>In1l (InsInitE c e)\<succ>\<midarrow>n\<rightarrow> (v,s') = False"
 proof -
-  { fix s t v s'
-    assume eval: "G\<turnstile>s \<midarrow>t\<succ>\<midarrow>n\<rightarrow> (v,s')" and
-         normal: "normal s" and
-         callee: "t=In1l (InsInitE c e)"
-    then have "False" by induct auto
-  }
+  have "False"
+    if eval: "G\<turnstile>s \<midarrow>t\<succ>\<midarrow>n\<rightarrow> (v,s')"
+    and normal: "normal s"
+    and callee: "t=In1l (InsInitE c e)"
+    for s t v s'
+    using that by induct auto
   then show ?thesis
     by (cases s') fastforce
 qed
 
 lemma evaln_InsInitV: "G\<turnstile>Norm s\<midarrow>In2 (InsInitV c w)\<succ>\<midarrow>n\<rightarrow> (v,s') = False"
 proof -
-  { fix s t v s'
-    assume eval: "G\<turnstile>s \<midarrow>t\<succ>\<midarrow>n\<rightarrow> (v,s')" and
-         normal: "normal s" and
-         callee: "t=In2 (InsInitV c w)"
-    then have "False" by induct auto
-  }  
+  have "False"
+    if eval: "G\<turnstile>s \<midarrow>t\<succ>\<midarrow>n\<rightarrow> (v,s')"
+    and normal: "normal s"
+    and callee: "t=In2 (InsInitV c w)"
+    for s t v s'
+    using that by induct auto
   then show ?thesis
     by (cases s') fastforce
 qed
 
 lemma evaln_FinA: "G\<turnstile>Norm s\<midarrow>In1r (FinA a c)\<succ>\<midarrow>n\<rightarrow> (v,s') = False"
 proof -
-  { fix s t v s'
-    assume eval: "G\<turnstile>s \<midarrow>t\<succ>\<midarrow>n\<rightarrow> (v,s')" and
-         normal: "normal s" and
-         callee: "t=In1r (FinA a c)"
-    then have "False" by induct auto
-  } 
+  have "False"
+    if eval: "G\<turnstile>s \<midarrow>t\<succ>\<midarrow>n\<rightarrow> (v,s')"
+    and normal: "normal s"
+    and callee: "t=In1r (FinA a c)"
+    for s t v s'
+    using that by induct auto
   then show ?thesis
     by (cases s') fastforce
 qed

@@ -22,7 +22,7 @@ session "HOL-Examples" in Examples = HOL +
   sessions
     "HOL-Computational_Algebra"
   theories
-    Adhoc_Overloading_Examples
+    Adhoc_Overloading
     Ackermann
     Cantor
     Coherent
@@ -37,6 +37,7 @@ session "HOL-Examples" in Examples = HOL +
     "ML"
     Peirce
     Records
+    Reflection_Examples
     Rewrite_Examples
     Seq
     Sqrt
@@ -86,8 +87,11 @@ session "HOL-Library" (main timing) in Library = HOL +
     DAList_Multiset
     RBT_Mapping
     RBT_Set
+    (* manual *)
+    Time_Manual
     (*printing modifications*)
     OptionalSugar
+    Suc_Notation
     (*prototypic tools*)
     Predicate_Compile_Quickcheck
     (*legacy tools*)
@@ -95,8 +99,6 @@ session "HOL-Library" (main timing) in Library = HOL +
     Old_Recdef
     Realizers
     Refute
-    (*transitional theories*)
-    Divides
   document_files "root.bib" "root.tex"
 
 session "HOL-Analysis" (main timing) in Analysis = HOL +
@@ -107,8 +109,9 @@ session "HOL-Analysis" (main timing) in Analysis = HOL +
     "HOL-Combinatorics"
     "HOL-Computational_Algebra"
     "HOL-Real_Asymp"
-theories
+  theories
     Analysis
+    Finite_Function_Topology (* not part of main file because it imports problematic Sum_any notation *)
   document_files
     "root.tex"
     "root.bib"
@@ -145,11 +148,15 @@ session "HOL-Combinatorics" (main timing) in "Combinatorics" = "HOL" +
   document_files
     "root.tex"
 
-session "HOL-Computational_Algebra" (main timing) in "Computational_Algebra" = "HOL-Library" +
+session "HOL-Computational_Algebra" (main timing) in "Computational_Algebra" = "HOL" +
+  sessions
+    "HOL-Library"
   theories
     Computational_Algebra
     (*conflicting type class instantiations and dependent applications*)
     Field_as_Ring
+    (*checks that computation works*)
+    Computation_Checks
   document_files
     "root.tex"
     "root.bib"
@@ -235,8 +242,10 @@ session "HOL-Induct" in Induct = HOL +
     "root.bib"
     "root.tex"
 
-session "HOL-IMP" (timing) in IMP = "HOL-Library" +
+session "HOL-IMP" (timing) in IMP = "HOL" +
   options [document_variants = document]
+  sessions
+    "HOL-Library"
   theories
     BExp
     ASM
@@ -268,6 +277,7 @@ session "HOL-IMP" (timing) in IMP = "HOL-Library" +
     Procs_Stat_Vars_Stat
     C_like
     OO
+    Halting
   document_files "root.bib" "root.tex"
 
 session "HOL-IMPP" in IMPP = HOL +
@@ -317,6 +327,7 @@ session "HOL-Data_Structures" (timing) in Data_Structures = HOL +
     Leftist_Heap_List
     Binomial_Heap
     Selection
+    Time_Locale_Example
   document_files "root.tex" "root.bib"
 
 session "HOL-Import" in Import = HOL +
@@ -375,16 +386,26 @@ session "HOL-Codegenerator_Test" in Codegenerator_Test = "HOL-Library" +
     Code_Lazy_Test
     Code_Test_PolyML
     Code_Test_Scala
+    Generate_Target_String_Literals
+    Generate_Target_Bit_Operations
+  theories [condition = ISABELLE_MLTON]
+    Generate_Target_MLton
+  theories [condition = ISABELLE_SMLNJ]
+    Generate_Target_SMLNJ
+  theories [condition = ISABELLE_OCAMLFIND]
+    Generate_Target_OCaml
   theories [condition = ISABELLE_GHC]
-    Code_Test_GHC
+    Generate_Target_GHC
   theories [condition = ISABELLE_MLTON]
     Code_Test_MLton
-  theories [condition = ISABELLE_OCAMLFIND]
-    Code_Test_OCaml
   theories [condition = ISABELLE_SMLNJ]
     Code_Test_SMLNJ
+  theories [condition = ISABELLE_OCAMLFIND]
+    Code_Test_OCaml
+  theories [condition = ISABELLE_GHC]
+    Code_Test_GHC
 
-session "HOL-Metis_Examples" (timing) in Metis_Examples = "HOL-Library" +
+session "HOL-Metis_Examples" (timing) in Metis_Examples = "HOL" +
   description "
     Author:     Lawrence C Paulson, Cambridge University Computer Laboratory
     Author:     Jasmin Blanchette, TU Muenchen
@@ -392,6 +413,7 @@ session "HOL-Metis_Examples" (timing) in Metis_Examples = "HOL-Library" +
     Testing Metis and Sledgehammer.
   "
   sessions
+    "HOL-Library"
     "HOL-Decision_Procs"
   theories
     Abstraction
@@ -676,11 +698,13 @@ session "HOL-Lattice" in Lattice = HOL +
     "root.bib"
     "root.tex"
 
-session "HOL-ex" (timing) in ex = "HOL-Number_Theory" +
+session "HOL-ex" (timing) in ex = "HOL-Library" +
   description "
     Miscellaneous examples and experiments for Isabelle/HOL.
   "
   options [document = false]
+  sessions
+    "HOL-Number_Theory"
   theories
     Antiquote
     Argo_Examples
@@ -689,12 +713,14 @@ session "HOL-ex" (timing) in ex = "HOL-Number_Theory" +
     BigO
     BinEx
     Birthday_Paradox
+    Bit_Operation_Computations
     Bubblesort
     CTL
     Cartouche_Examples
     Case_Product
     Chinese
     Classical
+    Code_Assertion
     Code_Binary_Nat_examples
     Code_Lazy_Demo
     Code_Timing
@@ -731,7 +757,6 @@ session "HOL-ex" (timing) in ex = "HOL-Number_Theory" +
     Pythagoras
     Quicksort
     Radix_Sort
-    Reflection_Examples
     Refute_Examples
     Residue_Ring
     SOS
@@ -756,6 +781,7 @@ session "HOL-ex" (timing) in ex = "HOL-Number_Theory" +
     Triangular_Numbers
     Unification
     While_Combinator_Example
+    Word_Msb
     veriT_Preprocessing
   theories [skip_proofs = false]
     SAT_Examples
@@ -875,7 +901,7 @@ session "HOL-Nominal" in Nominal = HOL +
 
 session "HOL-Nominal-Examples" (timing) in "Nominal/Examples" = "HOL-Nominal" +
   theories
-    Class3
+    Class
     CK_Machine
     Compile
     Contexts

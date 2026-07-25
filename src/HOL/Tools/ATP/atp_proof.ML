@@ -43,7 +43,7 @@ sig
 
   val agsyholN : string
   val alt_ergoN : string
-  val cvc4N : string
+  val cvc5N : string
   val eN : string
   val iproverN : string
   val leo2N : string
@@ -111,7 +111,7 @@ open ATP_Problem
 
 val agsyholN = "agsyhol"
 val alt_ergoN = "alt_ergo"
-val cvc4N = "cvc4"
+val cvc5N = "cvc5"
 val eN = "e"
 val iproverN = "iprover"
 val leo2N = "leo2"
@@ -162,7 +162,7 @@ fun short_output verbose output =
     ""
 
 fun from_lemmas [] = ""
-  | from_lemmas ss = " from " ^ space_implode " " (Try.serial_commas "and" (map quote ss))
+  | from_lemmas ss = " from " ^ implode_space (Try.serial_commas "and" (map quote ss))
 
 fun string_of_atp_failure MaybeUnprovable = "Problem maybe unprovable"
   | string_of_atp_failure Unprovable = "Problem unprovable"

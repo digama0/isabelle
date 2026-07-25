@@ -49,9 +49,11 @@ sig
   val used_facts_in_atp_proof : Proof.context -> (string * stature) list -> string atp_proof ->
     (string * stature) list
   val atp_proof_prefers_lifting : string atp_proof -> bool
+  val is_lam_def_used_in_atp_proof : string atp_proof -> bool
   val is_typed_helper_used_in_atp_proof : string atp_proof -> bool
   val replace_dependencies_in_line : atp_step_name * atp_step_name list -> ('a, 'b) atp_step ->
     ('a, 'b) atp_step
+  val uncombine_term : theory -> term -> term
   val termify_atp_proof : Proof.context -> string -> ATP_Problem.atp_format ->
     ATP_Problem_Generate.type_enc -> string Symtab.table -> (string * term) list ->
     int Symtab.table -> string atp_proof -> (term, string) atp_step list
@@ -272,11 +274,11 @@ fun quantify_over_var textual quant_of var_s var_T t =
   in t |> map_aterms norm_var_types |> fold_rev quant_of (map Var normTs) end
 
 (* This assumes that distinct names are mapped to distinct names by
-   "Variable.variant_frees". This does not hold in general but should hold for
+   "Variable.variant_names". This does not hold in general but should hold for
    ATP-generated Skolem function names, since these end with a digit and
    "variant_frees" appends letters. *)
 fun desymbolize_and_fresh_up ctxt s =
-  fst (hd (Variable.variant_frees ctxt [] [(Name.desymbolize (SOME false) s, ())]))
+  #1 (Name.variant (Name.desymbolize (SOME false) s) (Variable.names_of ctxt))
 
 (* Higher-order translation. Variables are typed (although we don't use that information). Lambdas
    are typed. The code is similar to "term_of_atp_fo". *)
@@ -572,6 +574,9 @@ val is_combinator_def = String.isPrefix (helper_prefix ^ combinator_prefix)
 fun atp_proof_prefers_lifting atp_proof =
   (is_axiom_used_in_proof is_combinator_def atp_proof,
    is_axiom_used_in_proof is_lam_lifted atp_proof) = (false, true)
+
+val is_lam_def_used_in_atp_proof =
+  is_axiom_used_in_proof (is_combinator_def orf is_lam_lifted)
 
 val is_typed_helper_name =
   String.isPrefix helper_prefix andf String.isSuffix typed_helper_suffix

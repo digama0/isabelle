@@ -10,19 +10,10 @@ package isabelle
 import java.io.{File => JFile, PrintStream, ByteArrayOutputStream, OutputStream}
 
 import scala.collection.mutable
-import scala.annotation.tailrec
 
 import dotty.tools.dotc.CompilationUnit
-import dotty.tools.dotc.ast.Trees.PackageDef
-import dotty.tools.dotc.ast.untpd
-import dotty.tools.dotc.core.Contexts.{Context => CompilerContext}
-import dotty.tools.dotc.core.NameOps.moduleClassName
-import dotty.tools.dotc.core.{Phases, StdNames}
-import dotty.tools.dotc.interfaces
-import dotty.tools.dotc.reporting.{Diagnostic, ConsoleReporter}
-import dotty.tools.dotc.util.{SourceFile, SourcePosition, NoSourcePosition}
 import dotty.tools.repl
-import dotty.tools.repl.{ReplCompiler, ReplDriver}
+import dotty.tools.repl.ReplDriver
 
 
 object Scala {
@@ -226,7 +217,7 @@ object Scala {
       known.value.collectFirst(which)
   }
 
-  class Interpreter(context: Compiler.Context, out: OutputStream = Console.out) {
+  class Interpreter(context: Compiler.Context) {
     interpreter =>
 
     private val running = Synchronized[Option[Thread]](None)
@@ -236,10 +227,10 @@ object Scala {
     private var state = context.init_state
 
     private lazy val thread: Consumer_Thread[Interpreter.Request] =
-      Consumer_Thread.fork("Scala.Interpreter") {
+      Consumer_Thread.fork("Scala.Interpreter", {
         case Interpreter.Execute(command) =>
           try {
-            running.change(_ => Some(Thread.currentThread()))
+            running.change(_ => Some(Isabelle_Thread.current))
             state = command(context, state)
           }
           finally {
@@ -250,7 +241,7 @@ object Scala {
         case Interpreter.Shutdown =>
           Interpreter.del(interpreter)
           false
-      }
+      })
 
     def shutdown(): Unit = {
       thread.send(Interpreter.Shutdown)
@@ -286,7 +277,7 @@ object Scala {
     functions.find(fun => fun.name == name) match {
       case Some(fun) =>
         Exn.capture { fun.invoke(session, args) } match {
-          case Exn.Res(null) => (Tag.NULL, Nil)
+          case Exn.Res(res) if res.asInstanceOf[Any] == null => (Tag.NULL, Nil)
           case Exn.Res(res) => (Tag.OK, res)
           case Exn.Exn(Exn.Interrupt()) => (Tag.INTERRUPT, Nil)
           case Exn.Exn(ERROR(msg)) => (Tag.ERROR, List(Bytes(msg)))
@@ -299,13 +290,13 @@ object Scala {
   /* protocol handler */
 
   class Handler extends Session.Protocol_Handler {
-    private var session: Session = null
+    private var session: Option[Session] = None
     private var futures = Map.empty[String, Future[Unit]]
 
     override def init(session: Session): Unit =
-      synchronized { this.session = session }
+      synchronized { this.session = Some(session) }
 
-    override def exit(): Unit = synchronized {
+    override def exit(exit_state: Document.State): Unit = synchronized {
       for ((id, future) <- futures) cancel(id, future)
       futures = Map.empty
     }
@@ -313,7 +304,7 @@ object Scala {
     private def result(id: String, tag: Scala.Tag, res: List[Bytes]): Unit =
       synchronized {
         if (futures.isDefinedAt(id)) {
-          session.protocol_command_raw(
+          session.get.protocol_command_raw(
             "Scala.result", Bytes(id) :: Bytes(tag.ordinal.toString) :: res)
           futures -= id
         }
@@ -328,7 +319,7 @@ object Scala {
       msg.properties match {
         case Markup.Invoke_Scala(name, id) =>
           def body(): Unit = {
-            val (tag, res) = Scala.function_body(session, name, msg.chunks)
+            val (tag, res) = Scala.function_body(session.get, name, msg.chunks)
             result(id, tag, res)
           }
           val future =
@@ -362,6 +353,8 @@ object Scala {
 }
 
 class Scala_Functions extends Scala.Functions(
+  SHA1.Scala_Fun,
+  SHA256.Scala_Fun,
   Scala.Echo,
   Scala.Sleep,
   Scala.Toplevel,
@@ -380,10 +373,12 @@ class Scala_Functions extends Scala.Functions(
   Isabelle_System.Copy_File,
   Isabelle_System.Copy_File_Base,
   Isabelle_System.Rm_Tree,
+  Isabelle_System.Bash_Functions,
   Isabelle_System.Download,
   Isabelle_System.Isabelle_Id,
   Isabelle_Tool.Isabelle_Tools,
   isabelle.atp.SystemOnTPTP.List_Systems,
   isabelle.atp.SystemOnTPTP.Run_System,
+  ML_Process.Scala_Fun,
   Prismjs.Languages,
   Prismjs.Tokenize)

@@ -72,16 +72,14 @@ qualified definition lcm :: "'a \<Rightarrow> 'a \<Rightarrow> 'a"
 qualified definition Lcm :: "'a set \<Rightarrow> 'a" \<comment> \<open>Somewhat complicated definition of Lcm that has the advantage of working
     for infinite sets as well\<close>
   where
-  [code del]: "Lcm A = (if \<exists>l. l \<noteq> 0 \<and> (\<forall>a\<in>A. a dvd l) then
+  [code drop]: "Lcm A = (if \<exists>l. l \<noteq> 0 \<and> (\<forall>a\<in>A. a dvd l) then
      let l = SOME l. l \<noteq> 0 \<and> (\<forall>a\<in>A. a dvd l) \<and> euclidean_size l =
        (LEAST n. \<exists>l. l \<noteq> 0 \<and> (\<forall>a\<in>A. a dvd l) \<and> euclidean_size l = n)
        in normalize l 
       else 0)"
 
 qualified definition Gcd :: "'a set \<Rightarrow> 'a"
-  where [code del]: "Gcd A = Lcm {d. \<forall>a\<in>A. d dvd a}"
-
-end    
+  where [code drop]: "Gcd A = Lcm {d. \<forall>a\<in>A. d dvd a}"
 
 lemma semiring_gcd:
   "class.semiring_gcd one zero times gcd lcm
@@ -193,7 +191,10 @@ proof -
   qed
 qed
 
-interpretation semiring_Gcd one zero times gcd lcm Gcd Lcm
+end
+
+interpretation semiring_Gcd one zero times
+    Euclidean_Algorithm.gcd Euclidean_Algorithm.lcm Euclidean_Algorithm.Gcd Euclidean_Algorithm.Lcm
     divide plus minus unit_factor normalize
   by (fact semiring_Gcd)
 
@@ -269,16 +270,14 @@ proof -
 qed
 
 lemma Gcd_eucl_set [code]:
-  "Gcd (set xs) = fold gcd xs 0"
+  "Euclidean_Algorithm.Gcd (set xs) = fold Euclidean_Algorithm.gcd xs 0"
   by (fact Gcd_set_eq_fold)
 
 lemma Lcm_eucl_set [code]:
-  "Lcm (set xs) = fold lcm xs 1"
+  "Euclidean_Algorithm.Lcm (set xs) = fold Euclidean_Algorithm.lcm xs 1"
   by (fact Lcm_set_eq_fold)
  
 end
-
-hide_const (open) gcd lcm Gcd Lcm
 
 lemma prime_elem_int_abs_iff [simp]:
   fixes p :: int

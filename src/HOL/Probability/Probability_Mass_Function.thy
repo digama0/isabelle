@@ -13,7 +13,7 @@ imports
 begin
 
 text \<open>Conflicting notation from \<^theory>\<open>HOL-Analysis.Infinite_Sum\<close>\<close>
-no_notation Infinite_Sum.abs_summable_on (infixr "abs'_summable'_on" 46)
+no_notation Infinite_Sum.abs_summable_on (infixr \<open>abs'_summable'_on\<close> 46)
 
 lemma AE_emeasure_singleton:
   assumes x: "emeasure M {x} \<noteq> 0" and ae: "AE x in M. P x" shows "P x"
@@ -367,7 +367,7 @@ proof (clarify, intro conjI)
     done
 qed
 
-adhoc_overloading Monad_Syntax.bind bind_pmf
+adhoc_overloading Monad_Syntax.bind \<rightleftharpoons> bind_pmf
 
 lemma ennreal_pmf_bind: "pmf (bind_pmf N f) i = (\<integral>\<^sup>+x. pmf (f x) i \<partial>measure_pmf N)"
   unfolding pmf.rep_eq bind_pmf.rep_eq
@@ -688,7 +688,7 @@ lemma pair_return_pmf [simp]: "pair_pmf (return_pmf x) (return_pmf y) = return_p
 
 lemma pmf_map_inj': "inj f \<Longrightarrow> pmf (map_pmf f M) (f x) = pmf M x"
 apply(cases "x \<in> set_pmf M")
- apply(simp add: pmf_map_inj[OF subset_inj_on])
+ apply(simp add: pmf_map_inj[OF inj_on_subset])
 apply(simp add: pmf_eq_0_set_pmf[symmetric])
 apply(auto simp add: pmf_eq_0_set_pmf dest: injD)
 done

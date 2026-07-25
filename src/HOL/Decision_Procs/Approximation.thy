@@ -514,9 +514,8 @@ lemma bounded_by_update_var:
     and bnd: "x \<in>\<^sub>r ivl"
   shows "bounded_by (xs[i := x]) vs"
   using assms
-  using nth_list_update
   by (cases "i < length xs")
-    (force simp: bounded_by_def  split: option.splits)+
+    (force simp: bounded_by_def nth_list_update list_update_beyond split: option.splits)+
 
 lemma isDERIV_approx':
   assumes "bounded_by xs vs"
@@ -1143,50 +1142,26 @@ setup "Approximation_Generator.setup"
 
 section "Avoid pollution of name space"
 
-bundle floatarith_notation begin
-
-notation Add ("Add")
-notation Minus ("Minus")
-notation Mult ("Mult")
-notation Inverse ("Inverse")
-notation Cos ("Cos")
-notation Arctan ("Arctan")
-notation Abs ("Abs")
-notation Max ("Max")
-notation Min ("Min")
-notation Pi ("Pi")
-notation Sqrt ("Sqrt")
-notation Exp ("Exp")
-notation Powr ("Powr")
-notation Ln ("Ln")
-notation Power ("Power")
-notation Floor ("Floor")
-notation Var ("Var")
-notation Num ("Num")
-
-end
-
-bundle no_floatarith_notation begin
-
-no_notation Add ("Add")
-no_notation Minus ("Minus")
-no_notation Mult ("Mult")
-no_notation Inverse ("Inverse")
-no_notation Cos ("Cos")
-no_notation Arctan ("Arctan")
-no_notation Abs ("Abs")
-no_notation Max ("Max")
-no_notation Min ("Min")
-no_notation Pi ("Pi")
-no_notation Sqrt ("Sqrt")
-no_notation Exp ("Exp")
-no_notation Powr ("Powr")
-no_notation Ln ("Ln")
-no_notation Power ("Power")
-no_notation Floor ("Floor")
-no_notation Var ("Var")
-no_notation Num ("Num")
-
+bundle floatarith_syntax
+begin
+notation Add (\<open>Add\<close>)
+notation Minus (\<open>Minus\<close>)
+notation Mult (\<open>Mult\<close>)
+notation Inverse (\<open>Inverse\<close>)
+notation Cos (\<open>Cos\<close>)
+notation Arctan (\<open>Arctan\<close>)
+notation Abs (\<open>Abs\<close>)
+notation Max (\<open>Max\<close>)
+notation Min (\<open>Min\<close>)
+notation Pi (\<open>Pi\<close>)
+notation Sqrt (\<open>Sqrt\<close>)
+notation Exp (\<open>Exp\<close>)
+notation Powr (\<open>Powr\<close>)
+notation Ln (\<open>Ln\<close>)
+notation Power (\<open>Power\<close>)
+notation Floor (\<open>Floor\<close>)
+notation Var (\<open>Var\<close>)
+notation Num (\<open>Num\<close>)
 end
 
 hide_const (open)

@@ -13,18 +13,15 @@ typedecl nat
 typedecl 'a list
 
 consts
-  Nil   :: "'a list"                                  ("[]")
-  Cons  :: "'a => 'a list => 'a list"                 (infixr "#"  65)
+  Nil   :: "'a list"                                  (\<open>[]\<close>)
+  Cons  :: "'a => 'a list => 'a list"                 (infixr \<open>#\<close>  65)
 
 text \<open>List enumeration\<close>
 
-nonterminal list_args
 syntax
-  "" :: "'a \<Rightarrow> list_args"  ("_")
-  "_list_args" :: "'a \<Rightarrow> list_args \<Rightarrow> list_args"  ("_,/ _")
-  "_list" :: "list_args => 'a list"    ("[(_)]")
+  "_list" :: "args => 'a list"  (\<open>(\<open>indent=1 notation=\<open>mixfix list enumeration\<close>\<close>[_])\<close>)
 syntax_consts
-  "_list_args" "_list" == Cons
+  "_list" \<rightleftharpoons> Cons
 translations
   "[x, xs]" == "x#[xs]"
   "[x]" == "x#[]"
@@ -42,9 +39,9 @@ axiomatization
   sue     :: person and
   ned     :: person and
 
-  nat23   :: nat          ("23") and
-  nat24   :: nat          ("24") and
-  nat25   :: nat          ("25") and
+  nat23   :: nat          (\<open>23\<close>) and
+  nat24   :: nat          (\<open>24\<close>) and
+  nat25   :: nat          (\<open>25\<close>) and
 
   age     :: "[person, nat]                          => bool" and
 

@@ -4,13 +4,20 @@ theory Real_Asymp_Examples
 begin
 
 context
-  includes asymp_equiv_notation
+  includes asymp_equiv_syntax
 begin
 
 subsection \<open>Dominik Gruntz's examples\<close>
 
 lemma "((\<lambda>x::real. exp x * (exp (1/x - exp (-x)) - exp (1/x))) \<longlongrightarrow> -1) at_top"
   by real_asymp
+
+text \<open>Also works with schematic goals!\<close>
+lemma "\<exists>L. ((\<lambda>x::real. exp x * (exp (1/x - exp (-x)) - exp (1/x))) \<longlongrightarrow> L) at_top \<and> L<0"
+  apply (intro exI conjI)
+  apply real_asymp
+  apply auto
+  done
   
 lemma "((\<lambda>x::real. exp x * (exp (1/x + exp (-x) + exp (-(x^2))) -
                      exp (1/x - exp (-exp x)))) \<longlongrightarrow> 1) at_top"

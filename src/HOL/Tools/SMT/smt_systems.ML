@@ -7,6 +7,8 @@ Setup SMT solvers.
 signature SMT_SYSTEMS =
 sig
   val cvc_extensions: bool Config.T
+  val cvc5_integer_induction: bool Config.T
+  val cvc5_structural_induction: bool Config.T
   val z3_extensions: bool Config.T
 end;
 
@@ -62,6 +64,8 @@ fun on_first_non_unsupported_line test_outcome solver_name lines =
 (* CVC4 and cvc5 *)
 
 val cvc_extensions = Attrib.setup_config_bool \<^binding>\<open>cvc_extensions\<close> (K false)
+val cvc5_integer_induction = Attrib.setup_config_bool \<^binding>\<open>cvc5_integer_induction\<close> (K false)
+val cvc5_structural_induction = Attrib.setup_config_bool \<^binding>\<open>cvc5_structural_induction\<close> (K false)
 
 local
   fun cvc4_options ctxt =
@@ -78,7 +82,10 @@ local
      "--lang=smt2"] @
     (case SMT_Config.get_timeout ctxt of
       NONE => []
-    | SOME t => ["--tlimit", string_of_int (Time.toMilliseconds t)])
+    | SOME t => ["--tlimit", string_of_int (Time.toMilliseconds t)]) @
+    (if Config.get ctxt cvc5_integer_induction then ["--int-wf-ind"] else []) @
+    (if Config.get ctxt cvc5_structural_induction then ["--dt-stc-ind"] else []) @
+    (if Config.get ctxt cvc_extensions then ["--force-logic=ALL"] else [])
 
   fun select_class ctxt =
     if Config.get ctxt cvc_extensions then
@@ -104,13 +111,13 @@ val cvc4: SMT_Solver.solver_config = {
   smt_options = [(":produce-unsat-cores", "true")],
   good_slices =
     (* FUDGE *)
-    [((2, false, false, 512, meshN), ["--full-saturate-quant", "--inst-when=full-last-call", "--inst-no-entail", "--term-db-mode=relevant", "--multi-trigger-linear"]),
-     ((2, false, false, 64, meshN), ["--decision=internal", "--simplification=none", "--full-saturate-quant"]),
-     ((2, false, true, 256, mepoN), ["--trigger-sel=max", "--full-saturate-quant"]),
-     ((2, false, false, 1024, meshN), ["--relevant-triggers", "--full-saturate-quant"]),
-     ((2, false, false, 32, meshN), ["--term-db-mode=relevant", "--full-saturate-quant"]),
-     ((2, false, false, 128, meshN), ["--no-e-matching", "--full-saturate-quant"]),
-     ((2, false, false, 256, meshN), ["--finite-model-find", "--fmf-inst-engine"])],
+    [((4, false, false, 512, meshN), ["--full-saturate-quant", "--inst-when=full-last-call", "--inst-no-entail", "--term-db-mode=relevant", "--multi-trigger-linear"]),
+     ((4, false, false, 64, meshN), ["--decision=internal", "--simplification=none", "--full-saturate-quant"]),
+     ((4, false, true, 256, mepoN), ["--trigger-sel=max", "--full-saturate-quant"]),
+     ((4, false, false, 1024, meshN), ["--relevant-triggers", "--full-saturate-quant"]),
+     ((4, false, false, 32, meshN), ["--term-db-mode=relevant", "--full-saturate-quant"]),
+     ((4, false, false, 128, meshN), ["--no-e-matching", "--full-saturate-quant"]),
+     ((4, false, false, 256, meshN), ["--finite-model-find", "--fmf-inst-engine"])],
   outcome = on_first_line (outcome_of "unsat" "sat" "unknown" "timeout"),
   parse_proof = SOME (K CVC_Proof_Parse.parse_proof),
   replay = NONE }
@@ -124,13 +131,13 @@ val cvc5: SMT_Solver.solver_config = {
   smt_options = [(":produce-unsat-cores", "true")],
   good_slices =
     (* FUDGE *)
-    [((2, false, false, 512, meshN), ["--full-saturate-quant", "--inst-when=full-last-call", "--inst-no-entail", "--term-db-mode=relevant", "--multi-trigger-linear"]),
-     ((2, false, false, 64, meshN), ["--decision=internal", "--simplification=none", "--full-saturate-quant"]),
-     ((2, false, true, 256, mepoN), ["--trigger-sel=max", "--full-saturate-quant"]),
-     ((2, false, false, 1024, meshN), ["--relevant-triggers", "--full-saturate-quant"]),
-     ((2, false, false, 32, meshN), ["--term-db-mode=relevant", "--full-saturate-quant"]),
-     ((2, false, false, 128, meshN), ["--no-e-matching", "--full-saturate-quant"]),
-     ((2, false, false, 256, meshN), ["--finite-model-find", "--fmf-inst-engine"])],
+    [((4, false, false, 512, meshN), ["--full-saturate-quant", "--inst-when=full-last-call", "--inst-no-entail", "--term-db-mode=relevant", "--multi-trigger-linear"]),
+     ((4, false, false, 64, meshN), ["--decision=internal", "--simplification=none", "--full-saturate-quant"]),
+     ((4, false, true, 256, mepoN), ["--trigger-sel=max", "--full-saturate-quant"]),
+     ((4, false, false, 1024, meshN), ["--relevant-triggers", "--full-saturate-quant"]),
+     ((4, false, false, 32, meshN), ["--term-db-mode=relevant", "--full-saturate-quant"]),
+     ((4, false, false, 128, meshN), ["--no-e-matching", "--full-saturate-quant"]),
+     ((4, false, false, 256, meshN), ["--finite-model-find", "--fmf-inst-engine"])],
   outcome = on_first_line (outcome_of "unsat" "sat" "unknown" "timeout"),
   parse_proof = SOME (K CVC_Proof_Parse.parse_proof),
   replay = NONE }
@@ -148,19 +155,60 @@ val cvc5_proof: SMT_Solver.solver_config = {
   smt_options = [(":produce-proofs", "true")],
   good_slices =
     (* FUDGE *)
-    [((2, false, false, 512, meshN), ["--full-saturate-quant", "--inst-when=full-last-call", "--inst-no-entail", "--term-db-mode=relevant", "--multi-trigger-linear"]),
-     ((2, false, false, 64, meshN), ["--decision=internal", "--simplification=none", "--full-saturate-quant"]),
-     ((2, false, true, 256, mepoN), ["--trigger-sel=max", "--full-saturate-quant"]),
-     ((2, false, false, 1024, meshN), ["--relevant-triggers", "--full-saturate-quant"]),
-     ((2, false, false, 32, meshN), ["--term-db-mode=relevant", "--full-saturate-quant"]),
-     ((2, false, false, 128, meshN), ["--no-e-matching", "--full-saturate-quant"]),
-     ((2, false, false, 256, meshN), ["--finite-model-find", "--fmf-inst-engine"])],
+    [((4, false, false, 512, meshN), ["--full-saturate-quant", "--inst-when=full-last-call", "--inst-no-entail", "--term-db-mode=relevant", "--multi-trigger-linear"]),
+     ((4, false, false, 64, meshN), ["--decision=internal", "--simplification=none", "--full-saturate-quant"]),
+     ((4, false, true, 256, mepoN), ["--trigger-sel=max", "--full-saturate-quant"]),
+     ((4, false, false, 1024, meshN), ["--relevant-triggers", "--full-saturate-quant"]),
+     ((4, false, false, 32, meshN), ["--term-db-mode=relevant", "--full-saturate-quant"]),
+     ((4, false, false, 128, meshN), ["--no-e-matching", "--full-saturate-quant"]),
+     ((4, false, false, 256, meshN), ["--finite-model-find", "--fmf-inst-engine"])],
   outcome = on_first_line (outcome_of "unsat" "sat" "unknown" "timeout"),
   parse_proof = SOME (K CVC_Proof_Parse.parse_proof),
   replay = SOME CVC5_Replay.replay }
 
 end
 
+
+(* Vampire *)
+
+local
+  fun vampire_smt_options ctxt =
+   ["--input_syntax", "smtlib2", "--induction", "struct", "--induction_neg_only", "off"] @
+    (case SMT_Config.get_timeout ctxt of
+      NONE => []
+    | SOME t => ["--time_limit", string_of_int (Time.toSeconds t) ^ "s"])
+
+  fun on_vampire_relevant_line test_outcome solver_name lines =
+    on_first_line test_outcome solver_name (filter (String.isPrefix "% SZS status") lines)
+
+  fun make_vampire_solver_config name class : SMT_Solver.solver_config = {
+    name = name,
+    class = class,
+    avail = is_some o check_tool "ISABELLE_VAMPIRE",
+    command = the o check_tool "ISABELLE_VAMPIRE",
+    options = vampire_smt_options,
+    smt_options = [],
+    good_slices =
+      (* FUDGE *)
+      [((2, false, false, 1024, meshN), []),
+       ((2, false, false, 512, mashN), []),
+       ((2, false, true, 128, meshN), []),
+       ((2, false, false, 64, meshN), []),
+       ((2, false, false, 256, mepoN), []),
+       ((2, false, false, 32, meshN), [])],
+    outcome = on_vampire_relevant_line (outcome_of "% SZS status Unsatisfiable" "% SZS status Satisfiable" "TODO: unknown" "TODO: Time limit exceeded"),
+    parse_proof = NONE,
+    replay = NONE }
+
+in
+
+val vampire_smt_dt: SMT_Solver.solver_config =
+  make_vampire_solver_config "vampire_smt_dt" (K Vampire_Interface.smtlib_vampire_dtC)
+
+val vampire_smt_nodt: SMT_Solver.solver_config =
+  make_vampire_solver_config "vampire_smt_nodt" (K Vampire_Interface.smtlib_vampire_nodtC)
+
+end
 
 (* veriT *)
 
@@ -193,12 +241,12 @@ val veriT: SMT_Solver.solver_config = {
   smt_options = [(":produce-proofs", "true")],
   good_slices =
     (* FUDGE *)
-    [((2, false, false, 1024, meshN), []),
-     ((2, false, false, 512, mashN), []),
-     ((2, false, true, 128, meshN), []),
-     ((2, false, false, 64, meshN), []),
-     ((2, false, false, 256, mepoN), []),
-     ((2, false, false, 32, meshN), [])],
+    [((4, false, false, 1024, meshN), []),
+     ((4, false, false, 512, mashN), []),
+     ((4, false, true, 128, meshN), []),
+     ((4, false, false, 64, meshN), []),
+     ((4, false, false, 256, mepoN), []),
+     ((4, false, false, 32, meshN), [])],
   outcome = on_first_non_unsupported_line (outcome_of "unsat" "sat" "unknown" "Time limit exceeded"),
   parse_proof = SOME (K Lethe_Proof_Parse.parse_proof),
   replay = SOME Verit_Replay.replay }
@@ -229,22 +277,38 @@ val z3: SMT_Solver.solver_config = {
   name = "z3",
   class = select_class,
   avail = make_avail "Z3",
-  command = make_command "Z3",
+  command = fn () => [getenv "Z3_SOLVER", "-in"],
   options = z3_options,
   smt_options = [(":produce-proofs", "true")],
   good_slices =
     (* FUDGE *)
-    [((2, false, false, 1024, meshN), []),
-     ((2, false, false, 512, mepoN), []),
-     ((2, false, false, 64, meshN), []),
-     ((2, false, true, 256, meshN), []),
-     ((2, false, false, 128, mashN), []),
-     ((2, false, false, 32, meshN), [])],
+    [((4, false, false, 1024, meshN), []),
+     ((4, false, false, 512, mepoN), []),
+     ((4, false, false, 64, meshN), []),
+     ((4, false, true, 256, meshN), []),
+     ((4, false, false, 128, mashN), []),
+     ((4, false, false, 32, meshN), [])],
   outcome = on_first_line (outcome_of "unsat" "sat" "unknown" "timeout"),
   parse_proof = SOME Z3_Replay.parse_proof,
   replay = SOME Z3_Replay.replay }
 
 end
+
+
+(* Dummy SMT solvers *)
+
+val dummy_smtlib: SMT_Solver.solver_config =
+  {
+    name = "dummy_smtlib",
+    class = K SMTLIB_Interface.smtlibC,
+    avail = make_avail "DUMMY_SMTLIB",
+    command = make_command "DUMMY_SMTLIB",
+    options = K [],
+    smt_options = [],
+    good_slices = [((2, false, false, 1024, meshN), [])],
+    outcome = on_first_line (outcome_of "unsat" "sat" "unknown" "timeout"),
+    parse_proof = NONE,
+    replay = NONE }
 
 (* smt tactic *)
 val parse_smt_options =
@@ -283,10 +347,13 @@ val _ =
 (* overall setup *)
 
 val _ = Theory.setup (
-  SMT_Solver.add_solver cvc4 #>
-  SMT_Solver.add_solver cvc5 #>
-  SMT_Solver.add_solver cvc5_proof #>
-  SMT_Solver.add_solver veriT #>
-  SMT_Solver.add_solver z3)
+  SMT_Solver.add_solver {dummy = false, sledgehammer_default = false} cvc4 #>
+  SMT_Solver.add_solver {dummy = false, sledgehammer_default = true} cvc5 #>
+  SMT_Solver.add_solver {dummy = false, sledgehammer_default = false} cvc5_proof #>
+  SMT_Solver.add_solver {dummy = false, sledgehammer_default = false} vampire_smt_dt #>
+  SMT_Solver.add_solver {dummy = false, sledgehammer_default = false} vampire_smt_nodt #>
+  SMT_Solver.add_solver {dummy = false, sledgehammer_default = true} veriT #>
+  SMT_Solver.add_solver {dummy = false, sledgehammer_default = true} z3 #>
+  SMT_Solver.add_solver {dummy = true, sledgehammer_default = false} dummy_smtlib)
 
 end;

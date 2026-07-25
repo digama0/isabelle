@@ -33,7 +33,7 @@ struct
 (* Since HOL_basic_ss is too "big" for us, we *)
 (* need to set up our own minimal simpset.    *)
 fun mk_minimal_simpset ctxt =
-  empty_simpset ctxt
+  Simplifier.empty_simpset ctxt
   |> Simplifier.set_subgoaler asm_simp_tac
   |> Simplifier.set_mksimps (mksimps [])
 
@@ -54,14 +54,14 @@ fun atomize_thm ctxt thm =
 fun equiv_tac ctxt =
   REPEAT_ALL_NEW (resolve_tac ctxt (rev (Named_Theorems.get ctxt \<^named_theorems>\<open>quot_equiv\<close>)))
 
-val equiv_solver = mk_solver "Equivalence goal solver" equiv_tac
+val equiv_solver = Simplifier.mk_solver "Equivalence goal solver" equiv_tac
 
 fun quotient_tac ctxt =
   (REPEAT_ALL_NEW (FIRST'
     [resolve_tac ctxt @{thms identity_quotient3},
      resolve_tac ctxt (rev (Named_Theorems.get ctxt \<^named_theorems>\<open>quot_thm\<close>))]))
 
-val quotient_solver = mk_solver "Quotient goal solver" quotient_tac
+val quotient_solver = Simplifier.mk_solver "Quotient goal solver" quotient_tac
 
 fun solve_quotient_assm ctxt thm =
   case Seq.pull (quotient_tac ctxt 1 thm) of
@@ -149,10 +149,11 @@ val regularize_simproc =
 fun regularize_tac ctxt =
   let
     val simpset =
-      (mk_minimal_simpset ctxt
-        addsimps @{thms ball_reg_eqv bex_reg_eqv babs_reg_eqv babs_simp}
-        |> Simplifier.add_proc regularize_simproc)
-      addSolver equiv_solver addSolver quotient_solver
+      mk_minimal_simpset ctxt
+      |> Simplifier.add_simps @{thms ball_reg_eqv bex_reg_eqv babs_reg_eqv babs_simp}
+      |> Simplifier.add_proc regularize_simproc
+      |> Simplifier.add_unsafe_solver equiv_solver
+      |> Simplifier.add_unsafe_solver quotient_solver
     val eq_eqvs = eq_imp_rel_get ctxt
   in
     simp_tac simpset THEN'
@@ -509,7 +510,10 @@ fun clean_tac ctxt =
     val thms =
       @{thms Quotient3_abs_rep Quotient3_rel_rep babs_prs all_prs ex_prs ex1_prs} @ ids @ prs @ defs
 
-    val simpset = (mk_minimal_simpset ctxt) addsimps thms addSolver quotient_solver
+    val simpset =
+      mk_minimal_simpset ctxt
+      |> Simplifier.add_simps thms
+      |> Simplifier.add_unsafe_solver quotient_solver
   in
     EVERY' [
       map_fun_tac ctxt,
@@ -604,7 +608,7 @@ val default_unfolds = @{thms Ball_def Bex_def}
 
 fun descend_procedure_tac ctxt simps =
   let
-    val simpset = (mk_minimal_simpset ctxt) addsimps (simps @ default_unfolds)
+    val simpset = mk_minimal_simpset ctxt |> Simplifier.add_simps (simps @ default_unfolds)
   in
     full_simp_tac simpset
     THEN' Object_Logic.full_atomize_tac ctxt
@@ -655,7 +659,7 @@ fun partiality_procedure_inst ctxt rtrm qtrm =
 
 fun partiality_descend_procedure_tac ctxt simps =
   let
-    val simpset = (mk_minimal_simpset ctxt) addsimps (simps @ default_unfolds)
+    val simpset = mk_minimal_simpset ctxt |> Simplifier.add_simps (simps @ default_unfolds)
   in
     full_simp_tac simpset
     THEN' Object_Logic.full_atomize_tac ctxt
@@ -690,7 +694,7 @@ fun partiality_descend_tac ctxt simps =
 (* the tactic leaves three subgoals to be proved *)
 fun lift_procedure_tac ctxt simps rthm =
   let
-    val simpset = (mk_minimal_simpset ctxt) addsimps (simps @ default_unfolds)
+    val simpset = mk_minimal_simpset ctxt |> Simplifier.add_simps (simps @ default_unfolds)
   in
     full_simp_tac simpset
     THEN' Object_Logic.full_atomize_tac ctxt

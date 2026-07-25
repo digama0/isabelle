@@ -15,11 +15,12 @@ sig
   val smt_builtins : bool Config.T
   val smt_triggers : bool Config.T
 
-  val is_smt_prover : Proof.context -> string -> bool
-  val is_smt_prover_installed : Proof.context -> string -> bool
+  val is_smt_solver : Proof.context -> string -> bool
+  val is_smt_solver_installed : Proof.context -> string -> bool
   val run_smt_solver : mode -> string -> prover
 
-  val smts : Proof.context -> string list
+  val smt_solvers : Proof.context -> string list
+  val default_smt_solvers : Proof.context -> string list
 end;
 
 structure Sledgehammer_Prover_SMT : SLEDGEHAMMER_PROVER_SMT =
@@ -38,10 +39,11 @@ open Sledgehammer_Prover
 val smt_builtins = Attrib.setup_config_bool \<^binding>\<open>sledgehammer_smt_builtins\<close> (K true)
 val smt_triggers = Attrib.setup_config_bool \<^binding>\<open>sledgehammer_smt_triggers\<close> (K true)
 
-val smts = sort_strings o SMT_Config.all_solvers_of
+val smt_solvers = sort_strings o SMT_Config.all_solvers_of
+val default_smt_solvers = sort_strings o SMT_Config.all_nondummy_sledgehammer_solvers_of
 
-val is_smt_prover = member (op =) o smts
-val is_smt_prover_installed = member (op =) o SMT_Config.available_solvers_of
+val is_smt_solver = member (op =) o smt_solvers
+val is_smt_solver_installed = member (op =) o SMT_Config.available_solvers_of
 
 (* "SMT_Failure.Abnormal_Termination" carries the solver's return code. Until these are sorted out
    properly in the SMT module, we must interpret these here. *)
@@ -70,7 +72,7 @@ val is_boring_builtin_typ =
   not o exists_subtype (member (op =) [\<^typ>\<open>nat\<close>, \<^typ>\<open>int\<close>, HOLogic.realT])
 
 fun smt_filter name ({debug, overlord, max_mono_iters, max_new_mono_instances, type_enc, slices,
-    timeout, ...} : params) state goal i slice_size facts options =
+    timeout, ...} : params) memoize_fun_call state goal i slice_size facts options =
   let
     val run_timeout = slice_timeout slice_size slices timeout
     val (higher_order, nat_as_int) =
@@ -86,8 +88,13 @@ fun smt_filter name ({debug, overlord, max_mono_iters, max_new_mono_instances, t
            SOME nat_as_int => Config.put SMT_Config.nat_as_int nat_as_int
          | NONE => I)
       |> (if overlord then
-            Config.put SMT_Config.debug_files
-              (overlord_file_location_of_prover name |> (fn (path, name) => path ^ "/" ^ name))
+            let
+              val (path, name) = overlord_file_location_of_prover name
+              val file_base = path ^ "/" ^ name
+            in
+              Config.put SMT_Config.problem_dest_file file_base #>
+              Config.put SMT_Config.proof_dest_file file_base
+            end
           else
             I)
        |> Config.put SMT_Config.infer_triggers (Config.get ctxt smt_triggers)
@@ -104,7 +111,7 @@ fun smt_filter name ({debug, overlord, max_mono_iters, max_new_mono_instances, t
     val birth = Timer.checkRealTimer timer
 
     val filter_result as {outcome, ...} =
-      \<^try>\<open>SMT_Solver.smt_filter ctxt goal facts i run_timeout options
+      \<^try>\<open>SMT_Solver.smt_filter ctxt goal facts i run_timeout memoize_fun_call options
         catch exn =>
           {outcome = SOME (SMT_Failure.Other_Failure (Runtime.exn_message exn)), fact_ids = NONE,
            atp_proof = K []}\<close>
@@ -115,9 +122,11 @@ fun smt_filter name ({debug, overlord, max_mono_iters, max_new_mono_instances, t
     {outcome = outcome, filter_result = filter_result, used_from = facts, run_time = run_time}
   end
 
-fun run_smt_solver mode name (params as {debug, verbose, isar_proofs, compress, try0,
-      smt_proofs, minimize, preplay_timeout, ...})
-    ({state, goal, subgoal, subgoal_count, factss, found_something, ...} : prover_problem)
+fun run_smt_solver mode name
+    (params as {debug, verbose, isar_proofs, compress, try0, smt_proofs, minimize, preplay_timeout,
+      ...} : params)
+    ({state, goal, subgoal, subgoal_count, factss, found_something, memoize_fun_call,
+      ...} : prover_problem)
     slice =
   let
     val (basic_slice as (slice_size, _, _, _, _), SMT_Slice options) = slice
@@ -125,7 +134,7 @@ fun run_smt_solver mode name (params as {debug, verbose, isar_proofs, compress, 
     val ctxt = Proof.context_of state
 
     val {outcome, filter_result = {fact_ids, atp_proof, ...}, used_from, run_time} =
-      smt_filter name params state goal subgoal slice_size facts options
+      smt_filter name params memoize_fun_call state goal subgoal slice_size facts options
     val used_facts =
       (case fact_ids of
         NONE => map fst used_from
@@ -139,25 +148,31 @@ fun run_smt_solver mode name (params as {debug, verbose, isar_proofs, compress, 
           val _ = found_something name;
           val preferred =
             if smt_proofs then
-              SMT_Method (if name = "z3" then SMT_Z3 else SMT_Verit "default")
+              SMT_Method (SMT_Verit "default")
             else
-              Metis_Method (NONE, NONE);
+              Metis_Method (NONE, NONE, []);
           val methss =
             if try0 then
-              bunches_of_proof_methods ctxt smt_proofs false liftingN
+              bunches_of_proof_methods ctxt smt_proofs false true
+            else if smt_proofs then
+              bunches_of_smt_methods ctxt
             else
-              [[preferred]]
+              bunches_of_metis_methods ctxt false true
         in
           ((preferred, methss),
-           fn preplay =>
+           fn preplay_outcome =>
              let
                val _ = if verbose then writeln "Generating proof text..." else ()
 
                fun isar_params () =
-                 (verbose, (NONE, NONE), preplay_timeout, compress, try0, minimize, atp_proof (),
-                  goal)
+                 (verbose, (NONE, NONE, []), preplay_timeout, compress, try0, minimize,
+                  atp_proof (), goal)
 
-               val one_line_params = (preplay (), proof_banner mode name, subgoal, subgoal_count)
+                val preplay_result = preplay_outcome
+                  |> the_default
+                    (map (apfst Pretty.str) used_facts,
+                     (preferred, Play_Timed_Out Time.zeroTime))
+               val one_line_params = (preplay_result, proof_banner mode name, subgoal, subgoal_count)
                val num_chained = length (#facts (Proof.goal state))
              in
                proof_text ctxt debug isar_proofs smt_proofs isar_params num_chained one_line_params

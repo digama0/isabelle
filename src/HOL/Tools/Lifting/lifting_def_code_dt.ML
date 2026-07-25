@@ -67,15 +67,14 @@ fun qty_of_code_dt (CODE_DT code_dt) = #qty code_dt;
 fun wit_of_code_dt (CODE_DT code_dt) = #wit code_dt;
 fun wit_thm_of_code_dt (CODE_DT code_dt) = #wit_thm code_dt;
 fun rep_isom_data_of_code_dt (CODE_DT code_dt) = #rep_isom_data code_dt;
-fun ty_alpha_equiv (T, U) = Type.raw_instance (T, U) andalso Type.raw_instance (U, T);
-fun code_dt_eq c = (ty_alpha_equiv o apply2 rty_of_code_dt) c 
-  andalso (ty_alpha_equiv o apply2 qty_of_code_dt) c;
+fun code_dt_eq c = (Type.raw_equiv o apply2 rty_of_code_dt) c 
+  andalso (Type.raw_equiv o apply2 qty_of_code_dt) c;
 fun term_of_code_dt code_dt = code_dt |> `rty_of_code_dt ||> qty_of_code_dt |> HOLogic.mk_prodT
   |> Net.encode_type |> single;
 
 (* modulo renaming, typ must contain TVars *)
 fun is_code_dt_of_type (rty, qty) code_dt = code_dt |> `rty_of_code_dt ||> qty_of_code_dt
-  |> HOLogic.mk_prodT |> curry ty_alpha_equiv (HOLogic.mk_prodT (rty, qty));
+  |> HOLogic.mk_prodT |> curry Type.raw_equiv (HOLogic.mk_prodT (rty, qty));
 
 fun mk_rep_isom_data isom transfer bundle_name pointer =
   REP_ISOM { isom = isom, transfer = transfer, bundle_name = bundle_name, pointer = pointer}
@@ -272,7 +271,9 @@ and add_lift_def_code_dt config var qty rhs rsp_thm par_thms lthy =
               |> Lifting_Info.lookup_quot_thm_quotients lthy2 |> is_some
             val qty_code_dt_bundle_name = bundle_name_of_rep_isom_data rep_isom_data
             val rep_isom = mk_rep_isom_of_code_dt qty_ret code_dt |> the
-            val lthy3 = if quot_active then lthy2 else Bundle.includes [qty_code_dt_bundle_name] lthy2
+            val lthy3 =
+              if quot_active then lthy2
+              else Bundle.includes [(true, qty_code_dt_bundle_name)] lthy2
             fun qty_isom_of_rep_isom rep = domain_type (dest_Const_type rep)
             val qty_isom = qty_isom_of_rep_isom rep_isom
             val f'_var = (Binding.suffix_name "_aux" (fst var), NoSyn);
@@ -307,7 +308,7 @@ and add_lift_def_code_dt config var qty rhs rsp_thm par_thms lthy =
               |> Thm.close_derivation \<^here>
               |> singleton (Variable.export transfer_ctxt lthy4)
             val lthy5 = lthy4
-              |> Local_Theory.note ((Binding.empty, @{attributes [code]}), [f_alt_def])
+              |> Local_Theory.note ((Binding.empty, [Code.singleton_default_equation_attrib]), [f_alt_def])
               |> snd
               (* if processing a mutual datatype (there is a cycle!) the corresponding quotient 
                  will be needed later and will be forgotten later *)
@@ -417,7 +418,7 @@ and mk_rep_isom qty_isom_bundle (rty, qty, qty_isom) lthy0 =
          rtac ctxt unfold_lift_sel_rsp THEN'
          case_tac exhaust_rule ctxt THEN_ALL_NEW (
         EVERY' [hyp_subst_tac ctxt, (* does not kill wits because = was rewritten to eq_onp top *)
-        Raw_Simplifier.rewrite_goal_tac ctxt (map safe_mk_meta_eq dt_rules), 
+        Simplifier.rewrite_goal_tac ctxt (map safe_mk_meta_eq dt_rules), 
         REPEAT_DETERM o etac ctxt conjE, assume_tac ctxt])) i
     val pred_simps = Transfer.lookup_pred_data lthy5 (Tname rty) |> the |> Transfer.pred_simps
     val sel_tac = lift_sel_tac (#exhaust ctr_sugar) (#case_thms ctr_sugar @ pred_simps)
@@ -438,7 +439,7 @@ and mk_rep_isom qty_isom_bundle (rty, qty, qty_isom) lthy0 =
       EVERY' [ SELECT_GOAL (Local_Defs.unfold0_tac ctxt @{thms type_definition_def}),
         DETERM o Transfer.transfer_tac true ctxt,
           SELECT_GOAL (Local_Defs.unfold0_tac ctxt @{thms eq_onp_top_eq_eq}) (* normalize *), 
-          Raw_Simplifier.rewrite_goal_tac ctxt 
+          Simplifier.rewrite_goal_tac ctxt 
           (map safe_mk_meta_eq @{thms id_apply simp_thms Ball_def}),
          rtac ctxt TrueI] i;
 
@@ -514,7 +515,7 @@ and mk_rep_isom qty_isom_bundle (rty, qty, qty_isom) lthy0 =
         in
           EVERY' [Transfer.gen_frees_tac [] ctxt, DETERM o (Transfer.transfer_tac true ctxt),
             case_tac exhaust ctxt THEN_ALL_NEW EVERY' [hyp_subst_tac ctxt,
-              Raw_Simplifier.rewrite_goal_tac ctxt simp_rules, rtac ctxt TrueI ]] i
+              Simplifier.rewrite_goal_tac ctxt simp_rules, rtac ctxt TrueI ]] i
         end
     end
     
@@ -537,7 +538,7 @@ and mk_rep_isom qty_isom_bundle (rty, qty, qty_isom) lthy0 =
       |> singleton(Variable.export x_ctxt lthy6)
   in
     lthy6
-    |> snd o Local_Theory.note ((Binding.empty, @{attributes [code]}), [rep_isom_code])
+    |> snd o Local_Theory.note ((Binding.empty, [Code.singleton_default_equation_attrib]), [rep_isom_code])
     |> Lifting_Setup.lifting_forget pointer
     |> pair (selss, diss, rep_isom_code)
   end
@@ -568,7 +569,7 @@ and constr qty (quot_thm, (lthy0, rel_eq_onps)) =
 
         fun non_empty_typedef_tac non_empty_pred ctxt i =
           (Method.insert_tac ctxt [non_empty_pred] THEN' 
-            SELECT_GOAL (Local_Defs.unfold0_tac ctxt [mem_Collect_eq]) THEN' assume_tac ctxt) i
+            SELECT_GOAL (Local_Defs.unfold0_tac ctxt @{thms mem_Collect_eq}) THEN' assume_tac ctxt) i
         val uTname = unique_Tname (rty, qty)
         val Tdef_set = HOLogic.mk_Collect ("x", rty, pred $ Free("x", rty));
         val ((_, tcode_dt), lthy2) = lthy1
@@ -635,7 +636,7 @@ fun mk_readable_rsp_thm_eq tm ctxt =
       let
         fun prove_extra_assms thm =
           let
-            val assms = cprems_of thm
+            val assms = Thm.cprems_of thm
             fun finish thm = if Thm.no_prems thm then SOME (Goal.conclude thm) else NONE
             fun prove ctm = Option.mapPartial finish (SINGLE tactic (Goal.init ctm))
           in

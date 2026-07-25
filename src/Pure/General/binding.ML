@@ -14,9 +14,10 @@ sig
   eqtype binding
   val path_of: binding -> (string * bool) list
   val make: bstring * Position.T -> binding
+  val pos_history_of: binding -> Position.T list
   val pos_of: binding -> Position.T
-  val set_pos: Position.T -> binding -> binding
   val reset_pos: binding -> binding
+  val new_pos: Position.T -> binding -> binding
   val default_pos: binding -> binding
   val default_pos_of: binding -> Position.T
   val name: bstring -> binding
@@ -38,6 +39,7 @@ sig
   val prefix: bool -> string -> binding -> binding
   val restricted: (bool * scope) option -> binding -> binding
   val concealed: binding -> binding
+  val long_name_of: binding -> string
   val pretty: binding -> Pretty.T
   val print: binding -> string
   val bad: binding -> string
@@ -67,18 +69,19 @@ datatype binding = Binding of
   prefix: (string * bool) list,  (*system prefix*)
   qualifier: (string * bool) list,  (*user qualifier*)
   name: bstring,  (*base name*)
-  pos: Position.T};  (*source position*)
+  pos_history: Position.T list};  (*source position history*)
 
-fun make_binding (restricted, concealed, prefix, qualifier, name, pos) =
+fun make_binding (restricted, concealed, prefix, qualifier, name, pos_history) =
   Binding {restricted = restricted, concealed = concealed, prefix = prefix,
-    qualifier = qualifier, name = name, pos = pos};
+    qualifier = qualifier, name = name, pos_history = pos_history};
 
-fun map_binding f (Binding {restricted, concealed, prefix, qualifier, name, pos}) =
-  make_binding (f (restricted, concealed, prefix, qualifier, name, pos));
+fun map_binding f (Binding {restricted, concealed, prefix, qualifier, name, pos_history}) =
+  make_binding (f (restricted, concealed, prefix, qualifier, name, pos_history));
 
 fun path_of (Binding {prefix, qualifier, ...}) = prefix @ qualifier;
 
-fun make (name, pos) = make_binding (NONE, false, [], [], name, pos);
+fun make (name, pos) =
+  make_binding (NONE, false, [], [], name, if pos = Position.none then [] else [pos]);
 
 
 
@@ -86,16 +89,20 @@ fun make (name, pos) = make_binding (NONE, false, [], [], name, pos);
 
 (* position *)
 
-fun pos_of (Binding {pos, ...}) = pos;
+fun pos_history_of (Binding {pos_history, ...}) = pos_history;
+fun pos_of b = (case pos_history_of b of [] => Position.none | pos :: _ => pos);
 
-fun set_pos pos =
+val reset_pos =
   map_binding (fn (restricted, concealed, prefix, qualifier, name, _) =>
-    (restricted, concealed, prefix, qualifier, name, pos));
+    (restricted, concealed, prefix, qualifier, name, []));
 
-val reset_pos = set_pos Position.none;
+fun new_pos pos =
+  pos <> Position.none ?
+    map_binding (fn (restricted, concealed, prefix, qualifier, name, pos_history) =>
+      (restricted, concealed, prefix, qualifier, name, Library.update (op =) pos pos_history));
 
 fun default_pos b =
-  if pos_of b = Position.none then set_pos (Position.thread_data ()) b else b;
+  if pos_of b = Position.none then new_pos (Position.thread_data ()) b else b;
 
 fun default_pos_of b =
   let val pos = pos_of b
@@ -110,8 +117,8 @@ fun name_of (Binding {name, ...}) = name;
 fun eq_name (b, b') = name_of b = name_of b';
 
 fun map_name f =
-  map_binding (fn (restricted, concealed, prefix, qualifier, name, pos) =>
-    (restricted, concealed, prefix, qualifier, f name, pos));
+  map_binding (fn (restricted, concealed, prefix, qualifier, name, pos_history) =>
+    (restricted, concealed, prefix, qualifier, f name, pos_history));
 
 val prefix_name = map_name o prefix;
 val suffix_name = map_name o suffix;
@@ -130,18 +137,18 @@ fun conglomerate [b] = b
 
 fun qualify _ "" = I
   | qualify mandatory qual =
-      map_binding (fn (restricted, concealed, prefix, qualifier, name, pos) =>
-        (restricted, concealed, prefix, (qual, mandatory) :: qualifier, name, pos));
+      map_binding (fn (restricted, concealed, prefix, qualifier, name, pos_history) =>
+        (restricted, concealed, prefix, (qual, mandatory) :: qualifier, name, pos_history));
 
 fun qualify_name mandatory binding name' =
-  binding |> map_binding (fn (restricted, concealed, prefix, qualifier, name, pos) =>
+  binding |> map_binding (fn (restricted, concealed, prefix, qualifier, name, pos_history) =>
     let val qualifier' = if name = "" then qualifier else qualifier @ [(name, mandatory)]
-    in (restricted, concealed, prefix, qualifier', name', pos) end);
+    in (restricted, concealed, prefix, qualifier', name', pos_history) end);
 
 fun qualified_name "" = empty
   | qualified_name s =
       let val (qualifier, name) = split_last (Long_Name.explode s)
-      in make_binding (NONE, false, [], map (rpair false) qualifier, name, Position.none) end;
+      in make_binding (NONE, false, [], map (rpair false) qualifier, name, []) end;
 
 
 (* system prefix *)
@@ -149,8 +156,8 @@ fun qualified_name "" = empty
 fun prefix_of (Binding {prefix, ...}) = prefix;
 
 fun map_prefix f =
-  map_binding (fn (restricted, concealed, prefix, qualifier, name, pos) =>
-    (restricted, concealed, f prefix, qualifier, name, pos));
+  map_binding (fn (restricted, concealed, prefix, qualifier, name, pos_history) =>
+    (restricted, concealed, f prefix, qualifier, name, pos_history));
 
 fun prefix _ "" = I
   | prefix mandatory prfx = map_prefix (cons (prfx, mandatory));
@@ -159,26 +166,30 @@ fun prefix _ "" = I
 (* visibility flags *)
 
 fun restricted default =
-  map_binding (fn (restricted, concealed, prefix, qualifier, name, pos) =>
-    (if is_some restricted then restricted else default, concealed, prefix, qualifier, name, pos));
+  map_binding (fn (restricted, concealed, prefix, qualifier, name, pos_history) =>
+    (if is_some restricted then restricted else default,
+      concealed, prefix, qualifier, name, pos_history));
 
 val concealed =
-  map_binding (fn (restricted, _, prefix, qualifier, name, pos) =>
-    (restricted, true, prefix, qualifier, name, pos));
+  map_binding (fn (restricted, _, prefix, qualifier, name, pos_history) =>
+    (restricted, true, prefix, qualifier, name, pos_history));
 
 
 (* print *)
 
-fun pretty (Binding {prefix, qualifier, name, pos, ...}) =
-  if name = "" then Pretty.str "\"\""
+fun long_name_of (b as Binding {prefix, qualifier, name, ...}) =
+  if is_empty b then ""
+  else Long_Name.implode (map #1 (prefix @ qualifier) @ [name]);
+
+fun pretty b =
+  if is_empty b then Pretty.str "\"\""
   else
-    Pretty.markup (Position.markup pos Markup.binding)
-      [Pretty.str (Long_Name.implode (map #1 (prefix @ qualifier) @ [name]))]
+    Pretty.mark_str (Position.markup_properties (pos_of b) Markup.binding, long_name_of b)
     |> Pretty.quote;
 
 val print = Pretty.unformatted_string_of o pretty;
 
-val _ = ML_system_pp (fn _ => fn _ => Pretty.to_polyml o pretty o reset_pos);
+val _ = ML_system_pp (fn _ => fn _ => Pretty.to_ML o pretty o reset_pos);
 
 
 (* check *)

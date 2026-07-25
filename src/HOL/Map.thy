@@ -12,26 +12,26 @@ theory Map
   abbrevs "(=" = "\<subseteq>\<^sub>m"
 begin
 
-type_synonym ('a, 'b) "map" = "'a \<Rightarrow> 'b option" (infixr "\<rightharpoonup>" 0)
+type_synonym ('a, 'b) "map" = "'a \<Rightarrow> 'b option" (infixr \<open>\<rightharpoonup>\<close> 0)
 
 abbreviation (input)
   empty :: "'a \<rightharpoonup> 'b" where
   "empty \<equiv> \<lambda>x. None"
 
 definition
-  map_comp :: "('b \<rightharpoonup> 'c) \<Rightarrow> ('a \<rightharpoonup> 'b) \<Rightarrow> ('a \<rightharpoonup> 'c)"  (infixl "\<circ>\<^sub>m" 55) where
+  map_comp :: "('b \<rightharpoonup> 'c) \<Rightarrow> ('a \<rightharpoonup> 'b) \<Rightarrow> ('a \<rightharpoonup> 'c)"  (infixl \<open>\<circ>\<^sub>m\<close> 55) where
   "f \<circ>\<^sub>m g = (\<lambda>k. case g k of None \<Rightarrow> None | Some v \<Rightarrow> f v)"
 
 definition
-  map_add :: "('a \<rightharpoonup> 'b) \<Rightarrow> ('a \<rightharpoonup> 'b) \<Rightarrow> ('a \<rightharpoonup> 'b)"  (infixl "++" 100) where
+  map_add :: "('a \<rightharpoonup> 'b) \<Rightarrow> ('a \<rightharpoonup> 'b) \<Rightarrow> ('a \<rightharpoonup> 'b)"  (infixl \<open>++\<close> 100) where
   "m1 ++ m2 = (\<lambda>x. case m2 x of None \<Rightarrow> m1 x | Some y \<Rightarrow> Some y)"
 
 definition
-  restrict_map :: "('a \<rightharpoonup> 'b) \<Rightarrow> 'a set \<Rightarrow> ('a \<rightharpoonup> 'b)"  (infixl "|`"  110) where
+  restrict_map :: "('a \<rightharpoonup> 'b) \<Rightarrow> 'a set \<Rightarrow> ('a \<rightharpoonup> 'b)"  (infixl \<open>|`\<close>  110) where
   "m|`A = (\<lambda>x. if x \<in> A then m x else None)"
 
 notation (latex output)
-  restrict_map  ("_\<restriction>\<^bsub>_\<^esub>" [111,110] 110)
+  restrict_map  (\<open>_\<restriction>\<^bsub>_\<^esub>\<close> [111,110] 110)
 
 definition
   dom :: "('a \<rightharpoonup> 'b) \<Rightarrow> 'a set" where
@@ -46,7 +46,7 @@ definition
   "graph m = {(a, b) | a b. m a = Some b}"
 
 definition
-  map_le :: "('a \<rightharpoonup> 'b) \<Rightarrow> ('a \<rightharpoonup> 'b) \<Rightarrow> bool"  (infix "\<subseteq>\<^sub>m" 50) where
+  map_le :: "('a \<rightharpoonup> 'b) \<Rightarrow> ('a \<rightharpoonup> 'b) \<Rightarrow> bool"  (infix \<open>\<subseteq>\<^sub>m\<close> 50) where
   "(m\<^sub>1 \<subseteq>\<^sub>m m\<^sub>2) \<longleftrightarrow> (\<forall>a \<in> dom m\<^sub>1. m\<^sub>1 a = m\<^sub>2 a)"
 
 text \<open>Function update syntax \<open>f(x := y, \<dots>)\<close> is extended with \<open>x \<mapsto> y\<close>, which is short for
@@ -56,16 +56,19 @@ but must only contain \<open>\<mapsto>\<close>, not \<open>:=\<close>, because \
 
 nonterminal maplet and maplets
 
+open_bundle maplet_syntax
+begin
+
 syntax
-  "_maplet"  :: "['a, 'a] \<Rightarrow> maplet"             ("_ /\<mapsto>/ _")
-  ""         :: "maplet \<Rightarrow> updbind"              ("_")
-  ""         :: "maplet \<Rightarrow> maplets"             ("_")
-  "_Maplets" :: "[maplet, maplets] \<Rightarrow> maplets" ("_,/ _")
-  "_Map"     :: "maplets \<Rightarrow> 'a \<rightharpoonup> 'b"           ("(1[_])")
+  "_maplet"  :: "['a, 'a] \<Rightarrow> maplet"  (\<open>(\<open>open_block notation=\<open>mixfix maplet\<close>\<close>_ /\<mapsto>/ _)\<close>)
+  ""         :: "maplet \<Rightarrow> updbind"  (\<open>_\<close>)
+  ""         :: "maplet \<Rightarrow> maplets"  (\<open>_\<close>)
+  "_Maplets" :: "[maplet, maplets] \<Rightarrow> maplets"  (\<open>_,/ _\<close>)
+  "_Map"     :: "maplets \<Rightarrow> 'a \<rightharpoonup> 'b"  (\<open>(\<open>indent=1 notation=\<open>mixfix map\<close>\<close>[_])\<close>)
 (* Syntax forbids \<open>[\<dots>, x := y, \<dots>]\<close> by introducing \<open>maplets\<close> in addition to \<open>updbinds\<close> *)
 
 syntax (ASCII)
-  "_maplet"  :: "['a, 'a] \<Rightarrow> maplet"             ("_ /|->/ _")
+  "_maplet"  :: "['a, 'a] \<Rightarrow> maplet"  (\<open>(\<open>open_block notation=\<open>mixfix maplet\<close>\<close>_ /|->/ _)\<close>)
 
 syntax_consts
   "_maplet" "_Maplets" "_Map" \<rightleftharpoons> fun_upd
@@ -78,6 +81,8 @@ translations
 (* Printing must create \<open>_Map\<close> only for \<open>_maplet\<close> *)
   "_Map (_maplet x y)"  \<leftharpoondown> "_Update (\<lambda>u. CONST None) (_maplet x y)"
   "_Map (_updbinds m (_maplet x y))"  \<leftharpoondown> "_Update (_Map m) (_maplet x y)"
+
+end
 
 
 text \<open>Updating with lists:\<close>
@@ -96,11 +101,14 @@ definition map_upds :: "('a \<rightharpoonup> 'b) \<Rightarrow> 'a list \<Righta
 
 text \<open>There is also the more specialized update syntax \<open>xs [\<mapsto>] ys\<close> for lists \<open>xs\<close> and \<open>ys\<close>.\<close>
 
+open_bundle list_maplet_syntax
+begin
+
 syntax
-  "_maplets"  :: "['a, 'a] \<Rightarrow> maplet"             ("_ /[\<mapsto>]/ _")
+  "_maplets"  :: "['a, 'a] \<Rightarrow> maplet"  (\<open>(\<open>open_block notation=\<open>mixfix maplet\<close>\<close>_ /[\<mapsto>]/ _)\<close>)
 
 syntax (ASCII)
-  "_maplets" :: "['a, 'a] \<Rightarrow> maplet"             ("_ /[|->]/ _")
+  "_maplets" :: "['a, 'a] \<Rightarrow> maplet"  (\<open>(\<open>open_block notation=\<open>mixfix maplet\<close>\<close>_ /[|->]/ _)\<close>)
 
 syntax_consts
   "_maplets" \<rightleftharpoons> map_upds
@@ -110,6 +118,8 @@ translations
 
   "_Map (_maplets xs ys)"  \<leftharpoondown> "_Update (\<lambda>u. CONST None) (_maplets xs ys)"
   "_Map (_updbinds m (_maplets xs ys))"  \<leftharpoondown> "_Update (_Map m) (_maplets xs ys)"
+
+end
 
 
 subsection \<open>@{term [source] empty}\<close>
@@ -286,6 +296,10 @@ by (induct xs) auto
 lemma map_of_map:
   "map_of (map (\<lambda>(k, v). (k, f v)) xs) = map_option f \<circ> map_of xs"
   by (induct xs) (auto simp: fun_eq_iff)
+
+lemma map_of_filter:
+  "map_of (filter (\<lambda>x. P (fst x)) xs) = map_of xs |` Collect P"
+  by (induct xs) (simp_all add: fun_eq_iff restrict_map_def)
 
 lemma dom_map_option:
   "dom (\<lambda>k. map_option (f k) (m k)) = dom m"
@@ -568,6 +582,9 @@ lemma dom_fun_upd [simp]:
   "dom(f(x := y)) = (if y = None then dom f - {x} else insert x (dom f))"
   by (auto simp: dom_def)
 
+lemma inj_on_the_image_dom: "inj_on the (mu ` dom mu)"
+  by (rule inj_onI) force
+
 lemma dom_if:
   "dom (\<lambda>x. if P x then f x else g x) = dom f \<inter> {x. P x} \<union> dom g \<inter> {x. \<not> P x}"
   by (auto split: if_splits)
@@ -686,6 +703,23 @@ lemma ranI: "m a = Some b \<Longrightarrow> b \<in> ran m"
 lemma ran_empty [simp]: "ran empty = {}"
   by (auto simp: ran_def)
 
+lemma ran_conv_dom: "ran mu = the ` mu ` dom mu"
+proof (intro subset_antisym subsetI)
+  fix b
+  assume "b \<in> ran mu"
+  then obtain a where "mu a = Some b"
+    unfolding ran_def by blast
+  then show "b \<in> the ` mu ` dom mu"
+    by force
+next
+  fix b
+  assume "b \<in> the ` mu ` dom mu"
+  then obtain a  where "a \<in> dom mu" and "b = the (mu a)"
+    by auto
+  then show "b \<in> ran mu"
+    by (auto intro: ranI)
+qed
+
 lemma ran_map_upd [simp]:  "m a = None \<Longrightarrow> ran(m(a\<mapsto>b)) = insert b (ran m)"
   unfolding ran_def
   by force
@@ -801,6 +835,17 @@ lemma graph_map_of_if_distinct_dom: "distinct (map fst al) \<Longrightarrow> gra
 lemma finite_graph_iff_finite_dom[simp]: "finite (graph m) = finite (dom m)"
   by (metis graph_eq_to_snd_dom finite_imageI fst_graph_eq_dom)
 
+lemma inj_on_graph: "inj_on Map.graph A"
+proof (rule inj_onI)
+  fix x y
+  assume "Map.graph x = Map.graph y"
+  hence "(x a = Some b) = (y a = Some b)" for a b
+    unfolding Map.graph_def by auto
+  hence "x k = y k" for k
+    by (metis not_None_eq)
+  thus "x = y" ..
+qed
+
 lemma inj_on_fst_graph: "inj_on fst (graph m)"
   unfolding graph_def inj_on_def by force
 
@@ -887,6 +932,9 @@ by(subst map_add_eq_empty_iff[symmetric])(rule eq_commute)
 
 
 subsection \<open>Various\<close>
+
+lemma card_dom_eq_card_range: "inj_on mu (dom mu) \<Longrightarrow> card (dom mu) = card (ran mu)"
+  by (simp only: ran_conv_dom card_image inj_on_the_image_dom)
 
 lemma set_map_of_compr:
   assumes distinct: "distinct (map fst xs)"

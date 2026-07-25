@@ -595,7 +595,7 @@ fun robust_const_type_args thy (s, T) =
    infomation. *)
 fun iterm_of_term thy type_enc =
   let
-    fun iot true bs ((t0 as Const (\<^const_name>\<open>Let\<close>, _)) $ t1 $ (t2 as Abs (s, T, t'))) =
+    fun iot true bs ((t0 as Const (\<^const_name>\<open>Let\<close>, _)) $ t1 $ (t2 as Abs _)) =
         let
           val (t0', t0_atomics_Ts) = iot true bs t0
           val (t1', t1_atomics_Ts) = iot true bs t1
@@ -1183,29 +1183,33 @@ fun unmangled_const s =
 
 val unmangled_invert_const = invert_const o hd o unmangled_const_name
 
-fun vars_of_iterm (IConst ((s, _), _, _)) = [s]
-  | vars_of_iterm (IVar ((s, _), _)) = [s]
-  | vars_of_iterm (IApp (tm1, tm2)) = union (op =) (vars_of_iterm tm1) (vars_of_iterm tm2)
-  | vars_of_iterm (IAbs (((s, _), _), tm)) = insert (op =) s (vars_of_iterm tm)
+local
 
-fun generate_unique_name gen unique n =
-  let val x = gen n in
-    if unique x then x else generate_unique_name gen unique (n + 1)
-  end
+  fun vars_of_iterm (IConst ((_, s), _, _)) = [s]
+    | vars_of_iterm (IVar ((_, s), _)) = [s]
+    | vars_of_iterm (IApp (tm1, tm2)) = union (op =) (vars_of_iterm tm1) (vars_of_iterm tm2)
+    | vars_of_iterm (IAbs (((_, s), _), tm)) = insert (op =) s (vars_of_iterm tm)
 
-fun eta_expand_quantifier_body (tm as IAbs _) = tm
-  | eta_expand_quantifier_body tm =
-    let
-      (* We accumulate all variables because E 2.5 does not support variable shadowing. *)
-      val vars = vars_of_iterm tm
-      val x = generate_unique_name
-        (fn n => "X" ^ (if n = 0 then "" else string_of_int n))
-        (fn name => not (exists (equal name) vars)) 0
-        |> `(prefix bound_var_prefix)
-      val T = domain_type (ityp_of tm)
-    in
-      IAbs ((x, T), IApp (tm, IConst (x, T, [])))
+  fun generate_unique_name gen unique n =
+    let val x = gen n in
+      if unique x then x else generate_unique_name gen unique (n + 1)
     end
+
+  fun eta_expand_quantifier_body (tm as IAbs _) = tm
+    | eta_expand_quantifier_body tm =
+      let
+        (* We accumulate all variables because E 2.5 does not support variable shadowing. *)
+        val vars = vars_of_iterm tm
+        val x = generate_unique_name
+          (fn n => "X" ^ (if n = 0 then "" else string_of_int n))
+          (fn name => not (exists (equal name) vars)) 0
+          |> `(prefix bound_var_prefix)
+        val T = domain_type (ityp_of tm)
+      in
+        IAbs ((x, T), IApp (tm, IConst (x, T, [])))
+      end
+
+in
 
 fun introduce_builtins_and_proxies_in_iterm type_enc =
   let
@@ -1333,6 +1337,8 @@ fun introduce_builtins_and_proxies_in_iterm type_enc =
       | intro _ _ tm = tm
   in intro true [] end
 
+end
+
 fun mangle_type_args_in_const type_enc (name as (s, _)) T_args =
   if String.isPrefix const_prefix s andalso is_type_enc_mangling type_enc then
     (mangled_const_name type_enc T_args name, [])
@@ -1372,10 +1378,16 @@ fun iformula_of_prop ctxt type_enc iff_for_eq =
   let
     val thy = Proof_Context.theory_of ctxt
     fun do_term bs t atomic_Ts =
-      iterm_of_term thy type_enc bs (Envir.eta_contract t)
-      |>> (introduce_builtins_and_proxies_in_iterm type_enc
-           #> mangle_type_args_in_iterm type_enc #> AAtom)
-      ||> union (op =) atomic_Ts
+      let
+        val (iterm, Ts) = iterm_of_term thy type_enc bs (Envir.eta_contract t)
+        val iterm = iterm
+          |> introduce_builtins_and_proxies_in_iterm type_enc
+          |> mangle_type_args_in_iterm type_enc
+          |> AAtom
+        and Ts = union (op =) atomic_Ts Ts
+      in
+        (iterm, Ts)
+      end
     fun do_quant bs q pos s T t' =
       let
         val s = singleton (Name.variant_list (map fst bs)) s
@@ -1451,14 +1463,14 @@ fun should_use_iff_for_eq CNF _ = false
   | should_use_iff_for_eq (THF _) format = not (is_type_enc_full_higher_order format)
   | should_use_iff_for_eq _ _ = true
 
-fun make_formula ctxt format type_enc iff_for_eq name stature role t =
+fun make_formula ctxt format type_enc iff_for_eq name stature role t : ifact =
   let
     val iff_for_eq = iff_for_eq andalso should_use_iff_for_eq format type_enc
-    val (iformula, atomic_Ts) =
+    val (iformula, atomic_types) =
       iformula_of_prop ctxt type_enc iff_for_eq (SOME (role <> Conjecture)) t []
-      |>> close_universally add_iterm_vars
+    val iformula = close_universally add_iterm_vars iformula
   in
-    {name = name, stature = stature, role = role, iformula = iformula, atomic_types = atomic_Ts}
+    {name = name, stature = stature, role = role, iformula = iformula, atomic_types = atomic_types}
   end
 
 fun make_fact ctxt format type_enc iff_for_eq ((name, stature), t) =
@@ -1935,8 +1947,7 @@ fun add_helper_facts_of_sym ctxt format type_enc lam_trans completish (s, {types
            map_filter (try (specialize_helper t)) types
          else
            [t])
-        |> tag_list 1
-        |> map (fn (k, t) => ((dub needs_sound j k, (Global, status)), t))
+        |> map_index (fn (k, t) => ((dub needs_sound j (k + 1), (Global, status)), t))
       fun make_facts type_enc = map_filter (make_fact ctxt format type_enc false)
       val sound = is_type_enc_sound type_enc
       val could_specialize = could_specialize_helpers type_enc
@@ -2515,13 +2526,16 @@ fun decl_line_of_sym ctxt type_enc s (s', T_args, T, pred_sym, ary, _) =
 
 fun honor_conj_sym_role in_conj = (if in_conj then Hypothesis else Axiom, I)
 
+val mk_bound_names : int -> (string * string) list =
+  map_range (`I o make_bound_var o string_of_int o curry (op +) 1)
+
 fun line_of_guards_sym_decl ctxt generate_isabelle_info mono type_enc n s j
     (s', T_args, T, _, ary, in_conj) =
   let
     val thy = Proof_Context.theory_of ctxt
     val (role, maybe_negate) = honor_conj_sym_role in_conj
     val (arg_Ts, res_T) = chop_fun ary T
-    val bound_names = 1 upto ary |> map (`I o make_bound_var o string_of_int)
+    val bound_names = mk_bound_names ary
     val bounds = map2 (fn name => fn T => IConst (name, T, [])) bound_names arg_Ts
     val bound_Ts =
       (case level_of_type_enc type_enc of
@@ -2557,7 +2571,7 @@ fun lines_of_tags_sym_decl ctxt generate_isabelle_info mono type_enc n s
       (if n > 1 then "_" ^ string_of_int j else "")
     val (role, maybe_negate) = honor_conj_sym_role in_conj
     val (arg_Ts, res_T) = chop_fun ary T
-    val bound_names = 1 upto ary |> map (`I o make_bound_var o string_of_int)
+    val bound_names = mk_bound_names ary
     val bounds = bound_names |> map (fn name => ATerm ((name, []), []))
     val cst = mk_aterm type_enc (s, s') T_args
     val eq = maybe_negate oo eq_formula type_enc (atomic_types_of T) [] pred_sym
@@ -2681,8 +2695,7 @@ fun do_uncurried_alias_lines_of_sym ctxt generate_isabelle_info ctrss mono type_
           base_name |> ary - 1 > base_ary ? aliased_uncurried (ary - 1)
         val name2 as (s2, _) = base_name |> aliased_uncurried ary
         val (arg_Ts, _) = chop_fun ary T
-        val bound_names =
-          1 upto ary |> map (`I o make_bound_var o string_of_int)
+        val bound_names = mk_bound_names ary
         val bounds = bound_names ~~ arg_Ts
         val (first_bounds, last_bound) =
           bounds |> map (fn (name, T) => IConst (name, T, [])) |> split_last

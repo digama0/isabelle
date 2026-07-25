@@ -70,15 +70,15 @@ ML \<open>
       let fun err () = raise TERM ("string_tr", args) in
         (case args of
           [(c as Const (\<^syntax_const>\<open>_constrain\<close>, _)) $ Free (s, _) $ p] =>
-            (case Term_Position.decode_position p of
-              SOME (pos, _) => c $ mk_string (content (s, pos)) $ p
+            (case Term_Position.decode_position1 p of
+              SOME {pos, ...} => c $ mk_string (content (s, pos)) $ p
             | NONE => err ())
         | _ => err ())
       end;
   end;
 \<close>
 
-syntax "_cartouche_string" :: \<open>cartouche_position \<Rightarrow> string\<close>  ("_")
+syntax "_cartouche_string" :: \<open>cartouche_position \<Rightarrow> string\<close>  (\<open>_\<close>)
 
 parse_translation \<open>
   [(\<^syntax_const>\<open>_cartouche_string\<close>,
@@ -95,7 +95,7 @@ subsection \<open>Alternate outer and inner syntax: string literals\<close>
 
 subsubsection \<open>Nested quotes\<close>
 
-syntax "_string_string" :: \<open>string_position \<Rightarrow> string\<close>  ("_")
+syntax "_string_string" :: \<open>string_position \<Rightarrow> string\<close>  (\<open>_\<close>)
 
 parse_translation \<open>
   [(\<^syntax_const>\<open>_string_string\<close>, K (string_tr Lexicon.explode_string))]

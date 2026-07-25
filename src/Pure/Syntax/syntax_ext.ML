@@ -1,25 +1,26 @@
 (*  Title:      Pure/Syntax/syntax_ext.ML
-    Author:     Markus Wenzel and Carsten Clasohm, TU Muenchen
+    Author:     Makarius
 
-Syntax extension.
+Syntax extension as internal record.
 *)
 
 signature SYNTAX_EXT =
 sig
   datatype mfix = Mfix of Symbol_Pos.T list * typ * string * int list * int * Position.T
-  val typ_to_nonterm: typ -> string
-  type block_info = {markup: Markup.T, consistent: bool, unbreakable: bool, indent: int}
-  val block_indent: int -> block_info
+  type block =
+    {markup: Markup.T list, open_block: bool, consistent: bool, unbreakable: bool, indent: int}
+  val block_indent: int -> block
+  val pretty_block: block -> Pretty.T list -> Pretty.T
   datatype xsymb =
     Delim of string |
     Argument of string * int |
     Space of string |
-    Bg of block_info |
+    Bg of block |
     Brk of int |
     En
   datatype xprod = XProd of string * xsymb list * string * int
+  val fold_delims: (string -> 'a -> 'a) -> xprod -> 'a -> 'a
   val chain_pri: int
-  val delims_of: xprod list -> Symbol.symbol list list
   datatype syn_ext =
     Syn_Ext of {
       xprods: xprod list,
@@ -30,18 +31,20 @@ sig
       print_translation: (string * ((Proof.context -> typ -> term list -> term) * stamp)) list,
       print_rules: (Ast.ast * Ast.ast) list,
       print_ast_translation: (string * ((Proof.context -> Ast.ast list -> Ast.ast) * stamp)) list}
-  val mfix_args: Symbol_Pos.T list -> int
-  val mixfix_args: Input.source -> int
+  val block_annotation: int -> Markup.T -> string -> string
+  val mfix_name: Proof.context -> Symbol_Pos.T list -> string
+  val mfix_args: Proof.context -> Symbol_Pos.T list -> int
+  val mixfix_args: Proof.context -> Input.source -> int
   val escape: string -> string
-  val syn_ext: string list -> mfix list ->
+  val syn_ext: Proof.context -> string list -> mfix list ->
     (string * string list) list -> (string * ((Proof.context -> Ast.ast list -> Ast.ast) * stamp)) list *
     (string * ((Proof.context -> term list -> term) * stamp)) list *
     (string * ((Proof.context -> typ -> term list -> term) * stamp)) list *
     (string * ((Proof.context -> Ast.ast list -> Ast.ast) * stamp)) list ->
     (Ast.ast * Ast.ast) list * (Ast.ast * Ast.ast) list -> syn_ext
-  val syn_ext_consts: (string * string list) list -> syn_ext
-  val syn_ext_rules: (Ast.ast * Ast.ast) list * (Ast.ast * Ast.ast) list -> syn_ext
-  val syn_ext_trfuns:
+  val syn_ext_consts: Proof.context -> (string * string list) list -> syn_ext
+  val syn_ext_rules: Proof.context -> (Ast.ast * Ast.ast) list * (Ast.ast * Ast.ast) list -> syn_ext
+  val syn_ext_trfuns: Proof.context ->
     (string * ((Proof.context -> Ast.ast list -> Ast.ast) * stamp)) list *
     (string * ((Proof.context -> term list -> term) * stamp)) list *
     (string * ((Proof.context -> typ -> term list -> term) * stamp)) list *
@@ -61,16 +64,22 @@ struct
   Space s: some white space for printing
   Bg, Brk, En: blocks and breaks for pretty printing*)
 
-type block_info = {markup: Markup.T, consistent: bool, unbreakable: bool, indent: int};
+type block =
+  {markup: Markup.T list, open_block: bool, consistent: bool, unbreakable: bool, indent: int};
 
-fun block_indent indent : block_info =
-  {markup = Markup.empty, consistent = false, unbreakable = false, indent = indent};
+fun block_indent indent : block =
+  {markup = [], open_block = false, consistent = false, unbreakable = false, indent = indent};
+
+fun pretty_block {markup, open_block, consistent, indent, unbreakable} body =
+  Pretty.markup_blocks
+    {markup = markup, open_block = open_block, consistent = consistent, indent = indent} body
+  |> unbreakable ? Pretty.unbreakable;
 
 datatype xsymb =
   Delim of string |
   Argument of string * int |
   Space of string |
-  Bg of block_info |
+  Bg of block |
   Brk of int |
   En;
 
@@ -98,12 +107,9 @@ val index = Argument ("index", 1000);
 
 datatype xprod = XProd of string * xsymb list * string * int;
 
-val chain_pri = ~1;   (*dummy for chain productions*)
+fun fold_delims f (XProd (_, xsymbs, _, _)) = fold (fn Delim s => f s | _ => I) xsymbs;
 
-fun delims_of xprods =
-  fold (fn XProd (_, xsymbs, _, _) =>
-    fold (fn Delim s => insert (op =) s | _ => I) xsymbs) xprods []
-  |> map Symbol.explode;
+val chain_pri = ~1;   (*dummy for chain productions*)
 
 
 
@@ -120,19 +126,22 @@ fun delims_of xprods =
 datatype mfix = Mfix of Symbol_Pos.T list * typ * string * int list * int * Position.T;
 
 
-(* typ_to_nonterm *)
-
-fun typ_to_nt _ (Type (c, _)) = c
-  | typ_to_nt default _ = default;
-
-(*get nonterminal for rhs*)
-val typ_to_nonterm = typ_to_nt "any";
-
-(*get nonterminal for lhs*)
-val typ_to_nonterm1 = typ_to_nt "logic";
-
-
 (* properties *)
+
+fun block_annotation indent notation_markup notation_name =
+  let
+    val (elem, props) = notation_markup |> notation_name <> "" ? Markup.name notation_name;
+    val kind = Properties.get props Markup.kindN;
+    val name = Properties.get props Markup.nameN;
+    val s1 = if indent = 0 then [] else ["indent=" ^ Value.print_int indent];
+    val s2 =
+      if elem = Markup.notationN then
+        [Properties.print_eq (elem, cartouche (implode_space (the_list kind @ the_list name)))]
+      else raise Fail ("Bad markup element for notatio: " ^ quote elem)
+  in cartouche (implode_space (s1 @ s2)) end;
+
+fun show_names names =
+  commas_quote (map (fn (name, pos) => Markup.markup (Position.markup pos) name) names);
 
 local
 
@@ -152,15 +161,29 @@ val scan_item =
   scan_blanks |-- scan_atom --| scan_blanks
     >> (fn ss => (Symbol_Pos.content ss, #1 (Symbol_Pos.range ss)));
 
-val scan_prop =
-  scan_item -- Scan.optional ($$ "=" |-- !!! scan_item >> #1) "true"
-    >> (fn ((x, pos), y) => (x, (y, pos)));
+val scan_prop = scan_item -- Scan.option ($$ "=" |-- !!! scan_item);
 
-fun get_property default parse name props =
-  (case AList.lookup (op =) props name of
-    NONE => default
-  | SOME (s, pos) =>
-      (parse s handle Fail msg => error (msg ^ " for property " ^ quote name ^ Position.here pos)));
+fun get_property default0 default1 parse name props =
+  (case find_first (fn ((a, _), _) => a = name) props of
+    NONE => default0
+  | SOME (_, NONE) => default1
+  | SOME ((_, pos1), SOME (b, pos2)) =>
+      (parse (b, pos2) handle Fail msg =>
+        error (msg ^ " for property " ^ quote name ^ Position.here_list [pos1, pos2])));
+
+fun parse_notation ctxt (s, pos) =
+  let
+    val (kind, name) =
+      (case Symbol.explode_words s of
+        [] => ("", "")
+      | a :: bs => (a, space_implode " " bs));
+    val markup =
+      (case try (fn () => Markup_Kind.check_notation ctxt (kind, Position.none)) () of
+        SOME m => m
+      | NONE =>
+          error ("Bad notation kind " ^ quote kind ^ Position.here pos ^
+            ", expected: " ^ commas_quote (Markup_Kind.get_notation_kinds ctxt)));
+  in markup |> Markup.properties (Markup.name_proper name) end;
 
 in
 
@@ -170,16 +193,19 @@ fun read_properties ss =
       (case Scan.error (Scan.finite Symbol_Pos.stopper (Scan.repeat scan_prop)) ss of
         (props, []) => props
       | (_, (_, pos) :: _) => error (err_prefix ^ "bad input" ^ Position.here pos));
+    fun ok (_, bs) = length bs <= 1;
     val _ =
-      (case AList.group (op =) props |> filter (fn (_, [_]) => false | _ => true) of
+      (case AList.group (eq_fst op =) props |> filter_out ok of
         [] => ()
-      | dups => error ("Duplicate properties: " ^ commas_quote (map #1 dups) ^
-          Position.here_list (map #2 (maps #2 dups))));
+      | dups => error ("Duplicate properties: " ^ show_names (map #1 dups)));
   in props end;
 
-val get_string = get_property "" I;
-val get_bool = get_property false Value.parse_bool;
-val get_nat = get_property 0 Value.parse_nat;
+val get_string = get_property "" "" #1;
+val get_bool = get_property false true (Value.parse_bool o #1);
+val get_nat = get_property 0 1 (Value.parse_nat o #1);
+
+fun get_notation_markup ctxt =
+  get_property NONE (SOME Markup.notation0) (SOME o parse_notation ctxt) Markup.notationN;
 
 end;
 
@@ -187,6 +213,13 @@ end;
 (* read mixfix annotations *)
 
 local
+
+val markup_block_begin = Markup_Kind.setup_expression (Binding.make ("mixfix_block_begin", \<^here>));
+val markup_block_end = Markup_Kind.setup_expression (Binding.make ("mixfix_block_end", \<^here>));
+val markup_delimiter = Markup_Kind.setup_expression (Binding.make ("mixfix_delimiter", \<^here>));
+val markup_argument = Markup_Kind.setup_expression (Binding.make ("mixfix_argument", \<^here>));
+val markup_space = Markup_Kind.setup_expression (Binding.make ("mixfix_space", \<^here>));
+val markup_break = Markup_Kind.setup_expression (Binding.make ("mixfix_break", \<^here>));
 
 open Basic_Symbol_Pos;
 
@@ -196,44 +229,46 @@ fun scan_one pred = Scan.one (pred o Symbol_Pos.symbol);
 fun scan_many pred = Scan.many (pred o Symbol_Pos.symbol);
 fun scan_many1 pred = Scan.many1 (pred o Symbol_Pos.symbol);
 
-fun reports_of_block pos =
-  [(pos, Markup.expression "mixfix block begin"), (pos, Markup.keyword3)];
+fun reports_of_block pos = [(pos, markup_block_begin), (pos, Markup.keyword3)];
 
 fun reports_of (xsym, pos) =
   (case xsym of
-    Delim _ => [(pos, Markup.expression "mixfix delimiter"), (pos, Markup.literal)]
-  | Argument _ => [(pos, Markup.expression "mixfix argument")]
-  | Space _ => [(pos, Markup.expression "mixfix space")]
+    Delim _ => [(pos, markup_delimiter), (pos, Markup.literal)]
+  | Argument _ => [(pos, markup_argument)]
+  | Space _ => [(pos, markup_space)]
   | Bg _ => reports_of_block pos
-  | Brk _ => [(pos, Markup.expression "mixfix break"), (pos, Markup.keyword3)]
-  | En => [(pos, Markup.expression "mixfix block end"), (pos, Markup.keyword3)]);
+  | Brk _ => [(pos, markup_break), (pos, Markup.keyword3)]
+  | En => [(pos, markup_block_end), (pos, Markup.keyword3)]);
 
-fun reports_text_of (xsym, pos) =
-  (case xsym of
-    Delim s =>
+fun reports_text_of (Delim s, pos) =
       if Position.is_reported pos andalso exists Symbol.is_utf8 (Symbol.explode s) then
         [((pos, Markup.bad ()),
           "Mixfix delimiter contains raw Unicode -- this is non-portable and unreliable")]
       else []
-  | _ => []);
+  | reports_text_of _ = [];
 
-fun read_block_properties ss =
+fun read_block_properties ctxt ss =
   let
     val props = read_properties ss;
 
-    val markup_name = get_string Markup.markupN props;
-    val markup_props = fold (AList.delete (op =)) Markup.block_properties props;
-    val markup = (markup_name, map (apsnd #1) markup_props);
-    val _ =
-      if markup_name = "" andalso not (null markup_props) then
-        error ("Markup name required for block properties: " ^
-          commas_quote (map #1 markup_props) ^ Position.here_list (map (#2 o #2) markup_props))
-      else ();
+    val more_markups = the_list (get_notation_markup ctxt props);
 
-    val consistent = get_bool Markup.consistentN props;
-    val unbreakable = get_bool Markup.unbreakableN props;
-    val indent = get_nat Markup.indentN props;
-  in Bg {markup = markup, consistent = consistent, unbreakable = unbreakable, indent = indent} end
+    val markup_name = get_string Markup.markupN props;
+    val markup_props = props |> map_filter (fn (a, opt_b) =>
+      if member (op =) Markup.block_properties (#1 a) then NONE
+      else SOME (a, the_default ("true", Position.none) opt_b));
+    val markups =
+      if markup_name <> "" then [(markup_name, map (apply2 #1) markup_props)]
+      else if null markup_props then []
+      else error ("Markup name required for block properties: " ^ show_names (map #1 markup_props));
+
+    val block: block =
+     {markup = more_markups @ markups,
+      open_block = get_bool Markup.open_blockN props,
+      consistent = get_bool Markup.consistentN props,
+      unbreakable = get_bool Markup.unbreakableN props,
+      indent = get_nat Markup.indentN props};
+  in Bg block end
   handle ERROR msg =>
     let
       val reported_texts =
@@ -251,38 +286,46 @@ val scan_delim =
   $$ "'" |-- scan_one ((not o Symbol.is_blank) andf Symbol.not_eof) >> single ||
   scan_one ((not o is_meta) andf (not o Symbol.is_blank) andf Symbol.not_eof) >> single;
 
-val scan_sym =
-  $$ "_" >> K (Argument ("", 0)) ||
-  $$ "\<index>" >> K index ||
-  $$ "(" |--
-   (Symbol_Pos.scan_cartouche_content err_prefix >> read_block_properties ||
-    scan_many Symbol.is_digit >> read_block_indent) ||
-  $$ ")" >> K En ||
-  $$ "/" -- $$ "/" >> K (Brk ~1) ||
-  $$ "/" |-- scan_many Symbol.is_space >> (Brk o length) ||
-  scan_many1 Symbol.is_space >> (Space o Symbol_Pos.content) ||
-  Scan.repeat1 scan_delim >> (Delim o Symbol_Pos.content o flat);
+fun scan_symbs ctxt =
+  let
+    val scan_sym =
+      $$ "_" >> K (Argument ("", 0)) ||
+      $$ "\<index>" >> K index ||
+      $$ "(" |--
+       (Symbol_Pos.scan_cartouche_content err_prefix >> read_block_properties ctxt ||
+        scan_many Symbol.is_digit >> read_block_indent) ||
+      $$ ")" >> K En ||
+      $$ "/" -- $$ "/" >> K (Brk ~1) ||
+      $$ "/" |-- scan_many Symbol.is_space >> (Brk o length) ||
+      scan_many1 Symbol.is_space >> (Space o Symbol_Pos.content) ||
+      Scan.repeat1 scan_delim >> (Delim o Symbol_Pos.content o flat);
 
-val scan_symb =
-  Scan.trace scan_sym >> (fn (syms, trace) => SOME (syms, #1 (Symbol_Pos.range trace))) ||
-  $$ "'" -- scan_one Symbol.is_space >> K NONE;
-
-val scan_symbs = Scan.repeat scan_symb --| Scan.ahead (~$$ "'");
+    val scan_symb =
+      Scan.trace scan_sym >> (fn (syms, trace) => SOME (syms, #1 (Symbol_Pos.range trace))) ||
+      $$ "'" -- scan_one Symbol.is_space >> K NONE;
+  in Scan.repeat scan_symb --| Scan.ahead (~$$ "'") end;
 
 in
 
-fun read_mfix ss =
+fun read_mfix ctxt ss =
   let
     val xsymbs =
-      (case Scan.error (Scan.finite Symbol_Pos.stopper scan_symbs) ss of
+      (case Scan.error (Scan.finite Symbol_Pos.stopper (scan_symbs ctxt)) ss of
         (res, []) => map_filter I res
       | (_, (_, pos) :: _) => error (err_prefix ^ "bad input" ^ Position.here pos));
-    val _ = Position.reports (maps reports_of xsymbs);
-    val _ = Position.reports_text (maps reports_text_of xsymbs);
+    val _ = Context_Position.reports ctxt (maps reports_of xsymbs);
+    val _ = Context_Position.reports_text ctxt (maps reports_text_of xsymbs);
   in xsymbs end;
 
-val mfix_args = length o filter (is_argument o #1) o read_mfix o map (apsnd (K Position.none));
-val mixfix_args = mfix_args o Input.source_explode;
+val read_mfix0 = read_mfix o Context_Position.set_visible false;
+
+fun mfix_name ctxt =
+  read_mfix0 ctxt #> map_filter (fn (Delim s, _) => SOME s | _ => NONE) #> space_implode " ";
+
+fun mfix_args ctxt ss =
+  Integer.build (read_mfix0 ctxt ss |> fold (fn (xsymb, _) => is_argument xsymb ? Integer.add 1));
+
+fun mixfix_args ctxt = mfix_args ctxt o Input.source_explode;
 
 val escape = implode o map (fn s => if is_meta s then "'" ^ s else s) o Symbol.explode;
 
@@ -291,10 +334,13 @@ end;
 
 (* mfix_to_xprod *)
 
-fun mfix_to_xprod logical_types (Mfix (sy, typ, const, pris, pri, pos)) =
+fun mfix_to_xprod ctxt logical_types (Mfix (sy, typ, const, pris, pri, pos)) =
   let
-    val _ = Position.report pos Markup.language_mixfix;
-    val symbs0 = read_mfix sy;
+    val nonterm_for_lhs = the_default "logic" o try dest_Type_name;
+    val nonterm_for_rhs = the_default "any" o try dest_Type_name;
+
+    val _ = Context_Position.report ctxt pos Markup.language_mixfix;
+    val symbs0 = read_mfix ctxt sy;
 
     fun err_in_mixfix msg = error (msg ^ " in mixfix annotation" ^ Position.here pos);
 
@@ -304,14 +350,14 @@ fun mfix_to_xprod logical_types (Mfix (sy, typ, const, pris, pri, pos)) =
       | check_blocks ((En, _) :: rest) (_ :: pending) bad = check_blocks rest pending bad
       | check_blocks (_ :: rest) pending bad = check_blocks rest pending bad;
 
-    fun add_args [] ty [] = ([], typ_to_nonterm1 ty)
+    fun add_args [] ty [] = ([], nonterm_for_lhs ty)
       | add_args [] _ _ = err_in_mixfix "Too many precedences"
       | add_args ((sym as (Argument ("index", _), _)) :: syms) ty ps =
           add_args syms ty ps |>> cons sym
       | add_args ((Argument _, pos) :: syms) (Type ("fun", [ty, tys])) [] =
-          add_args syms tys [] |>> cons (Argument (typ_to_nonterm ty, 0), pos)
+          add_args syms tys [] |>> cons (Argument (nonterm_for_rhs ty, 0), pos)
       | add_args ((Argument _, pos) :: syms) (Type ("fun", [ty, tys])) (p :: ps) =
-          add_args syms tys ps |>> cons (Argument (typ_to_nonterm ty, p), pos)
+          add_args syms tys ps |>> cons (Argument (nonterm_for_rhs ty, p), pos)
       | add_args ((Argument _, _) :: _) _ _ =
           err_in_mixfix "More arguments than in corresponding type"
       | add_args (sym :: syms) ty ps = add_args syms ty ps |>> cons sym;
@@ -334,12 +380,12 @@ fun mfix_to_xprod logical_types (Mfix (sy, typ, const, pris, pri, pos)) =
       else
         let
           val indexed_const =
-            if const <> "" then const ^ "_indexed"
+            if const <> "" then Lexicon.mark_indexed const
             else err_in_mixfix "Missing constant name for indexed syntax";
           val rangeT = Term.range_type typ handle Match =>
             err_in_mixfix "Missing structure argument for indexed syntax";
 
-          val xs = map Ast.Variable (Name.invent Name.context "xa" (length args - 1));
+          val xs = map Ast.Variable (Name.invent_global "xa" (length args - 1));
           val (xs1, xs2) = chop (find_index is_index args) xs;
           val i = Ast.Variable "i";
           val lhs =
@@ -401,12 +447,12 @@ datatype syn_ext =
 
 (* syn_ext *)
 
-fun syn_ext logical_types mfixes consts trfuns (parse_rules, print_rules) =
+fun syn_ext ctxt logical_types mfixes consts trfuns (parse_rules, print_rules) =
   let
     val (parse_ast_translation, parse_translation, print_translation,
       print_ast_translation) = trfuns;
 
-    val xprod_results = map (mfix_to_xprod logical_types) mfixes;
+    val xprod_results = map (mfix_to_xprod ctxt logical_types) mfixes;
     val xprods = map #1 xprod_results;
     val consts' = map_filter #2 xprod_results;
     val parse_rules' = rev (map_filter #3 xprod_results);
@@ -424,9 +470,9 @@ fun syn_ext logical_types mfixes consts trfuns (parse_rules, print_rules) =
   end;
 
 
-fun syn_ext_consts consts = syn_ext [] [] consts ([], [], [], []) ([], []);
-fun syn_ext_rules rules = syn_ext [] [] [] ([], [], [], []) rules;
-fun syn_ext_trfuns trfuns = syn_ext [] [] [] trfuns ([], []);
+fun syn_ext_consts ctxt consts = syn_ext ctxt [] [] consts ([], [], [], []) ([], []);
+fun syn_ext_rules ctxt rules = syn_ext ctxt [] [] [] ([], [], [], []) rules;
+fun syn_ext_trfuns ctxt trfuns = syn_ext ctxt [] [] [] trfuns ([], []);
 
 fun stamp_trfun s (c, f) = (c, (f, s));
 fun mk_trfun tr = stamp_trfun (stamp ()) tr;

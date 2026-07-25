@@ -1,11 +1,11 @@
 theory Isolated
-  imports "HOL-Analysis.Elementary_Metric_Spaces"
+  imports "Elementary_Metric_Spaces" "Sparse_In"
 
 begin
 
 subsection \<open>Isolate and discrete\<close>
 
-definition (in topological_space) isolated_in:: "'a \<Rightarrow> 'a set \<Rightarrow> bool"  (infixr "isolated'_in" 60)
+definition (in topological_space) isolated_in:: "'a \<Rightarrow> 'a set \<Rightarrow> bool"  (infixr \<open>isolated'_in\<close> 60)
   where "x isolated_in S \<longleftrightarrow> (x\<in>S \<and> (\<exists>T. open T \<and> T \<inter> S = {x}))"
 
 definition (in topological_space) discrete:: "'a set \<Rightarrow> bool"
@@ -20,15 +20,18 @@ lemma discreteI: "(\<And>x. x \<in> X \<Longrightarrow> x isolated_in X ) \<Long
 lemma discreteD: "discrete X \<Longrightarrow> x \<in> X \<Longrightarrow> x isolated_in X "
   unfolding discrete_def by auto
  
-lemma uniformI1:
+lemma uniform_discreteI1:
   assumes "e>0" "\<And>x y. \<lbrakk>x\<in>S;y\<in>S;dist x y<e\<rbrakk> \<Longrightarrow> x =y "
   shows "uniform_discrete S"
 unfolding uniform_discrete_def using assms by auto
 
-lemma uniformI2:
+lemma uniform_discreteI2:
   assumes "e>0" "\<And>x y. \<lbrakk>x\<in>S;y\<in>S;x\<noteq>y\<rbrakk> \<Longrightarrow> dist x y\<ge>e "
   shows "uniform_discrete S"
 unfolding uniform_discrete_def using assms not_less by blast
+
+lemma uniform_discrete_Ints: "uniform_discrete (\<int> :: 'a :: real_normed_algebra_1 set)"
+  by (rule uniform_discreteI1[of 1]) (auto elim!: Ints_cases simp: dist_of_int)
 
 lemma isolated_in_islimpt_iff:"(x isolated_in S) \<longleftrightarrow> (\<not> (x islimpt S) \<and> x\<in>S)"
   unfolding isolated_in_def islimpt_def by auto
@@ -323,5 +326,16 @@ proof -
     by (subst filtermap_times_pos_at_right) (use assms in auto)
   finally show ?thesis .
 qed
+
+lemma uniform_discrete_imp_sparse:
+  assumes "uniform_discrete X"
+  shows   "X sparse_in A"
+  using assms unfolding uniform_discrete_def sparse_in_ball_def
+  by (auto simp: discrete_imp_not_islimpt)
+
+lemma sparse_subset_Ints:
+  assumes "X \<subseteq> \<int>"
+  shows   "(X :: 'a :: real_normed_algebra_1 set) sparse_in A"
+  by (rule uniform_discrete_imp_sparse, rule uniform_discrete_subset, rule uniform_discrete_Ints) fact
 
 end

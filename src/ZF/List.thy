@@ -15,13 +15,8 @@ datatype
 
 notation Nil (\<open>[]\<close>)
 
-nonterminal list_args
 syntax
-  "" :: "i \<Rightarrow> list_args"  (\<open>_\<close>)
-  "_List_args" :: "[i, list_args] \<Rightarrow> list_args"  (\<open>_,/ _\<close>)
-  "_List" :: "list_args \<Rightarrow> i"  (\<open>[(_)]\<close>)
-syntax_consts
-  "_List_args" "_List" \<rightleftharpoons> Cons
+  "_List" :: "is \<Rightarrow> i"  (\<open>(\<open>indent=1 notation=\<open>mixfix list enumeration\<close>\<close>[_])\<close>)
 translations
   "[x, xs]"     == "CONST Cons(x, [xs])"
   "[x]"         == "CONST Cons(x, [])"

@@ -46,7 +46,7 @@ fun add_proof_syntax thy =
   |> Sign.add_nonterminals_global
     [Binding.make ("param", \<^here>),
      Binding.make ("params", \<^here>)]
-  |> Sign.syntax true Syntax.mode_default
+  |> Sign.syntax_global true Syntax.mode_default
     [("_Lam", [paramsT, proofT] ---> proofT, mixfix ("(1\<^bold>\<lambda>_./ _)", [0, 3], 3)),
      ("_Lam0", [paramT, paramsT] ---> paramsT, mixfix ("_/ _", [1, 0], 0)),
      ("_Lam0", [idtT, paramsT] ---> paramsT, mixfix ("_/ _", [1, 0], 0)),
@@ -57,7 +57,7 @@ fun add_proof_syntax thy =
      (Lexicon.mark_const "Pure.Appt", [proofT, aT] ---> proofT, mixfix ("(1_ \<cdot>/ _)", [4, 5], 4)),
      (Lexicon.mark_const "Pure.AppP", [proofT, proofT] ---> proofT, mixfix ("(1_ \<bullet>/ _)", [4, 5], 4)),
      (Lexicon.mark_const "Pure.MinProof", proofT, Mixfix.mixfix "\<^bold>?")]
-  |> Sign.add_trrules (map Syntax.Parse_Print_Rule
+  |> Sign.translations_global true (map Syntax.Parse_Print_Rule
     [(Ast.mk_appl (Ast.Constant "_Lam")
         [Ast.mk_appl (Ast.Constant "_Lam0")
           [Ast.Variable "l", Ast.Variable "m"], Ast.Variable "A"],

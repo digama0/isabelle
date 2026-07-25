@@ -21,7 +21,7 @@ fun moura_tac ctxt =
   REPEAT o EqSubst.eqsubst_tac ctxt [0]
     @{thms choice_iff[symmetric] bchoice_iff[symmetric]} THEN'
   TRY o Simplifier.asm_full_simp_tac
-    (clear_simpset ctxt addsimps @{thms all_simps ex_simps ex_iff_push}) THEN_ALL_NEW
+    (Simplifier.clear_simpset ctxt |> Simplifier.add_simps @{thms all_simps ex_simps ex_iff_push}) THEN_ALL_NEW
   Metis_Tactic.metis_tac (take 1 ATP_Proof_Reconstruct.partial_type_encs)
     ATP_Proof_Reconstruct.default_metis_lam_trans ctxt []
 \<close>
@@ -627,6 +627,7 @@ ML_file \<open>Tools/SMT/z3_proof.ML\<close>
 ML_file \<open>Tools/SMT/z3_isar.ML\<close>
 ML_file \<open>Tools/SMT/smt_solver.ML\<close>
 ML_file \<open>Tools/SMT/cvc_interface.ML\<close>
+ML_file \<open>Tools/SMT/vampire_interface.ML\<close>
 ML_file \<open>Tools/SMT/lethe_proof.ML\<close>
 ML_file \<open>Tools/SMT/lethe_isar.ML\<close>
 ML_file \<open>Tools/SMT/lethe_proof_parse.ML\<close>
@@ -731,7 +732,7 @@ subsection \<open>Certificates\<close>
 
 text \<open>
 By setting the option \<open>smt_certificates\<close> to the name of a file,
-all following applications of an SMT solver a cached in that file.
+all following applications of an SMT solver are cached in that file.
 Any further application of the same SMT solver (using the very same
 configuration) re-uses the cached certificate instead of invoking the
 solver. An empty string disables caching certificates.

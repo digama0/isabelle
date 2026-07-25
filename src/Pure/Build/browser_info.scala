@@ -8,11 +8,21 @@ package isabelle
 
 
 import scala.annotation.tailrec
-import scala.collection.immutable.SortedMap
 import scala.collection.mutable
 
 
 object Browser_Info {
+  /* SQLite database with compressed entries */
+
+  val default_database: Path = Path.explode("$ISABELLE_BROWSER_INFO_LIBRARY")
+  val default_dir: Path = Path.explode("$ISABELLE_BROWSER_INFO")
+
+  def make_database(database: Path = default_database, dir: Path = default_dir): Unit =
+    File_Store.make_database(database, dir,
+      compress_options = Compress.Options_Zstd(level = 8),
+      compress_cache = Compress.Cache.make())
+
+
   /* browser_info store configuration */
 
   object Config {
@@ -51,8 +61,8 @@ object Browser_Info {
       }
     }
 
-    def init_directory(dir: Path): Path = {
-      check_directory(dir)
+    def init_directory(dir: Path, permissive: Boolean = false): Path = {
+      if (!permissive) check_directory(dir)
       Isabelle_System.make_directory(dir + PATH)
       dir
     }
@@ -158,6 +168,7 @@ object Browser_Info {
   val default_elements: Elements =
     Elements(
       html = Rendering.foreground_elements ++ Rendering.text_color_elements +
+        Markup.TCLASS + Markup.TCONST + Markup.CONST +
         Markup.NUMERAL + Markup.COMMENT + Markup.ENTITY + Markup.LANGUAGE +
         Markup.PATH + Markup.URL,
       entity = Markup.Elements(Markup.THEORY, Markup.TYPE_NAME, Markup.CONSTANT, Markup.FACT,
@@ -284,7 +295,7 @@ object Browser_Info {
     /* maintain presentation structure */
 
     def update_chapter(session_name: String, session_description: String): Unit = synchronized {
-      val dir = Meta_Info.init_directory(chapter_dir(session_name))
+      val dir = Meta_Info.init_directory(chapter_dir(session_name), permissive = true)
       Meta_Info.change(dir, Meta_Info.INDEX) { text =>
         val index0 = Meta_Info.Index.parse(text, "chapter")
         val item = Meta_Info.Item(session_name, description = session_description)
@@ -311,7 +322,7 @@ object Browser_Info {
     }
 
     def update_root(): Unit = synchronized {
-      Meta_Info.init_directory(root_dir)
+      Meta_Info.init_directory(root_dir, permissive = true)
       HTML.init_fonts(root_dir)
       Isabelle_System.copy_file(Path.explode("~~/lib/logo/isabelle.gif"),
         root_dir + Path.explode("isabelle.gif"))
@@ -478,7 +489,8 @@ object Browser_Info {
       @tailrec
       def html_body_single(xml_tree: XML.Tree, end_offset: Symbol.Offset): (XML.Body, Symbol.Offset) =
         xml_tree match {
-          case XML.Wrapped_Elem(markup, _, body) => html_body_single(XML.Elem(markup, body), end_offset)
+          case XML.Wrapped_Elem(markup, _, body) =>
+            html_body_single(XML.Elem(markup, body), end_offset)
           case XML.Elem(Markup(Markup.ENTITY, props @ Markup.Kind(kind)), body) =>
             val (body1, offset) = html_body(body, end_offset)
             if (elements.entity(kind)) {
@@ -513,7 +525,6 @@ object Browser_Info {
             if (kind == Markup.ENUMERATE) (List(HTML.`enum`(body1)), offset)
             else (List(HTML.list(body1)), offset)
           case XML.Elem(markup, body) =>
-            val name = markup.name
             val (body1, offset) = html_body(body, end_offset)
             val html =
               markup.properties match {
@@ -522,10 +533,15 @@ object Browser_Info {
                 case _ =>
                   body1
               }
-            Rendering.foreground.get(name) orElse Rendering.text_color.get(name) match {
-              case Some(c) => (html_class(c.toString, html), offset)
-              case None => (html_class(name, html), offset)
-            }
+            val c =
+              if (Markup.has_syntax(markup.properties)) ""
+              else {
+                Rendering.get_foreground_text_color(markup) match {
+                  case Some(color) => color.toString
+                  case None => markup.name
+                }
+              }
+            (html_class(c, html), offset)
           case XML.Text(text) =>
             val offset = end_offset - Symbol.length(text)
             val body = HTML.text(Symbol.decode(text))
@@ -558,7 +574,7 @@ object Browser_Info {
     val session_dir = context.session_dir(session_name).expand
     progress.echo("Presenting " + session_name + " in " + session_dir + " ...")
 
-    Meta_Info.init_directory(context.chapter_dir(session_name))
+    Meta_Info.init_directory(context.chapter_dir(session_name), permissive = true)
     Meta_Info.clean_directory(session_dir)
 
     val session = context.document_info.the_session(session_name)
@@ -633,7 +649,7 @@ object Browser_Info {
           val html = context.source(node_context(file, file_dir).make_html(thy_elements, xml))
 
           val path = Path.explode(file)
-          val src_path = File.relative_path(master_dir, path).getOrElse(path)
+          val src_path = File.perhaps_relative_path(master_dir, path)
 
           val file_title = "File " + Symbol.cartouche_decoded(src_path.implode_short)
           HTML.write_document(file_dir, file_html.file_name,
@@ -683,7 +699,7 @@ object Browser_Info {
       val sessions1 =
         deps.sessions_structure.build_requirements(sessions).filter { session_name =>
           using(database_context.open_database(session_name)) { session_database =>
-            database_context.store.read_build(session_database.db, session_name) match {
+            store.read_build(session_database.db, session_name) match {
               case None => false
               case Some(build) =>
                 val session_dir = context0.session_dir(session_name)

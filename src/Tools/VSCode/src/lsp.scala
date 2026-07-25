@@ -1,5 +1,7 @@
 /*  Title:      Tools/VSCode/src/lsp.scala
     Author:     Makarius
+    Author:     Thomas Lindae, TU Muenchen
+    Author:     Diana Korchmar, LMU Muenchen
 
 Message formats for Language Server Protocol, with adhoc PIDE extensions.
 See https://github.com/Microsoft/language-server-protocol/blob/master/protocol.md
@@ -19,7 +21,7 @@ object LSP {
   object Message {
     val empty: JSON.Object.T = JSON.Object("jsonrpc" -> "2.0")
 
-    def log(prefix: String, json: JSON.T, logger: Logger, verbose: Boolean): Unit = {
+    def log(prefix: => String, json: JSON.T, logger: Logger, verbose: Boolean): Unit = {
       val header =
         json match {
           case JSON.Object(obj) => obj -- (obj.keySet - "method" - "id")
@@ -45,10 +47,10 @@ object LSP {
   }
 
   class Notification0(name: String) {
-    def unapply(json: JSON.T): Option[Unit] =
+    def unapply(json: JSON.T): Boolean =
       json match {
-        case Notification(method, _) if method == name => Some(())
-        case _ => None
+        case Notification(method, _) => method == name
+        case _ => false
       }
   }
 
@@ -109,7 +111,10 @@ object LSP {
 
     def strict(id: Id, result: Option[JSON.T] = None, error: String = ""): JSON.T =
       if (error == "") apply(id, result = result)
-      else apply(id, error = Some(ResponseError(code = ErrorCodes.serverErrorEnd, message = error)))
+      else {
+        apply(id, error =
+          Some(ResponseError(code = ErrorCodes.jsonrpcReservedErrorRangeEnd, message = error)))
+      }
 
     def is_empty(json: JSON.T): Boolean =
       JSON.string(json, "id") == Some("") && JSON.value(json, "result").isDefined
@@ -126,8 +131,18 @@ object LSP {
     val MethodNotFound = -32601
     val InvalidParams = -32602
     val InternalError = -32603
-    val serverErrorStart = -32099
-    val serverErrorEnd = -32000
+
+    val jsonrpcReservedErrorRangeStart = -32099
+    val ServerNotInitialized = -32002
+    val UnknownErrorCode = -32001
+    val jsonrpcReservedErrorRangeEnd = -32000
+
+    val lspReservedErrorRangeStart = -32899
+    val RequestFailed = -32803
+    val ServerCancelled = -32802
+    val ContentModified = -32801
+    val RequestCancelled = -32800
+    val lspReservedErrorRangeEnd = -32800
   }
 
 
@@ -146,11 +161,13 @@ object LSP {
         "completionProvider" -> JSON.Object(
           "resolveProvider" -> false,
           "triggerCharacters" ->
-            Symbol.symbols.entries.flatMap(_.abbrevs).flatMap(_.toList).map(_.toString).distinct
+            (Symbol.symbols.entries.flatMap(_.abbrevs).flatMap(_.toList).map(_.toString)
+            ++ Symbol.symbols.entries.map(_.name).flatMap(_.toList).map(_.toString)).distinct
         ),
         "hoverProvider" -> true,
         "definitionProvider" -> true,
-        "documentHighlightProvider" -> true)
+        "documentHighlightProvider" -> true,
+        "codeActionProvider" -> true)
   }
 
   object Initialized extends Notification0("initialized")
@@ -184,10 +201,10 @@ object LSP {
       JSON.Object("start" -> Position(range.start), "end" -> Position(range.stop))
 
     def unapply(json: JSON.T): Option[Line.Range] =
-      (JSON.value(json, "start"), JSON.value(json, "end")) match {
-        case (Some(Position(start)), Some(Position(stop))) => Some(Line.Range(start, stop))
-        case _ => None
-      }
+      for {
+        case Position(start) <- JSON.value(json, "start")
+        case Position(stop) <- JSON.value(json, "end")
+      } yield Line.Range(start, stop)
   }
 
   object Location {
@@ -196,10 +213,8 @@ object LSP {
 
     def unapply(json: JSON.T): Option[Line.Node_Range] =
       for {
-        uri <- JSON.string(json, "uri")
-        if Url.is_wellformed_file(uri)
-        range_json <- JSON.value(json, "range")
-        range <- Range.unapply(range_json)
+        uri <- JSON.string(json, "uri") if Url.is_wellformed_file(uri)
+        case Range(range) <- JSON.value(json, "range")
       } yield Line.Node_Range(Url.absolute_file_name(uri), range)
   }
 
@@ -207,8 +222,7 @@ object LSP {
     def unapply(json: JSON.T): Option[Line.Node_Position] =
       for {
         doc <- JSON.value(json, "textDocument")
-        uri <- JSON.string(doc, "uri")
-        if Url.is_wellformed_file(uri)
+        uri <- JSON.string(doc, "uri") if Url.is_wellformed_file(uri)
         pos_json <- JSON.value(json, "position")
         pos <- Position.unapply(pos_json)
       } yield Line.Node_Position(Url.absolute_file_name(uri), pos)
@@ -263,8 +277,7 @@ object LSP {
         case Notification("textDocument/didOpen", Some(params)) =>
           for {
             doc <- JSON.value(params, "textDocument")
-            uri <- JSON.string(doc, "uri")
-            if Url.is_wellformed_file(uri)
+            uri <- JSON.string(doc, "uri") if Url.is_wellformed_file(uri)
             lang <- JSON.string(doc, "languageId")
             version <- JSON.long(doc, "version")
             text <- JSON.string(doc, "text")
@@ -278,7 +291,7 @@ object LSP {
 
   object DidChangeTextDocument {
     def unapply_change(json: JSON.T): Option[TextDocumentChange] =
-      for { text <- JSON.string(json, "text") }
+      for (text <- JSON.string(json, "text"))
       yield TextDocumentChange(JSON.value(json, "range", Range.unapply), text)
 
     def unapply(json: JSON.T): Option[(JFile, Long, List[TextDocumentChange])] =
@@ -286,8 +299,7 @@ object LSP {
         case Notification("textDocument/didChange", Some(params)) =>
           for {
             doc <- JSON.value(params, "textDocument")
-            uri <- JSON.string(doc, "uri")
-            if Url.is_wellformed_file(uri)
+            uri <- JSON.string(doc, "uri") if Url.is_wellformed_file(uri)
             version <- JSON.long(doc, "version")
             changes <- JSON.list(params, "contentChanges", unapply_change)
           } yield (Url.absolute_file(uri), version, changes)
@@ -301,8 +313,7 @@ object LSP {
         case Notification(method, Some(params)) if method == name =>
           for {
             doc <- JSON.value(params, "textDocument")
-            uri <- JSON.string(doc, "uri")
-            if Url.is_wellformed_file(uri)
+            uri <- JSON.string(doc, "uri") if Url.is_wellformed_file(uri)
           } yield Url.absolute_file(uri)
         case _ => None
       }
@@ -318,27 +329,67 @@ object LSP {
     def json: JSON.T = JSON.Object("range" -> Range(range), "newText" -> new_text)
   }
 
-  sealed case class TextDocumentEdit(file: JFile, version: Long, edits: List[TextEdit]) {
+  sealed case class TextDocumentEdit(file: JFile, version: Option[Long], edits: List[TextEdit]) {
     def json: JSON.T =
       JSON.Object(
-        "textDocument" -> JSON.Object("uri" -> Url.print_file(file), "version" -> version),
-        "edits" -> edits.map(_.json))
+        "textDocument" -> (
+          JSON.Object("uri" -> Url.print_file(file)) ++
+          JSON.optional("version" -> version)
+        ),
+        "edits" -> edits.map(_.json)
+      )
   }
 
   object WorkspaceEdit {
     def apply(edits: List[TextDocumentEdit]): JSON.T =
+      JSON.Object("documentChanges" -> edits.map(_.json))
+  }
+
+  object ApplyWorkspaceEdit {
+    def apply(edits: List[TextDocumentEdit]): JSON.T =
       RequestMessage(Id.empty, "workspace/applyEdit",
-        JSON.Object("edit" -> JSON.Object("documentChanges" -> edits.map(_.json))))
+        JSON.Object("edit" -> WorkspaceEdit(edits))
+      )
   }
 
 
   /* completion */
+
+  object CompletionItemKind {
+    val Text = 1;
+    val Method = 2;
+    val Function = 3;
+    val Constructor = 4;
+    val Field = 5;
+    val Variable = 6;
+    val Class = 7;
+    val Interface = 8;
+    val Module = 9;
+    val Property = 10;
+    val Unit = 11;
+    val Value = 12;
+    val Enum = 13;
+    val Keyword = 14;
+    val Snippet = 15;
+    val Color = 16;
+    val File = 17;
+    val Reference = 18;
+    val Folder = 19;
+    val EnumMember = 20;
+    val Constant = 21;
+    val Struct = 22;
+    val Event = 23;
+    val Operator = 24;
+    val TypeParameter = 25;
+  }
 
   sealed case class CompletionItem(
     label: String,
     kind: Option[Int] = None,
     detail: Option[String] = None,
     documentation: Option[String] = None,
+    filter_text: Option[String] = None,
+    commit_characters: Option[List[String]] = None,
     text: Option[String] = None,
     range: Option[Line.Range] = None,
     command: Option[Command] = None
@@ -348,9 +399,9 @@ object LSP {
       JSON.optional("kind" -> kind) ++
       JSON.optional("detail" -> detail) ++
       JSON.optional("documentation" -> documentation) ++
-      JSON.optional("insertText" -> text) ++
-      JSON.optional("range" -> range.map(Range(_))) ++
-      JSON.optional("textEdit" -> range.map(r => TextEdit(r, text.getOrElse(label)).json)) ++
+      JSON.optional("filterText" -> filter_text) ++
+      JSON.optional("textEdit" -> range.map(TextEdit(_, text.getOrElse(label)).json)) ++
+      JSON.optional("commitCharacters" -> commit_characters) ++
       JSON.optional("command" -> command.map(_.json))
   }
 
@@ -460,24 +511,61 @@ object LSP {
   }
 
 
+  /* code actions */
+
+  sealed case class CodeAction(title: String, edits: List[TextDocumentEdit]) {
+    def json: JSON.T =
+      JSON.Object("title" -> title, "edit" -> WorkspaceEdit(edits))
+  }
+
+  object CodeActionRequest {
+    def unapply(json: JSON.T): Option[(Id, JFile, Line.Range)] =
+      json match {
+        case RequestMessage(id, "textDocument/codeAction", Some(params)) =>
+          for {
+            doc <- JSON.value(params, "textDocument")
+            uri <- JSON.string(doc, "uri") if Url.is_wellformed_file(uri)
+            case Range(range) <- JSON.value(params, "range")
+          } yield (id, Url.absolute_file(uri), range)
+        case _ => None
+      }
+
+    def reply(id: Id, actions: List[CodeAction]): JSON.T =
+      ResponseMessage(id, Some(actions.map(_.json)))
+  }
+
+
   /* decorations */
 
-  sealed case class Decoration_Options(range: Line.Range, hover_message: List[MarkedString]) {
+  sealed case class Decoration_Range(range: Line.Range, hover_message: List[MarkedString] = Nil) {
     def json: JSON.T =
       JSON.Object("range" -> Range.compact(range)) ++
       JSON.optional("hover_message" -> MarkedStrings.json(hover_message))
   }
 
-  sealed case class Decoration(decorations: List[(String, List[Decoration_Options])]) {
-    def json(file: JFile): JSON.T =
+  object Decoration_Entry {
+    def text_color(color: Rendering.Color.Value, content: List[Decoration_Range]): Decoration_Entry =
+      Decoration_Entry("text_" + color.toString, content)
+  }
+  sealed case class Decoration_Entry(typ: String, content: List[Decoration_Range]) {
+    def json: JSON.T = JSON.Object("type" -> typ, "content" -> content.map(_.json))
+  }
+
+  sealed case class Decoration(entries: List[Decoration_Entry]) {
+    def json_entries: JSON.T = entries.map(_.json)
+    def notification(file: JFile): JSON.T =
       Notification("PIDE/decoration",
-        JSON.Object(
-          "uri" -> Url.print_file(file),
-          "entries" -> decorations.map(decoration => JSON.Object(
-            "type" -> decoration._1,
-            "content" -> decoration._2.map(_.json))
-          ))
-      )
+        JSON.Object("uri" -> Url.print_file(file), "entries" -> json_entries))
+  }
+
+  object Decoration_Request {
+    def unapply(json: JSON.T): Option[JFile] =
+      json match {
+        case Notification("PIDE/decoration_request", Some(params)) =>
+          for (uri <- JSON.string(params, "uri") if Url.is_wellformed_file(uri))
+            yield Url.absolute_file(uri)
+        case _ => None
+      }
   }
 
 
@@ -497,8 +585,7 @@ object LSP {
         case Notification("PIDE/caret_update", Some(params)) =>
           val caret =
             for {
-              uri <- JSON.string(params, "uri")
-              if Url.is_wellformed_file(uri)
+              uri <- JSON.string(params, "uri") if Url.is_wellformed_file(uri)
               pos <- Position.unapply(params)
             } yield (Url.absolute_file(uri), pos)
           Some(caret)
@@ -510,17 +597,34 @@ object LSP {
   /* dynamic output */
 
   object Dynamic_Output {
-    def apply(content: String): JSON.T =
-      Notification("PIDE/dynamic_output", JSON.Object("content" -> content))
+    def apply(content: String, decorations: Option[Decoration] = None): JSON.T =
+      Notification("PIDE/dynamic_output",
+        JSON.Object("content" -> content) ++
+        JSON.optional("decorations" -> decorations.map(_.json_entries)))
+  }
+
+  object Output_Set_Margin {
+    def unapply(json: JSON.T): Option[Double] =
+      json match {
+        case Notification("PIDE/output_set_margin", Some(params)) =>
+          JSON.double(params, "margin")
+        case _ => None
+      }
   }
 
 
   /* state output */
 
   object State_Output {
-    def apply(id: Counter.ID, content: String, auto_update: Boolean): JSON.T =
+    def apply(
+       id: Counter.ID,
+       content: String,
+       auto_update: Boolean,
+       decorations: Option[Decoration] = None
+    ): JSON.T =
       Notification("PIDE/state_output",
-        JSON.Object("id" -> id, "content" -> content, "auto_update" -> auto_update))
+        JSON.Object("id" -> id, "content" -> content, "auto_update" -> auto_update) ++
+        JSON.optional("decorations" -> decorations.map(_.json_entries)))
   }
 
   class State_Id_Notification(name: String) {
@@ -531,7 +635,11 @@ object LSP {
       }
   }
 
-  object State_Init extends Notification0("PIDE/state_init")
+  object State_Init extends Request0("PIDE/state_init") {
+    def reply(id: Id, state_id: Counter.ID): JSON.T =
+      ResponseMessage(id, Some(JSON.Object("state_id" -> state_id)))
+  }
+
   object State_Exit extends State_Id_Notification("PIDE/state_exit")
   object State_Locate extends State_Id_Notification("PIDE/state_locate")
   object State_Update extends State_Id_Notification("PIDE/state_update")
@@ -548,6 +656,18 @@ object LSP {
       }
   }
 
+  object State_Set_Margin {
+    def unapply(json: JSON.T): Option[(Counter.ID, Double)] =
+      json match {
+        case Notification("PIDE/state_set_margin", Some(params)) =>
+          for {
+            id <- JSON.long(params, "id")
+            margin <- JSON.double(params, "margin")
+          } yield (id, margin)
+        case _ => None
+      }
+  }
+
 
   /* preview */
 
@@ -556,21 +676,111 @@ object LSP {
       json match {
         case Notification("PIDE/preview_request", Some(params)) =>
           for {
-            uri <- JSON.string(params, "uri")
-            if Url.is_wellformed_file(uri)
+            uri <- JSON.string(params, "uri") if Url.is_wellformed_file(uri)
             column <- JSON.int(params, "column")
           } yield (Url.absolute_file(uri), column)
         case _ => None
       }
-  }
 
-  object Preview_Response {
-    def apply(file: JFile, column: Int, label: String, content: String): JSON.T =
+    def reply(file: JFile, column: Int, label: String, content: String): JSON.T =
       Notification("PIDE/preview_response",
         JSON.Object(
           "uri" -> Url.print_file(file),
           "column" -> column,
           "label" -> label,
           "content" -> content))
+  }
+
+
+  /* abbrevs */
+
+  object Abbrevs_Request extends Notification0("PIDE/abbrevs_request") {
+    def reply(abbrevs: List[(String, String)]): JSON.T =
+      Notification("PIDE/abbrevs_response",
+        JSON.Object("abbrevs" -> (for ((a, b) <- abbrevs) yield List(a, b))))
+  }
+
+
+  /* documentation */
+
+  object Documentation_Request
+    extends Notification0("PIDE/documentation_request")
+
+  object Doc_Entry {
+    def apply(entry: Doc.Entry): JSON.T =
+      JSON.Object(
+        "print_html" -> entry.print(style = GUI.Style_HTML),
+        "platform_path" -> File.platform_path(entry.path))
+  }
+
+  object Doc_Section {
+    def apply(section: Doc.Section): JSON.T =
+      JSON.Object(
+        "title" -> section.title,
+        "important" -> section.important,
+        "entries" -> section.entries.map(Doc_Entry.apply))
+  }
+
+  object Documentation_Response {
+    def apply(doc_contents: Doc.Contents): JSON.T =
+      Notification("PIDE/documentation_response",
+        JSON.Object("sections" -> doc_contents.sections.map(Doc_Section.apply)))
+  }
+
+
+  /* sledgehammer */
+
+  object Sledgehammer_Provers_Request
+    extends Notification0("PIDE/sledgehammer_provers_request")
+
+  object Sledgehammer_Provers_Response {
+    def apply(provers: String): JSON.T =
+      Notification("PIDE/sledgehammer_provers_response", JSON.Object("provers" -> provers))
+  }
+
+  object Sledgehammer_Request {
+    def unapply(json: JSON.T): Option[List[String]] =
+      json match {
+        case Notification("PIDE/sledgehammer_request", Some(params)) =>
+          for {
+            provers <- JSON.string(params, "provers")
+            isar <- JSON.bool(params, "isar")
+            try0 <- JSON.bool(params, "try0")
+          } yield List(provers, isar.toString, try0.toString)
+        case _ => None
+      }
+  }
+
+  object Sledgehammer_Status {
+    def apply(message: String): JSON.T =
+      Notification("PIDE/sledgehammer_status", JSON.Object("message" -> message))
+  }
+
+  object Sledgehammer_Output {
+    def apply(content: String): JSON.T =
+      Notification("PIDE/sledgehammer_output", JSON.Object("content" -> content))
+  }
+
+  object Sledgehammer_Cancel extends Notification0("PIDE/sledgehammer_cancel")
+
+  object Sledgehammer_Locate extends Notification0("PIDE/sledgehammer_locate")
+
+  object Sledgehammer_Sendback {
+    def unapply(json: JSON.T): Option[String] =
+      json match {
+        case Notification("PIDE/sledgehammer_sendback", Some(params)) =>
+          JSON.string(params, "text")
+        case _ => None
+      }
+  }
+
+  object Sledgehammer_Insert {
+    def apply(node_pos: Line.Node_Position, text: String): JSON.T =
+      Notification("PIDE/sledgehammer_insert",
+        JSON.Object(
+          "uri" -> Url.print_file_name(node_pos.name),
+          "line" -> node_pos.pos.line,
+          "character" -> node_pos.pos.column,
+          "text" -> text))
   }
 }

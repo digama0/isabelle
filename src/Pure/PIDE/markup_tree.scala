@@ -76,7 +76,7 @@ object Markup_Tree {
       case List(XML.Wrapped_Elem(markup1, body1, body2)) =>
         strip_elems(XML.Elem(markup1, body1) :: elems, body2)
       case List(XML.Elem(markup1, body1)) =>
-        strip_elems(XML.Elem(markup1, Nil) :: elems, body1)
+        strip_elems(XML.elem(markup1) :: elems, body1)
       case _ => (elems, body)
     }
 
@@ -232,7 +232,7 @@ final class Markup_Tree private(val branches: Markup_Tree.Branches.T) {
   def to_XML(root_range: Text.Range, text: CharSequence, elements: Markup.Elements): XML.Body = {
     def make_text(start: Text.Offset, stop: Text.Offset): XML.Body =
       if (start == stop) Nil
-      else List(XML.Text(text.subSequence(start, stop).toString))
+      else List(XML.Text(Library.make_string(text, start, stop)))
 
     def make_elems(rev_markups: List[XML.Elem], body: XML.Body): XML.Body =
       rev_markups.foldLeft(body) {

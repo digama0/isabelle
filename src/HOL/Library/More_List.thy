@@ -14,7 +14,7 @@ where
 lemma strip_while_rev [simp]:
   "strip_while P (rev xs) = rev (dropWhile P xs)"
   by (simp add: strip_while_def)
-  
+
 lemma strip_while_Nil [simp]:
   "strip_while P [] = []"
   by (simp add: strip_while_def)
@@ -273,15 +273,15 @@ lemma nth_default_take_eq:
     (if n < m then nth_default dflt xs n else dflt)"
   by (simp add: nth_default_def)
 
-lemma in_enumerate_iff_nth_default_eq:
-  "x \<noteq> dflt \<Longrightarrow> (n, x) \<in> set (enumerate 0 xs) \<longleftrightarrow> nth_default dflt xs n = x"
-  by (auto simp add: nth_default_def in_set_conv_nth enumerate_eq_zip)
+lemma in_indexed_from_iff_nth_default_eq:
+  "x \<noteq> dflt \<Longrightarrow> (n, x) \<in> set (indexed_from 0 xs) \<longleftrightarrow> nth_default dflt xs n = x"
+  by (auto simp add: nth_default_def in_set_conv_nth indexed_from_eq_zip)
 
 lemma last_conv_nth_default:
   assumes "xs \<noteq> []"
   shows "last xs = nth_default dflt xs (length xs - 1)"
   using assms by (simp add: nth_default_def last_conv_nth)
-  
+
 lemma nth_default_map_eq:
   "f dflt' = dflt \<Longrightarrow> nth_default dflt (map f xs) n = f (nth_default dflt' xs n)"
   by (simp add: nth_default_def)
@@ -291,9 +291,9 @@ lemma finite_nth_default_neq_default [simp]:
   by (simp add: nth_default_def)
 
 lemma sorted_list_of_set_nth_default:
-  "sorted_list_of_set {k. nth_default dflt xs k \<noteq> dflt} = map fst (filter (\<lambda>(_, x). x \<noteq> dflt) (enumerate 0 xs))"
+  "sorted_list_of_set {k. nth_default dflt xs k \<noteq> dflt} = map fst (filter (\<lambda>(_, x). x \<noteq> dflt) (indexed_from 0 xs))"
   by (rule sorted_distinct_set_unique) (auto simp add: nth_default_def in_set_conv_nth
-    sorted_filter distinct_map_filter enumerate_eq_zip intro: rev_image_eqI)
+    sorted_filter distinct_map_filter indexed_from_eq_zip intro: rev_image_eqI)
 
 lemma map_nth_default:
   "map (nth_default x xs) [0..<length xs] = xs"
@@ -332,15 +332,18 @@ lemma nth_default_eq_iff:
   "nth_default dflt xs = nth_default dflt ys
      \<longleftrightarrow> strip_while (HOL.eq dflt) xs = strip_while (HOL.eq dflt) ys" (is "?P \<longleftrightarrow> ?Q")
 proof
-  let ?xs = "strip_while (HOL.eq dflt) xs" and ?ys = "strip_while (HOL.eq dflt) ys"
+  let ?strip_while = \<open>strip_while (HOL.eq dflt)\<close>
+  let ?xs = "?strip_while xs"
+  let ?ys = "?strip_while ys"
   assume ?P
   then have eq: "nth_default dflt ?xs = nth_default dflt ?ys"
     by simp
   have len: "length ?xs = length ?ys"
   proof (rule ccontr)
-    assume len: "length ?xs \<noteq> length ?ys"
+    assume neq: "\<not> ?thesis"
     { fix xs ys :: "'a list"
-      let ?xs = "strip_while (HOL.eq dflt) xs" and ?ys = "strip_while (HOL.eq dflt) ys"
+      let ?xs = "?strip_while xs"
+      let ?ys = "?strip_while ys"
       assume eq: "nth_default dflt ?xs = nth_default dflt ?ys"
       assume len: "length ?xs < length ?ys"
       then have "length ?ys > 0" by arith
@@ -354,8 +357,8 @@ proof
         using eq by simp
       moreover from len have "length ?ys - 1 \<ge> length ?xs" by simp
       ultimately have False by (simp only: nth_default_beyond) simp
-    } 
-    from this [of xs ys] this [of ys xs] len eq show False
+    }
+    from this [of xs ys] this [of ys xs] neq eq show False
       by (auto simp only: linorder_class.neq_iff)
   qed
   then show ?Q

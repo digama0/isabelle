@@ -1,10 +1,14 @@
 (*  Title:      HOL/Codegenerator_Test/Code_Test_Scala.thy
     Author:     Andreas Lochbihler, ETH Zurich
-
-Test case for test_code on Scala
 *)
 
-theory Code_Test_Scala imports  "HOL-Library.Code_Test" Code_Lazy_Test begin
+theory Code_Test_Scala
+imports
+  "HOL-Library.Code_Test"
+  Code_Lazy_Test
+begin
+
+text \<open>Test cases for \<^text>\<open>test_code\<close>\<close>
 
 test_code "14 + 7 * -12 = (140 div -2 :: integer)" in Scala
 

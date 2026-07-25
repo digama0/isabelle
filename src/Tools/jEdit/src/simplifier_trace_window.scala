@@ -6,19 +6,17 @@ Trace window with tree-style view of the simplifier trace.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
 import scala.annotation.tailrec
 import scala.collection.immutable.SortedMap
-import scala.swing.{BorderPanel, Component, Dimension, Frame, Label, TextField}
-import scala.swing.event.{Key, KeyPressed}
+import scala.swing.{BorderPanel, Component, Dimension, Frame}
 import scala.util.matching.Regex
 
 import java.awt.BorderLayout
 import java.awt.event.{ComponentEvent, ComponentAdapter}
-
-import javax.swing.SwingUtilities
 
 import org.gjt.sp.jedit.View
 
@@ -41,9 +39,6 @@ private object Simplifier_Trace_Window {
     val parent = None
     val interesting = true
     val markup = ""
-
-    def format: XML.Body =
-      Pretty.separate(tree_children.flatMap(_.format))
   }
 
   final class Elem_Tree(data: Simplifier_Trace.Item.Data, val parent: Option[Trace_Tree])
@@ -59,7 +54,7 @@ private object Simplifier_Trace_Window {
     private def body_contains(regex: Regex, body: XML.Body): Boolean =
       body.exists(tree => regex.findFirstIn(XML.content(tree)).isDefined)
 
-    def format: Option[XML.Tree] = {
+    def format: Option[XML.Elem] = {
       def format_hint(data: Simplifier_Trace.Item.Data): XML.Tree =
         Pretty.block(Pretty.separate(XML.Text(data.text) :: data.content))
 
@@ -67,12 +62,10 @@ private object Simplifier_Trace_Window {
         children.values.toList.collect {
           case Left(data) => Some(format_hint(data))
           case Right(tree) if tree.interesting => tree.format
-        }.flatten.map(item =>
-          XML.Elem(Markup(Markup.ITEM, Nil), List(item))
-        )
+        }.flatten.map(item => XML.elem(Markup.ITEM, List(item)))
 
       val all = XML.Text(data.text) :: data.content ::: bodies
-      val res = XML.Elem(Markup(Markup.TEXT_FOLD, Nil), List(Pretty.block(Pretty.separate(all))))
+      val res = XML.elem(Markup.TEXT_FOLD, List(Pretty.block(Pretty.separate(all))))
 
       if (bodies != Nil)
         Some(res)
@@ -104,7 +97,7 @@ private object Simplifier_Trace_Window {
             else if (head.markup == Markup.SIMP_TRACE_IGNORE) {
               parent.parent match {
                 case None =>
-                  Output.error_message(
+                  GUI.log.error_message(
                     "Simplifier_Trace_Window: malformed ignore message with parent " + head.parent)
                 case Some(tree) =>
                   tree.children -= head.parent
@@ -118,7 +111,7 @@ private object Simplifier_Trace_Window {
             }
 
           case None =>
-            Output.error_message("Simplifier_Trace_Window: unknown parent " + head.parent)
+            GUI.log.error_message("Simplifier_Trace_Window: unknown parent " + head.parent)
         }
     }
 
@@ -133,7 +126,6 @@ class Simplifier_Trace_Window(
   GUI_Thread.require {}
 
   private val pretty_text_area = new Pretty_Text_Area(view)
-  private val zoom = new Font_Info.Zoom { override def changed(): Unit = do_paint() }
 
   size = new Dimension(500, 500)
   contents = new BorderPanel {
@@ -149,25 +141,22 @@ class Simplifier_Trace_Window(
       new Simplifier_Trace_Window.Root_Tree(0)
   }
 
-  do_update()
+  handle_update()
   open()
-  do_paint()
+  handle_resize()
 
-  def do_update(): Unit = {
-    val xml = tree.format
-    pretty_text_area.update(snapshot, Command.Results.empty, xml)
+  def handle_update(): Unit = {
+    val output = tree.tree_children.flatMap(_.format)
+    pretty_text_area.update(snapshot, Command.Results.empty, output)
   }
 
-  def do_paint(): Unit =
-    GUI_Thread.later { pretty_text_area.zoom(zoom) }
-
-  def handle_resize(): Unit = do_paint()
+  def handle_resize(): Unit = pretty_text_area.zoom()
 
 
   /* resize */
 
   private val delay_resize =
-    Delay.first(PIDE.session.update_delay, gui = true) { handle_resize() }
+    GUI.Delay.first(PIDE.session.update_delay) { handle_resize() }
 
   peer.addComponentListener(new ComponentAdapter {
     override def componentResized(e: ComponentEvent): Unit = delay_resize.invoke()
@@ -177,8 +166,7 @@ class Simplifier_Trace_Window(
 
   /* controls */
 
-  private val controls =
-    Wrap_Panel(List(pretty_text_area.search_label, pretty_text_area.search_field, zoom))
+  private val controls = Wrap_Panel(pretty_text_area.search_zoom_components)
 
   peer.add(controls.peer, BorderLayout.NORTH)
 }

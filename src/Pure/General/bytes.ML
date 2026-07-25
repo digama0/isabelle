@@ -36,6 +36,7 @@ sig
   val split_lines: T -> string list
   val trim_split_lines: T -> string list
   val cat_lines: string list -> T
+  val terminate_lines: string list -> T
   val read_block: int -> BinIO.instream -> string
   val read_stream: int -> BinIO.instream -> T
   val write_stream: BinIO.outstream -> T -> unit
@@ -48,7 +49,7 @@ struct
 
 (* primitive operations *)
 
-val chunk_size = 65000;
+val chunk_size = 16384;
 
 abstype T = Bytes of
   {buffer: string list, chunks: string list, m: int (*buffer size*), n: int (*chunks size*)}
@@ -65,7 +66,7 @@ fun eq (Bytes {buffer, chunks, m, n}, Bytes {buffer = buffer', chunks = chunks',
 fun contents (Bytes {buffer, chunks, ...}) =
   rev (chunks |> not (null buffer) ? cons (compact buffer));
 
-val contents_blob = contents #> XML.blob;
+val contents_blob = contents #> map XML.Text;
 
 val content = implode o contents;
 
@@ -190,6 +191,8 @@ val trim_split_lines = trim_line #> split_lines #> map Library.trim_line;
 
 fun cat_lines lines = build (fold add (separate "\n" lines));
 
+fun terminate_lines lines = build (fold (fn line => add line #> add "\n") lines);
+
 
 (* IO *)
 
@@ -210,14 +213,5 @@ fun write_stream stream bytes =
 fun read path = File_Stream.open_input (fn stream => read_stream ~1 stream) path;
 
 fun write path bytes = File_Stream.open_output (fn stream => write_stream stream bytes) path;
-
-
-(* ML pretty printing *)
-
-val _ =
-  ML_system_pp (fn _ => fn _ => fn bytes =>
-    PolyML.PrettyString
-     (if is_empty bytes then "Bytes.empty"
-      else "Bytes {size = " ^ string_of_int (size bytes) ^ "}"))
 
 end;

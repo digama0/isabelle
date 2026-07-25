@@ -13,9 +13,10 @@ import java.sql.SQLException
 object Store {
   def apply(
     options: Options,
+    private_dir: Option[Path] = None,
     build_cluster: Boolean = false,
-    cache: Term.Cache = Term.Cache.make()
-  ): Store = new Store(options, build_cluster, cache)
+    cache: Rich_Text.Cache = Rich_Text.Cache.make()
+  ): Store = new Store(options, private_dir, build_cluster, cache)
 
 
   /* file names */
@@ -43,24 +44,94 @@ object Store {
         error("Missing heap image for session " + quote(name) + " -- expected in:\n" +
           cat_lines(dirs.map(dir => "  " + File.standard_path(dir))))
 
-    def heap_digest(): Option[SHA1.Digest] =
+    def heap_digest(): Option[Message_Digest.T] =
       heap.flatMap(ML_Heap.read_file_digest)
+
+    def heap_size: Space =
+      heap match {
+        case None => Space.zero
+        case Some(path) => File.space(path)
+      }
 
     override def toString: String = name
   }
 
 
 
-  /* session build info */
+  /* session build info (database) vs. build output (file-system) */
 
   sealed case class Build_Info(
-    sources: SHA1.Shasum,
-    input_heaps: SHA1.Shasum,
-    output_heap: SHA1.Shasum,
+    sources: Shasum,
+    input_heaps: Shasum,
+    output_heap: Shasum,
     return_code: Int,
     uuid: String
   ) {
     def ok: Boolean = return_code == 0
+  }
+
+  object Build_Output {
+    val none: Build_Output =
+      new Build_Output(None, Shasum.none, Shasum.none, Shasum.none)
+
+    def make(
+      build: Build_Info,
+      sources_shasum: Shasum,
+      input_shasum: Shasum,
+      output_shasum: Shasum): Build_Output =
+        new Build_Output(Some(build), sources_shasum, input_shasum, output_shasum)
+  }
+
+  class Build_Output private [Store](
+    val stored: Option[Build_Info],
+    val sources_shasum: Shasum,
+    val input_shasum: Shasum,
+    val output_shasum: Shasum
+  ) {
+    def stored_shasum: Shasum =
+      stored match {
+        case None => Shasum.none
+        case Some(build) => build.sources ::: build.input_heaps ::: build.output_heap
+      }
+
+    def shasum: Shasum = sources_shasum ::: input_shasum ::: output_shasum
+    override def toString: String = shasum.toString
+
+    def current(
+      build_thorough: Boolean = false,
+      fresh_build: Boolean = false,
+      soft_build: Boolean = false,
+      store_heap: Boolean = false,
+      build_debug: Boolean = false,
+      progress: Progress = new Progress
+    ): Boolean = {
+      stored match {
+        case Some(build) =>
+          def test(what: String, shasum1: Shasum, shasum2: Shasum): Boolean =
+            if (build_debug) {
+              shasum1 diff shasum2 match {
+                case Some((a, b)) =>
+                  progress.echo("differing " + what + ":\n" +
+                    a.print(indent = 2) + "\nvs.\n" + b.print(indent = 2))
+                  false
+                case None => true
+              }
+            }
+            else shasum1 == shasum2
+
+          def trim(shasum: Shasum): Shasum =
+            if (build_thorough) shasum else shasum.filter(s => !Sessions.detect_build_prefs(s))
+
+          !fresh_build &&
+            build.ok &&
+            test("sources", trim(build.sources), trim(sources_shasum)) &&
+            (soft_build ||
+              test("input heaps", build.input_heaps, input_shasum) &&
+              test("output heap", build.output_heap, output_shasum) &&
+              !(store_heap && output_shasum.is_empty))
+        case None => false
+      }
+    }
   }
 
 
@@ -68,7 +139,7 @@ object Store {
 
   sealed case class Source_File(
     name: String,
-    digest: SHA1.Digest,
+    digest: Message_Digest.T,
     compressed: Boolean,
     body: Bytes,
     cache: Compress.Cache
@@ -167,8 +238,14 @@ object Store {
       db: SQL.Database, name: String, column: SQL.Column, cache: Term.Cache
     ): List[Properties.T] = Properties.uncompress(read_bytes(db, name, column), cache = cache)
 
-    def read_session_timing(db: SQL.Database, name: String, cache: Term.Cache): Properties.T =
-      Properties.decode(read_bytes(db, name, Session_Info.session_timing), cache = cache)
+    def read_session_timing(
+      db: SQL.Database,
+      name: String,
+      cache: Term.Cache
+    ): Build_Log.Session_Timing = {
+      Build_Log.Session_Timing(
+        Properties.decode(read_bytes(db, name, Session_Info.session_timing), cache = cache))
+    }
 
     def read_command_timings(db: SQL.Database, name: String): Bytes =
       read_bytes(db, name, Session_Info.command_timings)
@@ -190,12 +267,12 @@ object Store {
         Session_Info.table.select(sql = Session_Info.session_name.where_equal(name)),
         { res =>
           val uuid =
-            try { Option(res.string(Session_Info.uuid)).getOrElse("") }
+            try { proper_value(res.string(Session_Info.uuid)).getOrElse("") }
             catch { case _: SQLException => "" }
           Store.Build_Info(
-            SHA1.fake_shasum(res.string(Session_Info.sources)),
-            SHA1.fake_shasum(res.string(Session_Info.input_heaps)),
-            SHA1.fake_shasum(res.string(Session_Info.output_heap)),
+            Shasum.fake(res.string(Session_Info.sources)),
+            Shasum.fake(res.string(Session_Info.input_heaps)),
+            Shasum.fake(res.string(Session_Info.output_heap)),
             res.int(Session_Info.return_code),
             uuid)
         })
@@ -205,7 +282,7 @@ object Store {
         Session_Info.table.select(List(Session_Info.uuid),
           sql = Session_Info.session_name.where_equal(name)),
         { res =>
-            try { Option(res.string(Session_Info.uuid)).getOrElse("") }
+            try { proper_value(res.string(Session_Info.uuid)).getOrElse("") }
             catch { case _: SQLException => "" }
         }).getOrElse("")
 
@@ -219,7 +296,7 @@ object Store {
       db.execute_statement(Session_Info.table.insert(), body =
         { stmt =>
           stmt.string(1) = session_name
-          stmt.bytes(2) = Properties.encode(build_log.session_timing)
+          stmt.bytes(2) = Properties.encode(build_log.session_timing.props)
           stmt.bytes(3) = Properties.compress(build_log.command_timings, cache = cache)
           stmt.bytes(4) = Properties.compress(build_log.theory_timings, cache = cache)
           stmt.bytes(5) = Properties.compress(build_log.ml_statistics, cache = cache)
@@ -242,7 +319,7 @@ object Store {
         for (source_file <- source_files) yield { (stmt: SQL.Statement) =>
           stmt.string(1) = session_name
           stmt.string(2) = source_file.name
-          stmt.string(3) = source_file.digest.toString
+          stmt.string(3) = source_file.digest.rep
           stmt.bool(4) = source_file.compressed
           stmt.bytes(5) = source_file.body
         })
@@ -260,7 +337,7 @@ object Store {
         List.from[Source_File],
         { res =>
           val res_name = res.string(Sources.name)
-          val digest = SHA1.fake_digest(res.string(Sources.digest))
+          val digest = Message_Digest.parse(res.string(Sources.digest))
           val compressed = res.bool(Sources.compressed)
           val body = res.bytes(Sources.body)
           Source_File(res_name, digest, compressed, body, cache)
@@ -276,34 +353,71 @@ object Store {
 
 class Store private(
     val options: Options,
+    private_dir: Option[Path],
     val build_cluster: Boolean,
-    val cache: Term.Cache
+    val cache: Rich_Text.Cache
   ) {
   store =>
 
   override def toString: String = "Store(output_dir = " + output_dir.absolute + ")"
 
 
-  /* directories */
+  /* ML system settings */
 
-  val system_output_dir: Path = Path.explode("$ISABELLE_HEAPS_SYSTEM/$ML_IDENTIFIER")
-  val user_output_dir: Path = Path.explode("$ISABELLE_HEAPS/$ML_IDENTIFIER")
+  val ml_settings: ML_Settings = ML_Settings(options)
+
+  val private_output_dir: Option[Path] =
+    private_dir.map(dir => dir + Path.basic("heaps") + Path.basic(ml_settings.ml_identifier))
+
+  val system_output_dir: Path =
+    Path.variable("ISABELLE_HEAPS_SYSTEM") + Path.basic(ml_settings.ml_identifier)
+
+  val user_output_dir: Path =
+    Path.variable("ISABELLE_HEAPS") + Path.basic(ml_settings.ml_identifier)
+
+
+  /* source files of Isabelle/ML bootstrap */
+
+  def source_file(raw_name: String): Option[String] = {
+    if (Path.is_wellformed(raw_name)) {
+      if (Path.is_valid(raw_name)) {
+        def check(p: Path): Option[Path] = if (p.is_file) Some(p) else None
+
+        val path = Path.explode(raw_name)
+        val path1 =
+          if (path.is_absolute || path.is_current) check(path)
+          else {
+            check(Path.explode("~~/src/Pure") + path) orElse {
+              val ml_sources = ml_settings.ml_sources
+              if (ml_sources.is_dir) check(ml_sources + path) else None
+            }
+          }
+        Some(File.platform_path(path1 getOrElse path))
+      }
+      else None
+    }
+    else Some(raw_name)
+  }
+
+
+  /* directories */
 
   def system_heaps: Boolean = options.bool("system_heaps")
 
   val output_dir: Path =
-    if (system_heaps) system_output_dir else user_output_dir
+    private_output_dir.getOrElse(if (system_heaps) system_output_dir else user_output_dir)
 
   val input_dirs: List[Path] =
-    if (system_heaps) List(system_output_dir)
-    else List(user_output_dir, system_output_dir)
+    private_output_dir.toList :::
+      (if (system_heaps) List(system_output_dir) else List(user_output_dir, system_output_dir))
 
   val clean_dirs: List[Path] =
-    if (system_heaps) List(user_output_dir, system_output_dir)
-    else List(user_output_dir)
+    private_output_dir.toList :::
+      (if (system_heaps) List(user_output_dir, system_output_dir) else List(user_output_dir))
 
   def presentation_dir: Path =
-    if (system_heaps) Path.explode("$ISABELLE_BROWSER_INFO_SYSTEM")
+    if (private_dir.isDefined) private_dir.get + Path.basic("browser_info")
+    else if (system_heaps) Path.explode("$ISABELLE_BROWSER_INFO_SYSTEM")
     else Path.explode("$ISABELLE_BROWSER_INFO")
 
 
@@ -315,7 +429,7 @@ class Store private(
   def output_log_gz(name: String): Path = output_dir + Store.log_gz(name)
 
 
-  /* session */
+  /* session heaps */
 
   def get_session(name: String): Store.Session = {
     val heap = input_dirs.view.map(_ + Store.heap(name)).find(_.is_file)
@@ -329,20 +443,37 @@ class Store private(
     new Store.Session(name, heap, log_db, List(output_dir))
   }
 
+  def session_heaps(
+    session_background: Sessions.Background,
+    logic: String = ""
+  ): List[Path] = {
+    val logic_name = Isabelle_System.default_logic(logic)
 
-  /* heap */
+    session_background.sessions_structure.selection(logic_name).
+      build_requirements(List(logic_name)).
+      map(name => store.get_session(name).the_heap)
+  }
 
-  def heap_shasum(database_server: Option[SQL.Database], name: String): SHA1.Shasum = {
-    def get_database: Option[SHA1.Digest] = {
+
+  /* heap shasum */
+
+  def make_shasum(ancestors: List[Shasum]): Shasum =
+    if (ancestors.isEmpty) Shasum.make_meta_info(SHA1.digest(ml_settings.polyml_uuid))
+    else Shasum.flat(ancestors)
+
+  def heap_shasum(database_server: Option[SQL.Database], name: String): Shasum = {
+    def from_database: Option[Message_Digest.T] = {
       for {
         db <- database_server
         digest <- ML_Heap.read_digests(db, List(name)).valuesIterator.nextOption()
       } yield digest
     }
+    def from_session: Option[Message_Digest.T] =
+      get_session(name).heap_digest()
 
-    get_database orElse get_session(name).heap_digest() match {
-      case Some(digest) => SHA1.shasum(digest, name)
-      case None => SHA1.no_shasum
+    from_database orElse from_session match {
+      case Some(digest) => Shasum.make(digest, name)
+      case None => Shasum.none
     }
   }
 
@@ -483,34 +614,25 @@ class Store private(
   }
 
   def check_output(
-    database_server: Option[SQL.Database],
     name: String,
-    sources_shasum: SHA1.Shasum,
-    input_shasum: SHA1.Shasum,
-    build_thorough: Boolean = false,
-    fresh_build: Boolean = false,
-    store_heap: Boolean = false
-  ): (Boolean, SHA1.Shasum) = {
-    def no_check: (Boolean, SHA1.Shasum) = (false, SHA1.no_shasum)
-
-    def check(db: SQL.Database): (Boolean, SHA1.Shasum) =
+    opened_db: Option[SQL.Database] = None,
+    sources_shasum: Shasum = Shasum.none,
+    input_shasum: Shasum = Shasum.none
+  ): Store.Build_Output = {
+    def check(db: SQL.Database): Store.Build_Output =
       read_build(db, name) match {
         case Some(build) =>
           val output_shasum = heap_shasum(if (db.is_postgresql) Some(db) else None, name)
-          val current =
-            !fresh_build &&
-              build.ok &&
-              Sessions.eq_sources(build_thorough, build.sources, sources_shasum) &&
-              build.input_heaps == input_shasum &&
-              build.output_heap == output_shasum &&
-              !(store_heap && output_shasum.is_empty)
-          (current, output_shasum)
-        case None => no_check
+          Store.Build_Output.make(build,
+            sources_shasum = sources_shasum,
+            input_shasum = input_shasum,
+            output_shasum = output_shasum)
+        case None => Store.Build_Output.none
       }
 
-    database_server match {
-      case Some(db) => if (session_info_exists(db)) check(db) else no_check
-      case None => using_option(try_open_database(name))(check) getOrElse no_check
+    opened_db match {
+      case Some(db) => if (session_info_exists(db)) check(db) else Store.Build_Output.none
+      case None => using_option(try_open_database(name))(check) getOrElse Store.Build_Output.none
     }
   }
 
@@ -558,7 +680,7 @@ class Store private(
     }
   }
 
-  def read_session_timing(db: SQL.Database, session: String): Properties.T =
+  def read_session_timing(db: SQL.Database, session: String): Build_Log.Session_Timing =
     Store.private_data.transaction_lock(db, label = "Store.read_session_timing") {
       Store.private_data.read_session_timing(db, session, cache)
     }

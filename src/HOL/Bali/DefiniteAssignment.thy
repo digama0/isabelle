@@ -428,15 +428,15 @@ qed
 subsection \<open>Lifting set operations to range of tables (map to a set)\<close>
 
 definition
-  union_ts :: "('a,'b) tables \<Rightarrow> ('a,'b) tables \<Rightarrow> ('a,'b) tables" ("_ \<Rightarrow>\<union> _" [67,67] 65)
+  union_ts :: "('a,'b) tables \<Rightarrow> ('a,'b) tables \<Rightarrow> ('a,'b) tables" (\<open>_ \<Rightarrow>\<union> _\<close> [67,67] 65)
   where "A \<Rightarrow>\<union> B = (\<lambda> k. A k \<union> B k)"
 
 definition
-  intersect_ts :: "('a,'b) tables \<Rightarrow> ('a,'b) tables \<Rightarrow> ('a,'b) tables" ("_ \<Rightarrow>\<inter>  _" [72,72] 71)
+  intersect_ts :: "('a,'b) tables \<Rightarrow> ('a,'b) tables \<Rightarrow> ('a,'b) tables" (\<open>_ \<Rightarrow>\<inter>  _\<close> [72,72] 71)
   where "A \<Rightarrow>\<inter>  B = (\<lambda>k. A k \<inter> B k)"
 
 definition
-  all_union_ts :: "('a,'b) tables \<Rightarrow> 'b set \<Rightarrow> ('a,'b) tables" (infixl "\<Rightarrow>\<union>\<^sub>\<forall>" 40)
+  all_union_ts :: "('a,'b) tables \<Rightarrow> 'b set \<Rightarrow> ('a,'b) tables" (infixl \<open>\<Rightarrow>\<union>\<^sub>\<forall>\<close> 40)
   where "(A \<Rightarrow>\<union>\<^sub>\<forall> B) = (\<lambda> k. A k \<union> B)"
   
 subsubsection \<open>Binary union of tables\<close>
@@ -519,7 +519,7 @@ definition
 *)
 
 definition
-  range_inter_ts :: "('a,'b) tables \<Rightarrow> 'b set" ("\<Rightarrow>\<Inter>_" 80)
+  range_inter_ts :: "('a,'b) tables \<Rightarrow> 'b set" (\<open>\<Rightarrow>\<Inter>_\<close> 80)
   where "\<Rightarrow>\<Inter>A = {x |x. \<forall> k. x \<in> A k}"
 
 text \<open>
@@ -532,7 +532,7 @@ distinguish boolean and other expressions.
 \<close>
 
 inductive
-  da :: "env \<Rightarrow> lname set \<Rightarrow> term \<Rightarrow> assigned \<Rightarrow> bool" ("_\<turnstile> _ \<guillemotright>_\<guillemotright> _" [65,65,65,65] 71)
+  da :: "env \<Rightarrow> lname set \<Rightarrow> term \<Rightarrow> assigned \<Rightarrow> bool" (\<open>_\<turnstile> _ \<guillemotright>_\<guillemotright> _\<close> [65,65,65,65] 71)
 where
   Skip: "Env\<turnstile> B \<guillemotright>\<langle>Skip\<rangle>\<guillemotright> \<lparr>nrm=B,brk=\<lambda> l. UNIV\<rparr>"
 
@@ -809,7 +809,7 @@ where
 declare inj_term_sym_simps [simp]
 declare assigns_if.simps [simp del]
 declare split_paired_All [simp del] split_paired_Ex [simp del]
-setup \<open>map_theory_simpset (fn ctxt => ctxt delloop "split_all_tac")\<close>
+setup \<open>Simplifier.map_theory_simpset (Simplifier.del_loop "split_all_tac")\<close>
 
 inductive_cases da_elim_cases [cases set]:
   "Env\<turnstile> B \<guillemotright>\<langle>Skip\<rangle>\<guillemotright> A" 
@@ -875,7 +875,7 @@ inductive_cases da_elim_cases [cases set]:
 declare inj_term_sym_simps [simp del]
 declare assigns_if.simps [simp]
 declare split_paired_All [simp] split_paired_Ex [simp]
-setup \<open>map_theory_simpset (fn ctxt => ctxt addloop ("split_all_tac", split_all_tac))\<close>
+setup \<open>Simplifier.map_theory_simpset (Simplifier.add_loop ("split_all_tac", split_all_tac))\<close>
 
 (* To be able to eliminate both the versions with the overloaded brackets: 
    (B \<guillemotright>\<langle>Skip\<rangle>\<guillemotright> A) and with the explicit constructor (B \<guillemotright>In1r Skip\<guillemotright> A), 
@@ -974,7 +974,7 @@ proof -
       by (elim wt_elim_cases) simp
     with BinOp.hyps
     show ?case
-      by - (cases binop, auto simp add: assignsE_const_simp)
+      by (cases binop) (auto simp add: assignsE_const_simp)
   next
     case (Cond c e1 e2)
     note hyp_c = \<open>?Boolean c \<Longrightarrow> ?Incl c\<close>
@@ -1073,12 +1073,9 @@ proof -
     then 
     have "nrm C \<inter> brk C l \<subseteq> nrm C' \<inter> brk C' l" by auto
     moreover
-    {
-      fix l'
-      from hyp_brk
-      have "rmlab l (brk C) l'  \<subseteq> rmlab l (brk C') l'"
-        by  (cases "l=l'") simp_all
-    }
+    from hyp_brk
+    have "rmlab l (brk C) l'  \<subseteq> rmlab l (brk C') l'" for l'
+      by  (cases "l=l'") simp_all
     moreover note A A'
     ultimately show ?case
       by simp
@@ -1143,20 +1140,18 @@ proof -
     have "nrm A \<subseteq> nrm A'"
       by blast
     moreover
-    { fix l'
-      have  "brk A l' \<subseteq> brk A' l'"
-      proof (cases "constVal e")
-        case None
-        with A A' C' 
-        show ?thesis
-           by (cases "l=l'") auto
-      next
-        case (Some bv)
-        with A A' C'
-        show ?thesis
-          by (cases "the_Bool bv", cases "l=l'") auto
-      qed
-    }
+    have  "brk A l' \<subseteq> brk A' l'" for l'
+    proof (cases "constVal e")
+      case None
+      with A A' C' 
+      show ?thesis
+        by (cases "l=l'") auto
+    next
+      case (Some bv)
+      with A A' C'
+      show ?thesis
+        by (cases "the_Bool bv", cases "l=l'") auto
+    qed
     ultimately show ?case
       by auto
   next
@@ -1206,11 +1201,11 @@ proof -
       by blast
     note hyp_c2 = \<open>PROP ?Hyp Env B \<langle>c2\<rangle> C2\<close>
     from da_c2' B' 
-     obtain "nrm C2 \<subseteq> nrm C2'" "(\<forall>l. brk C2 l \<subseteq> brk C2' l)"
-       by - (drule hyp_c2,auto)
-     with A A' C1'
-     show ?case
-       by auto
+    obtain "nrm C2 \<subseteq> nrm C2'" "(\<forall>l. brk C2 l \<subseteq> brk C2' l)"
+      by - (drule hyp_c2,auto)
+    with A A' C1'
+    show ?case
+      by auto
    next
      case Init thus ?case by (elim da_elim_cases) auto
    next

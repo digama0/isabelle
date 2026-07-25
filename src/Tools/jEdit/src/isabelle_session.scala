@@ -6,11 +6,11 @@ Access Isabelle session information via virtual file-system.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
 import java.awt.Component
-import java.io.InputStream
 
 import org.gjt.sp.jedit.View
 import org.gjt.sp.jedit.io.{VFS => JEdit_VFS, VFSFile}
@@ -47,7 +47,7 @@ object Isabelle_Session {
       explode_url(url, component = component) match {
         case None => null
         case Some(elems) =>
-          val sessions = JEdit_Sessions.sessions_structure()
+          val sessions = JEdit_Session.sessions_structure()
           elems match {
             case Nil =>
               sessions.relevant_chapters.sortBy(_.name).map(ch => make_entry(ch.name, is_dir = true)).toArray
@@ -82,10 +82,10 @@ object Isabelle_Session {
 
   def open_browser(view: View): Unit = {
     val path =
-      PIDE.maybe_snapshot(view) match {
+      PIDE.maybe_snapshot(view = Some(view)) match {
         case None => ""
         case Some(snapshot) =>
-          val sessions_structure = JEdit_Sessions.sessions_structure()
+          val sessions_structure = JEdit_Session.sessions_structure()
           val session = sessions_structure.theory_qualifier(snapshot.node_name)
           val chapter =
             sessions_structure.get(session) match {

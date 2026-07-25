@@ -9,7 +9,7 @@ package isabelle.vscode
 
 import isabelle._
 
-import java.io.{InputStream, OutputStream, FileOutputStream, File => JFile}
+import java.io.{InputStream, OutputStream}
 
 import scala.collection.mutable
 
@@ -17,7 +17,7 @@ import scala.collection.mutable
 class Channel(
   in: InputStream,
   out: OutputStream,
-  log: Logger = new Logger,
+  val log_file: Logger,
   verbose: Boolean = false
 ) {
   /* read message */
@@ -33,7 +33,7 @@ class Channel(
   private def read_header(): List[String] = {
     val header = new mutable.ListBuffer[String]
     var line = ""
-    while ({ line = read_line(); line != "" }) header += line
+    while ({ line = read_line(); line.nonEmpty }) header += line
     header.toList
   }
 
@@ -51,7 +51,7 @@ class Channel(
           case Value.Int(n) if n >= 0 =>
             val msg = read_content(n)
             val json = JSON.parse(msg)
-            LSP.Message.log("IN: " + n, json, log, verbose)
+            LSP.Message.log("IN: " + n, json, log_file, verbose)
             Some(json)
           case _ => error("Bad Content-Length: " + s)
         }
@@ -63,16 +63,15 @@ class Channel(
   /* write message */
 
   def write(json: JSON.T): Unit = {
-    val msg = JSON.Format(json)
-    val content = UTF8.bytes(msg)
-    val n = content.length
+    val content = JSON.Format.bytes(json)
+    val n = content.size
     val header = UTF8.bytes("Content-Length: " + n + "\r\n\r\n")
 
-    LSP.Message.log("OUT: " + n, json, log, verbose)
+    LSP.Message.log("OUT: " + n, json, log_file, verbose)
     out.synchronized {
       out.write(header)
-      out.write(content)
-      out.flush
+      content.write_stream(out)
+      out.flush()
     }
   }
 
@@ -90,23 +89,36 @@ class Channel(
   def log_warning(msg: String): Unit = display_message(LSP.MessageType.Warning, msg, false)
   def log_writeln(msg: String): Unit = display_message(LSP.MessageType.Info, msg, false)
 
-  object Error_Logger extends Logger {
-    def apply(msg: => String): Unit = log_error_message(msg)
-  }
+
+  /* logger */
+
+  val log_message: Logger =
+    new Logger {
+      override def toString: String = "log_message"
+      override def output(kind: Output.Kind, msg: => String): Unit =
+        kind match {
+          case Output.Kind.writeln => log_writeln(msg)
+          case Output.Kind.warning => log_warning(msg)
+          case Output.Kind.error_message => log_error_message(msg)
+        }
+    }
+
+  object Delay extends Delay_Ops(log_message)
 
 
   /* progress */
 
   def progress(verbose: Boolean = false): Progress = {
-    val verbose_ = verbose
-    new Progress {
-      override val verbose: Boolean = verbose_
-      override def output(message: Progress.Message): Unit =
-        if (do_output(message)) {
+    val progress_verbose = verbose
+    new Progress with Progress.Status {
+      override val verbose: Boolean = progress_verbose
+      override def status_output(msgs: Progress.Output): Unit =
+        for (msg <- msgs if do_output(msg)) {
+          val message = msg.message
           message.kind match {
-            case Progress.Kind.writeln => log_writeln(message.text)
-            case Progress.Kind.warning => log_warning(message.text)
-            case Progress.Kind.error_message => log_error_message(message.text)
+            case Output.Kind.writeln => log_writeln(message.text)
+            case Output.Kind.warning => log_warning(message.text)
+            case Output.Kind.error_message => log_error_message(message.text)
           }
         }
     }

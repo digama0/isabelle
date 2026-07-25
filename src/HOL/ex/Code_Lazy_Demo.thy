@@ -13,7 +13,7 @@ section \<open>Streams\<close>
 text \<open>Lazy evaluation for streams\<close>
 
 codatatype 'a stream = 
-  SCons (shd: 'a) (stl: "'a stream") (infixr "##" 65)
+  SCons (shd: 'a) (stl: "'a stream") (infixr \<open>##\<close> 65)
 
 primcorec up :: "nat \<Rightarrow> nat stream" where
   "up n = n ## up (n + 1)"
@@ -36,16 +36,13 @@ section \<open>Finite lazy lists\<close>
 text \<open>Lazy types need not be infinite. We can also have lazy types that are finite.\<close>
 
 datatype 'a llist
-  = LNil ("\<^bold>\<lbrakk>\<^bold>\<rbrakk>") 
-  | LCons (lhd: 'a) (ltl: "'a llist") (infixr "###" 65)
+  = LNil (\<open>\<^bold>\<lbrakk>\<^bold>\<rbrakk>\<close>) 
+  | LCons (lhd: 'a) (ltl: "'a llist") (infixr \<open>###\<close> 65)
 
-nonterminal llist_args
 syntax
-  "" :: "'a \<Rightarrow> llist_args"  ("_")
-  "_llist_args" :: "'a \<Rightarrow> llist_args \<Rightarrow> llist_args"  ("_,/ _")
-  "_llist" :: "llist_args => 'a list"    ("\<^bold>\<lbrakk>(_)\<^bold>\<rbrakk>")
+  "_llist" :: "args => 'a list"  (\<open>(\<open>indent=1 notation=\<open>mixfix lazy list enumeration\<close>\<close>\<^bold>\<lbrakk>_\<^bold>\<rbrakk>)\<close>)
 syntax_consts
-  "_llist_args" "_llist" == LCons
+  "_llist" == LCons
 translations
   "\<^bold>\<lbrakk>x, xs\<^bold>\<rbrakk>" == "x###\<^bold>\<lbrakk>xs\<^bold>\<rbrakk>"
   "\<^bold>\<lbrakk>x\<^bold>\<rbrakk>" == "x###\<^bold>\<lbrakk>\<^bold>\<rbrakk>"
@@ -81,7 +78,7 @@ text \<open>Thanks to laziness, we do not need to program a complicated iterator
   A conversion function to lazy lists is enough.\<close>
 
 primrec lappend :: "'a llist \<Rightarrow> 'a llist \<Rightarrow> 'a llist"
-  (infixr "@@" 65) where
+  (infixr \<open>@@\<close> 65) where
   "\<^bold>\<lbrakk>\<^bold>\<rbrakk> @@ ys = ys"
 | "(x ### xs) @@ ys = x ### (xs @@ ys)"
 
@@ -113,18 +110,17 @@ activate_lazy_type llist
 section \<open>Branching datatypes\<close>
 
 datatype tree
-  = L              ("\<spadesuit>") 
-  | Node tree tree (infix "\<triangle>" 900)
+  = L              (\<open>\<spadesuit>\<close>) 
+  | Node tree tree (infix \<open>\<triangle>\<close> 900)
 
-notation (output) Node ("\<triangle>(//\<^bold>l: _//\<^bold>r: _)")
+notation (output) Node
+  (\<open>(\<open>indent=1 notation=\<open>mixfix tree node\<close>\<close>\<triangle>//(\<open>open_block notation=\<open>mixfix tree branch\<close>\<close>\<^bold>l: _)//(\<open>open_block notation=\<open>mixfix tree branch\<close>\<close>\<^bold>r: _))\<close>)
 
 code_lazy_type tree
 
 fun mk_tree :: "nat \<Rightarrow> tree" where mk_tree_0:
   "mk_tree 0 = \<spadesuit>"
 | "mk_tree (Suc n) = (let t = mk_tree n in t \<triangle> t)"
-
-declare mk_tree.simps [code]
 
 code_thms mk_tree
 
@@ -142,6 +138,8 @@ value [code] "let t = mk_tree 10; _ = subtree [True, True, False, False] t in t"
       digging into one subtree spreads to the whole tree.\<close>
 value [code] "let t = mk_tree 3; _ = subtree [True, True, False, False] t in t"
 
+declare mk_tree.simps(1) [code]
+
 lemma mk_tree_Suc_debug [code]: \<comment> \<open>Make the evaluation visible with tracing.\<close>
   "mk_tree (Suc n) = 
   (let _ = Debug.flush (STR ''tick''); t = mk_tree n in t \<triangle> t)"
@@ -151,12 +149,16 @@ value [code] "mk_tree 10"
   \<comment> \<open>The recursive call to \<^const>\<open>mk_tree\<close> is not guarded by a lazy constructor,
       so all the suspensions are built up immediately.\<close>
 
+declare [[code drop: mk_tree]] mk_tree.simps(1) [code]
+
 lemma mk_tree_Suc [code]: "mk_tree (Suc n) = mk_tree n \<triangle> mk_tree n"
   \<comment> \<open>In this code equation, there is no sharing and the recursive calls are guarded by a constructor.\<close>
   by(simp add: Let_def)
 
 value [code] "mk_tree 10"
 value [code] "let t = mk_tree 10; _ = subtree [True, True, False, False] t in t"
+
+declare [[code drop: mk_tree]] mk_tree.simps(1) [code]
 
 lemma mk_tree_Suc_debug' [code]: 
   "mk_tree (Suc n) = (let _ = Debug.flush (STR ''tick'') in mk_tree n \<triangle> mk_tree n)"

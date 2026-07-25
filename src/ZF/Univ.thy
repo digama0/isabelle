@@ -790,8 +790,9 @@ by (blast dest!: Pair_in_Vfrom_D)
 ML
 \<open>
 val rank_ss =
-  simpset_of (\<^context> addsimps [@{thm VsetI}]
-    addsimps @{thms rank_rls} @ (@{thms rank_rls} RLN (2, [@{thm lt_trans}])));
+  \<^context>
+  |> Simplifier.add_simps (@{thms VsetI rank_rls} @ (@{thms rank_rls} RLN (2, @{thms lt_trans})))
+  |> Simplifier.simpset_of;
 \<close>
 
 end

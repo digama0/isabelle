@@ -70,8 +70,8 @@ object VSCode_Resources {
 class VSCode_Resources(
   val options: Options,
   session_background: Sessions.Background,
-  log: Logger = new Logger)
-extends Resources(session_background, log = log) {
+  log_file: Logger)
+extends Resources(session_background, log = log_file) {
   resources =>
 
   private val state = Synchronized(VSCode_Resources.State())
@@ -80,9 +80,13 @@ extends Resources(session_background, log = log) {
   /* options */
 
   def pide_extensions: Boolean = options.bool("vscode_pide_extensions")
-  def unicode_symbols: Boolean = options.bool("vscode_unicode_symbols")
+  def html_output: Boolean = options.bool("vscode_html_output")
   def tooltip_margin: Int = options.int("vscode_tooltip_margin")
   def message_margin: Int = options.int("vscode_message_margin")
+  def output_delay: Time = options.seconds("vscode_output_delay")
+
+  def unicode_symbols_output: Boolean = options.bool("vscode_unicode_symbols_output")
+  def unicode_symbols_edits: Boolean = options.bool("vscode_unicode_symbols_edits")
 
 
   /* document node name */
@@ -91,9 +95,9 @@ extends Resources(session_background, log = log) {
 
   def node_name(file: JFile): Document.Node.Name =
     find_theory(file) getOrElse {
-      val node = file.getPath
+      val node = file.getPath.nn
       val theory = theory_name(Sessions.DRAFT, Thy_Header.theory_name(node))
-      if (session_base.loaded_theory(theory)) Document.Node.Name.loaded_theory(theory)
+      if (loaded_theory(theory)) Document.Node.Name.loaded_theory(theory)
       else Document.Node.Name(node, theory = theory)
     }
 
@@ -107,7 +111,7 @@ extends Resources(session_background, log = log) {
     else if (path.is_basic && !prefix.endsWith("/") && !prefix.endsWith(JFile.separator))
       prefix + JFile.separator + File.platform_path(path)
     else if (path.is_basic) prefix + File.platform_path(path)
-    else File.absolute(new JFile(prefix + JFile.separator + File.platform_path(path))).getPath
+    else File.absolute(new JFile(prefix + JFile.separator.nn + File.platform_path(path))).getPath.nn
   }
 
   override def read_dir(dir: String): List[String] =
@@ -180,7 +184,7 @@ extends Resources(session_background, log = log) {
     }
 
   def change_model(
-    session: Session,
+    session: VSCode_Session,
     editor: Language_Server.Editor,
     file: JFile,
     version: Long,
@@ -230,7 +234,7 @@ extends Resources(session_background, log = log) {
   /* resolve dependencies */
 
   def resolve_dependencies(
-    session: Session,
+    session: VSCode_Session,
     editor: Language_Server.Editor,
     file_watcher: File_Watcher
   ): (Boolean, Boolean) = {
@@ -265,20 +269,17 @@ extends Resources(session_background, log = log) {
 
   /* pending input */
 
-  def flush_input(session: Session, channel: Channel): Unit = {
+  def flush_input(session: VSCode_Session, channel: Channel): Unit = {
     state.change { st =>
       val changed_models =
         (for {
           file <- st.pending_input.iterator
           model <- st.models.get(file)
           (edits, model1) <-
-            model.flush_edits(false, st.document_blobs, file, st.get_caret(file))
+            model.flush_edits(st.document_blobs, file, st.get_caret(file))
         } yield (edits, (file, model1))).toList
 
-      for { ((workspace_edits, _), _) <- changed_models if workspace_edits.nonEmpty }
-        channel.write(LSP.WorkspaceEdit(workspace_edits))
-
-      session.update(st.document_blobs, changed_models.flatMap(res => res._1._2))
+      session.update(st.document_blobs, changed_models.flatMap(_._1))
 
       st.copy(
         models = st.models ++ changed_models.iterator.map(_._2),
@@ -315,7 +316,7 @@ extends Resources(session_background, log = log) {
             channel.write(LSP.PublishDiagnostics(file, rendering.diagnostics_output(diags)))
           if (pide_extensions) {
             for (decos <- changed_decos)
-              channel.write(rendering.decoration_output(decos).json(file))
+              channel.write(rendering.decoration_output(decos).notification(file))
           }
           (file, model1)
         }
@@ -330,13 +331,16 @@ extends Resources(session_background, log = log) {
 
   /* output text */
 
-  def output_text(text: String): String =
-    Symbol.output(unicode_symbols, text)
+  def output_text(content: String): String = Symbol.output(unicode_symbols_output, content)
+  def output_edit(content: String): String = Symbol.output(unicode_symbols_edits, content)
 
-  def output_xml(xml: XML.Tree): String =
-    output_text(XML.content(xml))
+  def output_text_xml(body: XML.Body): XML.Body =
+    body.map {
+      case XML.Elem(markup, body) => XML.Elem(markup, output_text_xml(body))
+      case XML.Text(content) => XML.Text(output_text(content))
+    }
 
-  def output_pretty(body: XML.Body, margin: Int): String =
+  def output_pretty(body: XML.Body, margin: Double): String =
     output_text(Pretty.string_of(body, margin = margin, metric = Symbol.Metric))
   def output_pretty_tooltip(body: XML.Body): String = output_pretty(body, tooltip_margin)
   def output_pretty_message(body: XML.Body): String = output_pretty(body, message_margin)
@@ -355,6 +359,18 @@ extends Resources(session_background, log = log) {
       offset <- model.content.doc.offset(pos)
     }
     yield VSCode_Resources.Caret(file, model, offset)
+  }
+
+
+  /* decoration requests */
+
+  def force_decorations(channel: Channel, file: JFile): Unit = {
+    val model = state.value.models(file)
+    val rendering1 = rendering(model)
+    val (_, decos, model1) = model.publish_full(rendering1)
+    if (pide_extensions) {
+      channel.write(rendering1.decoration_output(decos).notification(file))
+    }
   }
 
 

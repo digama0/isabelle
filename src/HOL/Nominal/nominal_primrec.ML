@@ -34,7 +34,7 @@ fun unquantify t =
   let
     val (vs, Ts) = split_list (strip_qnt_vars \<^const_name>\<open>Pure.all\<close> t);
     val body = strip_qnt_body \<^const_name>\<open>Pure.all\<close> t;
-    val (vs', _) = fold_map Name.variant vs (Name.make_context (fold_aterms
+    val vs' = vs |> Name.variants (Name.make_context (fold_aterms
       (fn Free (v, _) => insert (op =) v | _ => I) body []))
   in (curry subst_bounds (map2 (curry Free) vs' Ts |> rev) body) end;
 
@@ -155,9 +155,8 @@ fun process_fun lthy descr eqns (i, fname) (fnames, fnss) =
         | SOME (ls, cargs', rs, rhs, eq) =>
             let
               val recs = filter (Old_Datatype_Aux.is_rec_type o snd) (cargs' ~~ cargs);
-              val rargs = map fst recs;
-              val subs = map (rpair dummyT o fst)
-                (rev (Term.rename_wrt_term rhs rargs));
+              val rargs = map (rpair dummyT o fst o fst) recs;
+              val subs = Term.variant_bounds rhs rargs;
               val (rhs', (fnames'', fnss'')) = subst (map2 (fn (x, y) => fn z =>
                 (Free x, (Old_Datatype_Aux.body_index y, Free z))) recs subs) rhs (fnames', fnss')
                   handle RecError s => primrec_eq_err lthy s eq

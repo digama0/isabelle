@@ -11,7 +11,7 @@ section \<open>Product of Ideals\<close>
 text \<open>In this section, we study the structure of the set of ideals of a given ring.\<close>
 
 inductive_set
-  ideal_prod :: "[ ('a, 'b) ring_scheme, 'a set, 'a set ] \<Rightarrow> 'a set" (infixl "\<cdot>\<index>" 80)
+  ideal_prod :: "[ ('a, 'b) ring_scheme, 'a set, 'a set ] \<Rightarrow> 'a set" (infixl \<open>\<cdot>\<index>\<close> 80)
   for R and I and J (* both I and J are supposed ideals *) where
     prod: "\<lbrakk> i \<in> I; j \<in> J \<rbrakk> \<Longrightarrow> i \<otimes>\<^bsub>R\<^esub> j \<in> ideal_prod R I J"
   |  sum: "\<lbrakk> s1 \<in> ideal_prod R I J; s2 \<in> ideal_prod R I J \<rbrakk> \<Longrightarrow> s1 \<oplus>\<^bsub>R\<^esub> s2 \<in> ideal_prod R I J"
@@ -273,26 +273,25 @@ proof
                       local.ring_axioms ring.ideal_prod_is_ideal) 
     qed
   qed
-next
-  { fix s J K assume A: "ideal J R" "ideal K R" "s \<in> I \<cdot> J"
-    have "s \<in> I \<cdot> (J <+> K) \<and> s \<in> I \<cdot> (K <+> J)"
-    proof -
-      from \<open>s \<in> I \<cdot> J\<close> have "s \<in> I \<cdot> (J <+> K)"
-      proof (induct s rule: ideal_prod.induct)
-        case (prod i j)
-        hence "(j \<oplus> \<zero>) \<in> J <+> K"
-          using set_add_def'[of R J K]
-                additive_subgroup.zero_closed[OF ideal.axioms(1), of K R] A(2) by auto
-        thus ?case
-          by (metis A(1) additive_subgroup.a_Hcarr ideal.axioms(1) ideal_prod.prod prod r_zero)  
-      next
-        case (sum s1 s2) thus ?case
-          by (simp add: ideal_prod.sum) 
-      qed
-      thus ?thesis
-        by (metis A(1) A(2) ideal_def ring.union_genideal sup_commute) 
-    qed } note aux_lemma = this
 
+  have aux_lemma: "s \<in> I \<cdot> (J <+> K) \<and> s \<in> I \<cdot> (K <+> J)"
+    if A: "ideal J R" "ideal K R" "s \<in> I \<cdot> J" for s J K
+  proof -
+    from \<open>s \<in> I \<cdot> J\<close> have "s \<in> I \<cdot> (J <+> K)"
+    proof (induct s rule: ideal_prod.induct)
+      case (prod i j)
+      hence "(j \<oplus> \<zero>) \<in> J <+> K"
+        using set_add_def'[of R J K]
+          additive_subgroup.zero_closed[OF ideal.axioms(1), of K R] A(2) by auto
+      thus ?case
+        by (metis A(1) additive_subgroup.a_Hcarr ideal.axioms(1) ideal_prod.prod prod r_zero)  
+    next
+      case (sum s1 s2) thus ?case
+        by (simp add: ideal_prod.sum) 
+    qed
+    thus ?thesis
+      by (metis A(1) A(2) ideal_def ring.union_genideal sup_commute) 
+  qed
   show "I \<cdot> J <+> I \<cdot> K \<subseteq> I \<cdot> (J <+> K)"
   proof
     fix s assume "s \<in> I \<cdot> J <+> I \<cdot> K"
@@ -308,19 +307,22 @@ lemma (in cring) ideal_prod_commute:
   assumes "ideal I R" "ideal J R"
   shows "I \<cdot> J = J \<cdot> I"
 proof -
-  { fix I J assume A: "ideal I R" "ideal J R"
-    have "I \<cdot> J \<subseteq> J \<cdot> I"
-    proof
-      fix s assume "s \<in> I \<cdot> J" thus "s \<in> J \<cdot> I"
-      proof (induct s rule: ideal_prod.induct)
-        case (prod i j) thus ?case
-          using m_comm[OF ideal.Icarr[OF A(1) prod(1)] ideal.Icarr[OF A(2) prod(2)]]
-          by (simp add: ideal_prod.prod)
-      next
-        case (sum s1 s2) thus ?case by (simp add: ideal_prod.sum) 
-      qed
-    qed }
-  thus ?thesis using assms by blast 
+  have "I \<cdot> J \<subseteq> J \<cdot> I" if A: "ideal I R" "ideal J R" for I J
+  proof
+    fix s
+    assume "s \<in> I \<cdot> J"
+    thus "s \<in> J \<cdot> I"
+    proof (induct s rule: ideal_prod.induct)
+      case (prod i j)
+      thus ?case
+        using m_comm[OF ideal.Icarr[OF A(1) prod(1)] ideal.Icarr[OF A(2) prod(2)]]
+        by (simp add: ideal_prod.prod)
+    next
+      case (sum s1 s2)
+      thus ?case by (simp add: ideal_prod.sum) 
+    qed
+  qed
+  with assms show ?thesis by blast 
 qed
 
 text \<open>The following result would also be true for locale ring\<close>

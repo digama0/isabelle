@@ -6,15 +6,16 @@ Dockable window for theories managed by prover.
 
 package isabelle.jedit
 
+import scala.language.unsafeNulls
 
 import isabelle._
 
-import scala.swing.{Button, TextArea, Label, ListView, ScrollPane, Component}
+import scala.swing.{Label, ScrollPane}
 
-import java.awt.{BorderLayout, Graphics2D, Color, Point, Dimension}
+import java.awt.BorderLayout
 import javax.swing.border.{BevelBorder, SoftBevelBorder}
 
-import org.gjt.sp.jedit.{View, jEdit}
+import org.gjt.sp.jedit.View
 
 
 class Theories_Dockable(view: View, position: String) extends Dockable(view, position) {
@@ -32,13 +33,13 @@ class Theories_Dockable(view: View, position: String) extends Dockable(view, pos
 
   private val purge = new GUI.Button("Purge") {
     tooltip = "Remove theories that are no longer required"
-    override def clicked(): Unit = PIDE.editor.purge()
+    override def clicked(): Unit = JEdit_Editor.purge()
   }
 
   private val continuous_checking = new JEdit_Options.continuous_checking.GUI
   continuous_checking.focusable = false
 
-  private val logic = JEdit_Sessions.logic_selector(PIDE.options, standalone = true)
+  private val logic = JEdit_Session.logic_selector(PIDE.plugin.options, standalone = true)
 
   private val controls =
     Wrap_Panel(List(purge, continuous_checking, session_phase, logic))
@@ -48,11 +49,12 @@ class Theories_Dockable(view: View, position: String) extends Dockable(view, pos
 
   /* main */
 
-  private val theories = new Theories_Status(view)
+  private val theories = new Theories_Status(editor_context)
   set_content(new ScrollPane(theories.gui))
 
   private val main =
-    Session.Consumer[Any](getClass.getName) {
+    Session.Consumer[Session.Phase | Session.Global_Options |
+        Session.Commands_Changed](this.class_name) {
       case phase: Session.Phase =>
         GUI_Thread.later { handle_phase(phase) }
 

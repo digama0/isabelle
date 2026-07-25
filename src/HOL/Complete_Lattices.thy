@@ -15,22 +15,22 @@ begin
 subsection \<open>Syntactic infimum and supremum operations\<close>
 
 class Inf =
-  fixes Inf :: "'a set \<Rightarrow> 'a"  ("\<Sqinter> _" [900] 900)
+  fixes Inf :: "'a set \<Rightarrow> 'a"  (\<open>(\<open>open_block notation=\<open>prefix \<Sqinter>\<close>\<close>\<Sqinter> _)\<close> [900] 900)
 
 class Sup =
-  fixes Sup :: "'a set \<Rightarrow> 'a"  ("\<Squnion> _" [900] 900)
+  fixes Sup :: "'a set \<Rightarrow> 'a"  (\<open>(\<open>open_block notation=\<open>prefix \<Squnion>\<close>\<close>\<Squnion> _)\<close> [900] 900)
 
 syntax
-  "_INF1"     :: "pttrns \<Rightarrow> 'b \<Rightarrow> 'b"           ("(3INF _./ _)" [0, 10] 10)
-  "_INF"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b \<Rightarrow> 'b"  ("(3INF _\<in>_./ _)" [0, 0, 10] 10)
-  "_SUP1"     :: "pttrns \<Rightarrow> 'b \<Rightarrow> 'b"           ("(3SUP _./ _)" [0, 10] 10)
-  "_SUP"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b \<Rightarrow> 'b"  ("(3SUP _\<in>_./ _)" [0, 0, 10] 10)
+  "_INF1"     :: "pttrns \<Rightarrow> 'b \<Rightarrow> 'b"           (\<open>(\<open>indent=3 notation=\<open>binder INF\<close>\<close>INF _./ _)\<close> [0, 10] 10)
+  "_INF"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b \<Rightarrow> 'b"  (\<open>(\<open>indent=3 notation=\<open>binder INF\<close>\<close>INF _\<in>_./ _)\<close> [0, 0, 10] 10)
+  "_SUP1"     :: "pttrns \<Rightarrow> 'b \<Rightarrow> 'b"           (\<open>(\<open>indent=3 notation=\<open>binder SUP\<close>\<close>SUP _./ _)\<close> [0, 10] 10)
+  "_SUP"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b \<Rightarrow> 'b"  (\<open>(\<open>indent=3 notation=\<open>binder SUP\<close>\<close>SUP _\<in>_./ _)\<close> [0, 0, 10] 10)
 
 syntax
-  "_INF1"     :: "pttrns \<Rightarrow> 'b \<Rightarrow> 'b"           ("(3\<Sqinter>_./ _)" [0, 10] 10)
-  "_INF"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b \<Rightarrow> 'b"  ("(3\<Sqinter>_\<in>_./ _)" [0, 0, 10] 10)
-  "_SUP1"     :: "pttrns \<Rightarrow> 'b \<Rightarrow> 'b"           ("(3\<Squnion>_./ _)" [0, 10] 10)
-  "_SUP"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b \<Rightarrow> 'b"  ("(3\<Squnion>_\<in>_./ _)" [0, 0, 10] 10)
+  "_INF1"     :: "pttrns \<Rightarrow> 'b \<Rightarrow> 'b"           (\<open>(\<open>indent=3 notation=\<open>binder \<Sqinter>\<close>\<close>\<Sqinter>_./ _)\<close> [0, 10] 10)
+  "_INF"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b \<Rightarrow> 'b"  (\<open>(\<open>indent=3 notation=\<open>binder \<Sqinter>\<close>\<close>\<Sqinter>_\<in>_./ _)\<close> [0, 0, 10] 10)
+  "_SUP1"     :: "pttrns \<Rightarrow> 'b \<Rightarrow> 'b"           (\<open>(\<open>indent=3 notation=\<open>binder \<Squnion>\<close>\<close>\<Squnion>_./ _)\<close> [0, 10] 10)
+  "_SUP"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b \<Rightarrow> 'b"  (\<open>(\<open>indent=3 notation=\<open>binder \<Squnion>\<close>\<close>\<Squnion>_\<in>_./ _)\<close> [0, 0, 10] 10)
 
 syntax_consts
   "_INF1" "_INF" \<rightleftharpoons> Inf and
@@ -775,7 +775,7 @@ end
 
 subsubsection \<open>Inter\<close>
 
-abbreviation Inter :: "'a set set \<Rightarrow> 'a set"  ("\<Inter>")
+abbreviation Inter :: "'a set set \<Rightarrow> 'a set"  (\<open>\<Inter>\<close>)
   where "\<Inter>S \<equiv> \<Sqinter>S"
 
 lemma Inter_eq: "\<Inter>A = {x. \<forall>B \<in> A. x \<in> B}"
@@ -843,16 +843,16 @@ lemma Inter_anti_mono: "B \<subseteq> A \<Longrightarrow> \<Inter>A \<subseteq> 
 subsubsection \<open>Intersections of families\<close>
 
 syntax (ASCII)
-  "_INTER1"     :: "pttrns \<Rightarrow> 'b set \<Rightarrow> 'b set"           ("(3INT _./ _)" [0, 10] 10)
-  "_INTER"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b set \<Rightarrow> 'b set"  ("(3INT _:_./ _)" [0, 0, 10] 10)
+  "_INTER1"     :: "pttrns \<Rightarrow> 'b set \<Rightarrow> 'b set"           (\<open>(\<open>indent=3 notation=\<open>binder INT\<close>\<close>INT _./ _)\<close> [0, 10] 10)
+  "_INTER"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b set \<Rightarrow> 'b set"  (\<open>(\<open>indent=3 notation=\<open>binder INT\<close>\<close>INT _:_./ _)\<close> [0, 0, 10] 10)
 
 syntax
-  "_INTER1"     :: "pttrns \<Rightarrow> 'b set \<Rightarrow> 'b set"           ("(3\<Inter>_./ _)" [0, 10] 10)
-  "_INTER"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b set \<Rightarrow> 'b set"  ("(3\<Inter>_\<in>_./ _)" [0, 0, 10] 10)
+  "_INTER1"     :: "pttrns \<Rightarrow> 'b set \<Rightarrow> 'b set"           (\<open>(\<open>indent=3 notation=\<open>binder \<Inter>\<close>\<close>\<Inter>_./ _)\<close> [0, 10] 10)
+  "_INTER"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b set \<Rightarrow> 'b set"  (\<open>(\<open>indent=3 notation=\<open>binder \<Inter>\<close>\<close>\<Inter>_\<in>_./ _)\<close> [0, 0, 10] 10)
 
 syntax (latex output)
-  "_INTER1"     :: "pttrns \<Rightarrow> 'b set \<Rightarrow> 'b set"           ("(3\<Inter>(\<open>unbreakable\<close>\<^bsub>_\<^esub>)/ _)" [0, 10] 10)
-  "_INTER"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b set \<Rightarrow> 'b set"  ("(3\<Inter>(\<open>unbreakable\<close>\<^bsub>_\<in>_\<^esub>)/ _)" [0, 0, 10] 10)
+  "_INTER1"     :: "pttrns \<Rightarrow> 'b set \<Rightarrow> 'b set"           (\<open>(3\<Inter>(\<open>unbreakable\<close>\<^bsub>_\<^esub>)/ _)\<close> [0, 10] 10)
+  "_INTER"      :: "pttrn \<Rightarrow> 'a set \<Rightarrow> 'b set \<Rightarrow> 'b set"  (\<open>(3\<Inter>(\<open>unbreakable\<close>\<^bsub>_\<in>_\<^esub>)/ _)\<close> [0, 0, 10] 10)
 
 syntax_consts
   "_INTER1" "_INTER" \<rightleftharpoons> Inter
@@ -932,7 +932,7 @@ lemma vimage_INT: "f -` (\<Inter>x\<in>A. B x) = (\<Inter>x\<in>A. f -` B x)"
 
 subsubsection \<open>Union\<close>
 
-abbreviation Union :: "'a set set \<Rightarrow> 'a set"  ("\<Union>")
+abbreviation Union :: "'a set set \<Rightarrow> 'a set"  (\<open>\<Union>\<close>)
   where "\<Union>S \<equiv> \<Squnion>S"
 
 lemma Union_eq: "\<Union>A = {x. \<exists>B \<in> A. x \<in> B}"
@@ -1009,16 +1009,16 @@ lemma disjnt_Union2 [simp]: "disjnt B (\<Union>\<A>) \<longleftrightarrow> (\<fo
 subsubsection \<open>Unions of families\<close>
 
 syntax (ASCII)
-  "_UNION1"     :: "pttrns => 'b set => 'b set"           ("(3UN _./ _)" [0, 10] 10)
-  "_UNION"      :: "pttrn => 'a set => 'b set => 'b set"  ("(3UN _:_./ _)" [0, 0, 10] 10)
+  "_UNION1"     :: "pttrns => 'b set => 'b set"           (\<open>(\<open>indent=3 notation=\<open>binder UN\<close>\<close>UN _./ _)\<close> [0, 10] 10)
+  "_UNION"      :: "pttrn => 'a set => 'b set => 'b set"  (\<open>(\<open>indent=3 notation=\<open>binder UN\<close>\<close>UN _:_./ _)\<close> [0, 0, 10] 10)
 
 syntax
-  "_UNION1"     :: "pttrns => 'b set => 'b set"           ("(3\<Union>_./ _)" [0, 10] 10)
-  "_UNION"      :: "pttrn => 'a set => 'b set => 'b set"  ("(3\<Union>_\<in>_./ _)" [0, 0, 10] 10)
+  "_UNION1"     :: "pttrns => 'b set => 'b set"           (\<open>(\<open>indent=3 notation=\<open>binder \<Union>\<close>\<close>\<Union>_./ _)\<close> [0, 10] 10)
+  "_UNION"      :: "pttrn => 'a set => 'b set => 'b set"  (\<open>(\<open>indent=3 notation=\<open>binder \<Union>\<close>\<close>\<Union>_\<in>_./ _)\<close> [0, 0, 10] 10)
 
 syntax (latex output)
-  "_UNION1"     :: "pttrns => 'b set => 'b set"           ("(3\<Union>(\<open>unbreakable\<close>\<^bsub>_\<^esub>)/ _)" [0, 10] 10)
-  "_UNION"      :: "pttrn => 'a set => 'b set => 'b set"  ("(3\<Union>(\<open>unbreakable\<close>\<^bsub>_\<in>_\<^esub>)/ _)" [0, 0, 10] 10)
+  "_UNION1"     :: "pttrns => 'b set => 'b set"           (\<open>(3\<Union>(\<open>unbreakable\<close>\<^bsub>_\<^esub>)/ _)\<close> [0, 10] 10)
+  "_UNION"      :: "pttrn => 'a set => 'b set => 'b set"  (\<open>(3\<Union>(\<open>unbreakable\<close>\<^bsub>_\<in>_\<^esub>)/ _)\<close> [0, 0, 10] 10)
 
 syntax_consts
   "_UNION1" "_UNION" \<rightleftharpoons> Union

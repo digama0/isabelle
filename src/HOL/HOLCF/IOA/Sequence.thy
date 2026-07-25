@@ -63,20 +63,15 @@ definition Filter2 :: "('a \<Rightarrow> bool) \<Rightarrow> 'a Seq \<rightarrow
               UU \<Rightarrow> UU
             | Def y \<Rightarrow> (if P y then x ## (h \<cdot> xs) else h \<cdot> xs))))"
 
-abbreviation Consq_syn  ("(_/\<leadsto>_)" [66, 65] 65)
+abbreviation Consq_syn  (\<open>(\<open>notation=\<open>infix \<leadsto>\<close>\<close>_/\<leadsto>_)\<close> [66, 65] 65)
   where "a \<leadsto> s \<equiv> Consq a \<cdot> s"
 
 
 subsection \<open>List enumeration\<close>
 
-nonterminal llist_args
 syntax
-  "" :: "'a \<Rightarrow> llist_args"  ("_")
-  "_list_args" :: "'a \<Rightarrow> llist_args \<Rightarrow> llist_args"  ("_,/ _")
-  "_totlist" :: "llist_args \<Rightarrow> 'a Seq"  ("[(_)!]")
-  "_partlist" :: "llist_args \<Rightarrow> 'a Seq"  ("[(_)?]")
-syntax_consts
-  "_totlist" "_partlist" \<rightleftharpoons> Consq
+  "_totlist" :: "args \<Rightarrow> 'a Seq"  (\<open>(\<open>indent=1 notation=\<open>mixfix total list enumeration\<close>\<close>[_!])\<close>)
+  "_partlist" :: "args \<Rightarrow> 'a Seq"  (\<open>(\<open>indent=1 notation=\<open>mixfix partial list enumeration\<close>\<close>[_?])\<close>)
 translations
   "[x, xs!]" \<rightleftharpoons> "x \<leadsto> [xs!]"
   "[x!]" \<rightleftharpoons> "x\<leadsto>nil"
@@ -982,7 +977,7 @@ fun Seq_case_simp_tac ctxt s i =
 fun Seq_induct_tac ctxt s rws i =
   Rule_Insts.res_inst_tac ctxt [((("x", 0), Position.none), s)] [] @{thm Seq_induct} i
   THEN (REPEAT_DETERM (CHANGED (asm_simp_tac ctxt (i + 1))))
-  THEN simp_tac (ctxt addsimps rws) i;
+  THEN simp_tac (ctxt |> Simplifier.add_simps rws) i;
 
 fun Seq_Finite_induct_tac ctxt i =
   eresolve_tac ctxt @{thms Seq_Finite_ind} i
@@ -997,7 +992,7 @@ fun pair_induct_tac ctxt s rws i =
   Rule_Insts.res_inst_tac ctxt [((("x", 0), Position.none), s)] [] @{thm Seq_induct} i
   THEN pair_tac ctxt "a" (i + 3)
   THEN (REPEAT_DETERM (CHANGED (simp_tac ctxt (i + 1))))
-  THEN simp_tac (ctxt addsimps rws) i;
+  THEN simp_tac (ctxt |> Simplifier.add_simps rws) i;
 \<close>
 
 method_setup Seq_case =

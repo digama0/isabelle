@@ -2,8 +2,8 @@
     Author:     Makarius
 
 Multithreading in Poly/ML, see also
-  - $ML_SOURCES/basis/Thread.sml: numPhysicalProcessors
-  - $ML_SOURCES/libpolyml/processes.cpp: PolyThreadNumPhysicalProcessors
+  - $POLYML_HOME/src/basis/Thread.sml: numPhysicalProcessors
+  - $POLYML_HOME/src/libpolyml/processes.cpp: PolyThreadNumPhysicalProcessors
 *)
 
 signature MULTITHREADING =
@@ -11,7 +11,6 @@ sig
   val num_processors: unit -> int
   val max_threads: unit -> int
   val max_threads_update: int -> unit
-  val parallel_proofs: int ref
   val sync_wait: Time.time option -> Thread.ConditionVar.conditionVar -> Thread.Mutex.mutex ->
     bool Exn.result
   val trace: int ref
@@ -51,18 +50,13 @@ fun max_threads_update m = max_threads_state := max_threads_result m;
 end;
 
 
-(* parallel_proofs *)
-
-val parallel_proofs = ref 1;
-
-
 (* synchronous wait *)
 
-fun sync_wait time cond lock =
+fun sync_wait limit cond lock =
   Thread_Attributes.with_attributes
     (Thread_Attributes.sync_interrupts (Thread_Attributes.get_attributes ()))
     (fn _ =>
-      (case time of
+      (case limit of
         SOME t => Exn.Res (Thread.ConditionVar.waitUntil (cond, lock, t))
       | NONE => (Thread.ConditionVar.wait (cond, lock); Exn.Res true))
       handle exn => Exn.Exn exn);

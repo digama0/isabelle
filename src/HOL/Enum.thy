@@ -66,7 +66,7 @@ lemma vimage_code [code]:
 
 definition card_UNIV :: "'a itself \<Rightarrow> nat"
 where
-  [code del]: "card_UNIV TYPE('a) = card (UNIV :: 'a set)"
+  "card_UNIV TYPE('a) = card (UNIV :: 'a set)"
 
 lemma [code]:
   "card_UNIV TYPE('a :: enum) = card (set (Enum.enum :: 'a list))"
@@ -79,13 +79,13 @@ lemma exists_code [code]: "(\<exists>x. P x) \<longleftrightarrow> enum_ex P"
   by simp
 
 lemma exists1_code [code]: "(\<exists>!x. P x) \<longleftrightarrow> list_ex1 P enum"
-  by (auto simp add: list_ex1_iff enum_UNIV)
+  by (simp add: list_ex1_iff enum_UNIV)
 
 
 subsubsection \<open>An executable choice operator\<close>
 
 definition
-  [code del]: "enum_the = The"
+  "enum_the = The"
 
 lemma [code]:
   "The P = (case filter P enum of [x] \<Rightarrow> x | _ \<Rightarrow> enum_the P)"
@@ -497,7 +497,7 @@ text \<open>We define small finite types for use in Quickcheck\<close>
 datatype (plugins only: code "quickcheck" extraction) finite_1 =
   a\<^sub>1
 
-notation (output) a\<^sub>1  ("a\<^sub>1")
+notation (output) a\<^sub>1  (\<open>a\<^sub>1\<close>)
 
 lemma UNIV_finite_1:
   "UNIV = {a\<^sub>1}"
@@ -601,8 +601,8 @@ hide_const (open) a\<^sub>1
 datatype (plugins only: code "quickcheck" extraction) finite_2 =
   a\<^sub>1 | a\<^sub>2
 
-notation (output) a\<^sub>1  ("a\<^sub>1")
-notation (output) a\<^sub>2  ("a\<^sub>2")
+notation (output) a\<^sub>1  (\<open>a\<^sub>1\<close>)
+notation (output) a\<^sub>2  (\<open>a\<^sub>2\<close>)
 
 lemma UNIV_finite_2:
   "UNIV = {a\<^sub>1, a\<^sub>2}"
@@ -730,9 +730,9 @@ hide_const (open) a\<^sub>1 a\<^sub>2
 datatype (plugins only: code "quickcheck" extraction) finite_3 =
   a\<^sub>1 | a\<^sub>2 | a\<^sub>3
 
-notation (output) a\<^sub>1  ("a\<^sub>1")
-notation (output) a\<^sub>2  ("a\<^sub>2")
-notation (output) a\<^sub>3  ("a\<^sub>3")
+notation (output) a\<^sub>1  (\<open>a\<^sub>1\<close>)
+notation (output) a\<^sub>2  (\<open>a\<^sub>2\<close>)
+notation (output) a\<^sub>3  (\<open>a\<^sub>3\<close>)
 
 lemma UNIV_finite_3:
   "UNIV = {a\<^sub>1, a\<^sub>2, a\<^sub>3}"
@@ -971,10 +971,10 @@ hide_const (open) a\<^sub>1 a\<^sub>2 a\<^sub>3
 datatype (plugins only: code "quickcheck" extraction) finite_4 =
   a\<^sub>1 | a\<^sub>2 | a\<^sub>3 | a\<^sub>4
 
-notation (output) a\<^sub>1  ("a\<^sub>1")
-notation (output) a\<^sub>2  ("a\<^sub>2")
-notation (output) a\<^sub>3  ("a\<^sub>3")
-notation (output) a\<^sub>4  ("a\<^sub>4")
+notation (output) a\<^sub>1  (\<open>a\<^sub>1\<close>)
+notation (output) a\<^sub>2  (\<open>a\<^sub>2\<close>)
+notation (output) a\<^sub>3  (\<open>a\<^sub>3\<close>)
+notation (output) a\<^sub>4  (\<open>a\<^sub>4\<close>)
 
 lemma UNIV_finite_4:
   "UNIV = {a\<^sub>1, a\<^sub>2, a\<^sub>3, a\<^sub>4}"
@@ -1060,11 +1060,11 @@ hide_const (open) a\<^sub>1 a\<^sub>2 a\<^sub>3 a\<^sub>4
 datatype (plugins only: code "quickcheck" extraction) finite_5 =
   a\<^sub>1 | a\<^sub>2 | a\<^sub>3 | a\<^sub>4 | a\<^sub>5
 
-notation (output) a\<^sub>1  ("a\<^sub>1")
-notation (output) a\<^sub>2  ("a\<^sub>2")
-notation (output) a\<^sub>3  ("a\<^sub>3")
-notation (output) a\<^sub>4  ("a\<^sub>4")
-notation (output) a\<^sub>5  ("a\<^sub>5")
+notation (output) a\<^sub>1  (\<open>a\<^sub>1\<close>)
+notation (output) a\<^sub>2  (\<open>a\<^sub>2\<close>)
+notation (output) a\<^sub>3  (\<open>a\<^sub>3\<close>)
+notation (output) a\<^sub>4  (\<open>a\<^sub>4\<close>)
+notation (output) a\<^sub>5  (\<open>a\<^sub>5\<close>)
 
 lemma UNIV_finite_5:
   "UNIV = {a\<^sub>1, a\<^sub>2, a\<^sub>3, a\<^sub>4, a\<^sub>5}"

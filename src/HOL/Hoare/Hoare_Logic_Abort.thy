@@ -21,7 +21,7 @@ datatype 'a com =
 | Cond "'a bexp" "'a com" "'a com"
 | While "'a bexp" "'a com"
 
-abbreviation annskip ("SKIP") where "SKIP == Basic id"
+abbreviation annskip (\<open>SKIP\<close>) where "SKIP == Basic id"
 
 type_synonym 'a sem = "'a option => 'a option => bool"
 
@@ -140,33 +140,30 @@ lemma WhileRuleTC:
       and "i \<inter> uminus b \<subseteq> q"
     shows "ValidTC p (While b c) (Awhile i v A) q"
 proof -
-  {
-    fix s n
-    have "s \<in> i \<and> v s = n \<longrightarrow> (\<exists>t . Sem (While b c) (Some s) (Some t) \<and> t \<in> q)"
-    proof (induction "n" arbitrary: s rule: less_induct)
-      fix n :: nat
-      fix s :: 'a
-      assume 1: "\<And>(m::nat) s::'a . m < n \<Longrightarrow> s \<in> i \<and> v s = m \<longrightarrow> (\<exists>t . Sem (While b c) (Some s) (Some t) \<and> t \<in> q)"
-      show "s \<in> i \<and> v s = n \<longrightarrow> (\<exists>t . Sem (While b c) (Some s) (Some t) \<and> t \<in> q)"
-      proof (rule impI, cases "s \<in> b")
-        assume 2: "s \<in> b" and "s \<in> i \<and> v s = n"
-        hence "s \<in> i \<inter> b \<inter> {s . v s = n}"
-          using assms(1) by auto
-        hence "\<exists>t . Sem c (Some s) (Some t) \<and> t \<in> i \<inter> {s . v s < n}"
-          by (metis assms(2) ValidTC_def)
-        from this obtain t where 3: "Sem c (Some s) (Some t) \<and> t \<in> i \<inter> {s . v s < n}"
-          by auto
-        hence "\<exists>u . Sem (While b c) (Some t) (Some u) \<and> u \<in> q"
-          using 1 by auto
-        thus "\<exists>t . Sem (While b c) (Some s) (Some t) \<and> t \<in> q"
-          using 2 3 Sem.intros(10) by force
-      next
-        assume "s \<notin> b" and "s \<in> i \<and> v s = n"
-        thus "\<exists>t . Sem (While b c) (Some s) (Some t) \<and> t \<in> q"
-          using Sem.intros(9) assms(3) by fastforce
-      qed
+  have "s \<in> i \<and> v s = n \<longrightarrow> (\<exists>t . Sem (While b c) (Some s) (Some t) \<and> t \<in> q)" for s n
+  proof (induction "n" arbitrary: s rule: less_induct)
+    fix n :: nat
+    fix s :: 'a
+    assume 1: "\<And>(m::nat) s::'a . m < n \<Longrightarrow> s \<in> i \<and> v s = m \<longrightarrow> (\<exists>t . Sem (While b c) (Some s) (Some t) \<and> t \<in> q)"
+    show "s \<in> i \<and> v s = n \<longrightarrow> (\<exists>t . Sem (While b c) (Some s) (Some t) \<and> t \<in> q)"
+    proof (rule impI, cases "s \<in> b")
+      assume 2: "s \<in> b" and "s \<in> i \<and> v s = n"
+      hence "s \<in> i \<inter> b \<inter> {s . v s = n}"
+        using assms(1) by auto
+      hence "\<exists>t . Sem c (Some s) (Some t) \<and> t \<in> i \<inter> {s . v s < n}"
+        by (metis assms(2) ValidTC_def)
+      from this obtain t where 3: "Sem c (Some s) (Some t) \<and> t \<in> i \<inter> {s . v s < n}"
+        by auto
+      hence "\<exists>u . Sem (While b c) (Some t) (Some u) \<and> u \<in> q"
+        using 1 by auto
+      thus "\<exists>t . Sem (While b c) (Some s) (Some t) \<and> t \<in> q"
+        using 2 3 Sem.intros(10) by force
+    next
+      assume "s \<notin> b" and "s \<in> i \<and> v s = n"
+      thus "\<exists>t . Sem (While b c) (Some s) (Some t) \<and> t \<in> q"
+        using Sem.intros(9) assms(3) by fastforce
     qed
-  }
+  qed
   thus ?thesis
     using assms(1) ValidTC_def by force
 qed
@@ -187,8 +184,10 @@ setup \<open>
 
 \<comment> \<open>Special syntax for guarded statements and guarded array updates:\<close>
 syntax
-  "_guarded_com" :: "bool \<Rightarrow> 'a com \<Rightarrow> 'a com"  ("(2_ \<rightarrow>/ _)" 71)
-  "_array_update" :: "'a list \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> 'a com"  ("(2_[_] :=/ _)" [70, 65] 61)
+  "_guarded_com" :: "bool \<Rightarrow> 'a com \<Rightarrow> 'a com"
+    (\<open>(\<open>indent=2 notation=\<open>mixfix Hoare guarded statement\<close>\<close>_ \<rightarrow>/ _)\<close> 71)
+  "_array_update" :: "'a list \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> 'a com"
+    (\<open>(\<open>indent=2 notation=\<open>mixfix Hoare array update\<close>\<close>_[_] :=/ _)\<close> [70, 65] 61)
 translations
   "P \<rightarrow> c" \<rightleftharpoons> "IF P THEN c ELSE CONST Abort FI"
   "a[i] := v" \<rightharpoonup> "(i < CONST length a) \<rightarrow> (a := CONST list_update a i v)"

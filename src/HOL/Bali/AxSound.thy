@@ -10,7 +10,7 @@ theory AxSound imports AxSem begin
 subsubsection "validity"
 
 definition
-  triple_valid2 :: "prog \<Rightarrow> nat \<Rightarrow> 'a triple \<Rightarrow> bool"  ("_\<Turnstile>_\<Colon>_"[61,0, 58] 57)
+  triple_valid2 :: "prog \<Rightarrow> nat \<Rightarrow> 'a triple \<Rightarrow> bool"  (\<open>_\<Turnstile>_\<Colon>_\<close>[61,0, 58] 57)
   where
     "G\<Turnstile>n\<Colon>t =
       (case t of {P} t\<succ> {Q} \<Rightarrow>
@@ -28,7 +28,7 @@ the ordinary definition.
 \<close>
 
 definition
-  ax_valids2 :: "prog \<Rightarrow> 'a triples \<Rightarrow> 'a triples \<Rightarrow> bool"  ("_,_|\<Turnstile>\<Colon>_" [61,58,58] 57)
+  ax_valids2 :: "prog \<Rightarrow> 'a triples \<Rightarrow> 'a triples \<Rightarrow> bool"  (\<open>_,_|\<Turnstile>\<Colon>_\<close> [61,58,58] 57)
   where "G,A|\<Turnstile>\<Colon>ts = (\<forall>n. (\<forall>t\<in>A. G\<Turnstile>n\<Colon>t) \<longrightarrow> (\<forall>t\<in>ts. G\<Turnstile>n\<Colon>t))"
 
 lemma triple_valid2_def2: "G\<Turnstile>n\<Colon>{P} t\<succ> {Q} =  
@@ -106,55 +106,49 @@ lemma Methd_sound:
   assumes recursive: "G,A\<union>  {{P} Methd-\<succ> {Q} | ms}|\<Turnstile>\<Colon>{{P} body G-\<succ> {Q} | ms}"
   shows "G,A|\<Turnstile>\<Colon>{{P} Methd-\<succ> {Q} | ms}"
 proof -
-  {
-    fix n
-    assume recursive: "\<And> n. \<forall>t\<in>(A \<union> {{P} Methd-\<succ> {Q} | ms}). G\<Turnstile>n\<Colon>t
-                              \<Longrightarrow>  \<forall>t\<in>{{P} body G-\<succ> {Q} | ms}.  G\<Turnstile>n\<Colon>t"
-    have "\<forall>t\<in>A. G\<Turnstile>n\<Colon>t \<Longrightarrow> \<forall>t\<in>{{P} Methd-\<succ> {Q} | ms}.  G\<Turnstile>n\<Colon>t"
-    proof (induct n)
-      case 0
-      show "\<forall>t\<in>{{P} Methd-\<succ> {Q} | ms}.  G\<Turnstile>0\<Colon>t"
-      proof -
-        {
-          fix C sig
-          assume "(C,sig) \<in> ms" 
-          have "G\<Turnstile>0\<Colon>{Normal (P C sig)} Methd C sig-\<succ> {Q C sig}"
-            by (rule Methd_triple_valid2_0)
-        }
-        thus ?thesis
-          by (simp add: mtriples_def split_def)
-      qed
-    next
-      case (Suc m)
-      note hyp = \<open>\<forall>t\<in>A. G\<Turnstile>m\<Colon>t \<Longrightarrow> \<forall>t\<in>{{P} Methd-\<succ> {Q} | ms}.  G\<Turnstile>m\<Colon>t\<close>
-      note prem = \<open>\<forall>t\<in>A. G\<Turnstile>Suc m\<Colon>t\<close>
-      show "\<forall>t\<in>{{P} Methd-\<succ> {Q} | ms}.  G\<Turnstile>Suc m\<Colon>t"
-      proof -
-        {
-          fix C sig
-          assume m: "(C,sig) \<in> ms" 
-          have "G\<Turnstile>Suc m\<Colon>{Normal (P C sig)} Methd C sig-\<succ> {Q C sig}"
-          proof -
-            from prem have prem_m: "\<forall>t\<in>A. G\<Turnstile>m\<Colon>t"
-              by (rule triples_valid2_Suc)
-            hence "\<forall>t\<in>{{P} Methd-\<succ> {Q} | ms}.  G\<Turnstile>m\<Colon>t"
-              by (rule hyp)
-            with prem_m
-            have "\<forall>t\<in>(A \<union> {{P} Methd-\<succ> {Q} | ms}). G\<Turnstile>m\<Colon>t"
-              by (simp add: ball_Un)
-            hence "\<forall>t\<in>{{P} body G-\<succ> {Q} | ms}.  G\<Turnstile>m\<Colon>t"
-              by (rule recursive)
-            with m have "G\<Turnstile>m\<Colon>{Normal (P C sig)} body G C sig-\<succ> {Q C sig}"
-              by (auto simp add: mtriples_def split_def)
-            thus ?thesis
-              by (rule Methd_triple_valid2_SucI)
-          qed
-        }
-        thus ?thesis
-          by (simp add: mtriples_def split_def)
-      qed
+  have "\<forall>t\<in>A. G\<Turnstile>n\<Colon>t \<Longrightarrow> \<forall>t\<in>{{P} Methd-\<succ> {Q} | ms}.  G\<Turnstile>n\<Colon>t"
+    if rec: "\<And>n. \<forall>t\<in>(A \<union> {{P} Methd-\<succ> {Q} | ms}). G\<Turnstile>n\<Colon>t
+                  \<Longrightarrow>  \<forall>t\<in>{{P} body G-\<succ> {Q} | ms}. G\<Turnstile>n\<Colon>t"
+    for n
+  proof (induct n)
+    case 0
+    show "\<forall>t\<in>{{P} Methd-\<succ> {Q} | ms}.  G\<Turnstile>0\<Colon>t"
+    proof -
+      have "G\<Turnstile>0\<Colon>{Normal (P C sig)} Methd C sig-\<succ> {Q C sig}"
+        if "(C,sig) \<in> ms"
+        for C sig
+        by (rule Methd_triple_valid2_0)
+      thus ?thesis
+        by (simp add: mtriples_def split_def)
     qed
-  }
+  next
+    case (Suc m)
+    note hyp = \<open>\<forall>t\<in>A. G\<Turnstile>m\<Colon>t \<Longrightarrow> \<forall>t\<in>{{P} Methd-\<succ> {Q} | ms}.  G\<Turnstile>m\<Colon>t\<close>
+    note prem = \<open>\<forall>t\<in>A. G\<Turnstile>Suc m\<Colon>t\<close>
+    show "\<forall>t\<in>{{P} Methd-\<succ> {Q} | ms}.  G\<Turnstile>Suc m\<Colon>t"
+    proof -
+      have "G\<Turnstile>Suc m\<Colon>{Normal (P C sig)} Methd C sig-\<succ> {Q C sig}"
+        if m: "(C,sig) \<in> ms"
+        for C sig
+      proof -
+        from prem have prem_m: "\<forall>t\<in>A. G\<Turnstile>m\<Colon>t"
+          by (rule triples_valid2_Suc)
+        hence "\<forall>t\<in>{{P} Methd-\<succ> {Q} | ms}.  G\<Turnstile>m\<Colon>t"
+          by (rule hyp)
+        with prem_m
+        have "\<forall>t\<in>(A \<union> {{P} Methd-\<succ> {Q} | ms}). G\<Turnstile>m\<Colon>t"
+          by (simp add: ball_Un)
+        hence "\<forall>t\<in>{{P} body G-\<succ> {Q} | ms}.  G\<Turnstile>m\<Colon>t"
+          by (rule rec)
+        with m have "G\<Turnstile>m\<Colon>{Normal (P C sig)} body G C sig-\<succ> {Q C sig}"
+          by (auto simp add: mtriples_def split_def)
+        thus ?thesis
+          by (rule Methd_triple_valid2_SucI)
+      qed
+      thus ?thesis
+        by (simp add: mtriples_def split_def)
+    qed
+  qed
   with recursive show ?thesis
     by (unfold ax_valids2_def) blast
 qed
@@ -353,19 +347,18 @@ next
   note valid_t = \<open>G,A|\<Turnstile>\<Colon>{t}\<close>
   moreover
   note valid_ts = \<open>G,A|\<Turnstile>\<Colon>ts\<close>
-  {
-    fix n assume valid_A: "\<forall>t\<in>A. G\<Turnstile>n\<Colon>t"
-    have "G\<Turnstile>n\<Colon>t" and "\<forall>t\<in>ts. G\<Turnstile>n\<Colon>t"
-    proof -
-      from valid_A valid_t show "G\<Turnstile>n\<Colon>t"
-        by (simp add: ax_valids2_def)
-    next
-      from valid_A valid_ts show "\<forall>t\<in>ts. G\<Turnstile>n\<Colon>t"
-        by (unfold ax_valids2_def) blast
-    qed
-    hence "\<forall>t'\<in>insert t ts. G\<Turnstile>n\<Colon>t'"
+  have "\<forall>t'\<in>insert t ts. G\<Turnstile>n\<Colon>t'"
+    if valid_A: "\<forall>t\<in>A. G\<Turnstile>n\<Colon>t"
+    for n
+  proof -
+    have "G\<Turnstile>n\<Colon>t"
+      using valid_A valid_t by (simp add: ax_valids2_def)
+    moreover
+    have "\<forall>t\<in>ts. G\<Turnstile>n\<Colon>t"
+      using valid_A valid_ts by (unfold ax_valids2_def) blast
+    ultimately show "\<forall>t'\<in>insert t ts. G\<Turnstile>n\<Colon>t'"
       by simp
-  }
+  qed
   thus ?case
     by (unfold ax_valids2_def) blast
 next
@@ -701,17 +694,19 @@ next
         "\<lparr>prg=G,cls=accC,lcl=L\<rparr>\<turnstile>dom (locals (store s0)) \<guillemotright>\<langle>init_comp_ty T\<rangle>\<^sub>s\<guillemotright> I"
       proof (cases "\<exists>C. T = Class C")
         case True
-        thus ?thesis
-          by - (rule that, (auto intro: da_Init [simplified] 
-                                        assigned.select_convs
-                              simp add: init_comp_ty_def))
+        show ?thesis
+          by (rule that)
+            (use True in
+              \<open>auto intro: da_Init [simplified] assigned.select_convs
+                simp add: init_comp_ty_def\<close>)
          (* simplified: to rewrite \<langle>Init C\<rangle> to In1r (Init C) *)
       next
         case False
-        thus ?thesis
-          by - (rule that, (auto intro: da_Skip [simplified] 
-                                      assigned.select_convs
-                           simp add: init_comp_ty_def))
+        show ?thesis
+          by (rule that)
+            (use False in
+              \<open>auto intro: da_Skip [simplified] assigned.select_convs
+                simp add: init_comp_ty_def\<close>)
          (* simplified: to rewrite \<langle>Skip\<rangle> to In1r (Skip) *)
       qed
       with valid_init P valid_A conf_s0 eval_init wt_init 
@@ -922,7 +917,7 @@ next
         case True
         from eval_e1 wt_e1 da_e1 conf_s0 wf
         have conf_v1: "G,store s1\<turnstile>v1\<Colon>\<preceq>e1T" 
-          by (rule evaln_type_sound [elim_format]) (insert True,simp)
+          by (rule evaln_type_sound [elim_format]) (use True in simp)
         from eval_e1 
         have "G\<turnstile>s0 \<midarrow>e1-\<succ>v1\<rightarrow> s1"
           by (rule evaln_eval)
@@ -990,7 +985,7 @@ next
         by cases simp
       from da obtain V where 
         da_var: "\<lparr>prg=G,cls=accC,lcl=L\<rparr> \<turnstile> dom (locals (store s0)) \<guillemotright>\<langle>var\<rangle>\<^sub>v\<guillemotright> V"
-        by (cases "\<exists> n. var=LVar n") (insert da.LVar,auto elim!: da_elim_cases)
+        by (cases "\<exists> n. var=LVar n") (use da.LVar in \<open>auto elim!: da_elim_cases\<close>)
       from eval obtain upd where
         eval_var: "G\<turnstile>s0 \<midarrow>var=\<succ>(v, upd)\<midarrow>n\<rightarrow> s1"
         using normal_s0 by (fastforce elim: evaln_elim_cases)
@@ -1271,7 +1266,7 @@ next
       have s1_no_return: "abrupt s1 \<noteq> Some (Jump Ret)"
         by (rule eval_expression_no_jump 
                  [where ?Env="\<lparr>prg=G,cls=accC,lcl=L\<rparr>",simplified])
-           (insert normal_s0,auto)
+           (use normal_s0 in auto)
 
       from valid_e P valid_A conf_s0 evaln_e wt_e da_e
       obtain "Q \<lfloor>a\<rfloor>\<^sub>e s1 Z" and conf_s1: "s1\<Colon>\<preceq>(G,L)"
@@ -1341,40 +1336,38 @@ next
                   init_lvars G invDeclC \<lparr>name = mn, parTs = pTs'\<rparr> mode a vs \<and>.
                   (\<lambda>s. normal s \<longrightarrow> G\<turnstile>mode\<rightarrow>invC\<preceq>statT)
                ) v s3' Z"
-      {
-        assume abrupt_s3: "\<not> normal s3"
-        have "S \<lfloor>v\<rfloor>\<^sub>e s5 Z"
-        proof -
-          from abrupt_s3 check have eq_s3'_s3: "s3'=s3"
-            by (auto simp add: check_method_access_def Let_def)
-          with R s3 invDeclC invC l abrupt_s3
-          have R': "PROP ?R"
-            by auto
-          have conf_s3': "s3'\<Colon>\<preceq>(G, Map.empty)"
-           (* we need an arbirary environment (here empty) that s2' conforms to
+      have abrupt_s3_lemma: "S \<lfloor>v\<rfloor>\<^sub>e s5 Z"
+        if abrupt_s3: "\<not> normal s3"
+      proof -
+        from abrupt_s3 check have eq_s3'_s3: "s3'=s3"
+          by (auto simp add: check_method_access_def Let_def)
+        with R s3 invDeclC invC l abrupt_s3
+        have R': "PROP ?R"
+          by auto
+        have conf_s3': "s3'\<Colon>\<preceq>(G, Map.empty)"
+          (* we need an arbirary environment (here empty) that s2' conforms to
               to apply validE *)
-          proof -
-            from s2_no_return s3
-            have "abrupt s3 \<noteq> Some (Jump Ret)"
-              by (cases s2) (auto simp add: init_lvars_def2 split: if_split_asm)
-            moreover
-            obtain abr2 str2 where s2: "s2=(abr2,str2)"
-              by (cases s2)
-            from s3 s2 conf_s2 have "(abrupt s3,str2)\<Colon>\<preceq>(G, L)"
-              by (auto simp add: init_lvars_def2 split: if_split_asm)
-            ultimately show ?thesis
-              using s3 s2 eq_s3'_s3
-              apply (simp add: init_lvars_def2)
-              apply (rule conforms_set_locals [OF _ wlconf_empty])
-              by auto
-          qed
-          from valid_methd R' valid_A conf_s3' evaln_methd abrupt_s3 eq_s3'_s3
-          have "(set_lvars l .; S) \<lfloor>v\<rfloor>\<^sub>e s4 Z"
-            by (cases rule: validE) simp+
-          with s5 l show ?thesis
-            by simp
+        proof -
+          from s2_no_return s3
+          have "abrupt s3 \<noteq> Some (Jump Ret)"
+            by (cases s2) (auto simp add: init_lvars_def2 split: if_split_asm)
+          moreover
+          obtain abr2 str2 where s2: "s2=(abr2,str2)"
+            by (cases s2)
+          from s3 s2 conf_s2 have "(abrupt s3,str2)\<Colon>\<preceq>(G, L)"
+            by (auto simp add: init_lvars_def2 split: if_split_asm)
+          ultimately show ?thesis
+            using s3 s2 eq_s3'_s3
+            apply (simp add: init_lvars_def2)
+            apply (rule conforms_set_locals [OF _ wlconf_empty])
+            by auto
         qed
-      } note abrupt_s3_lemma = this
+        from valid_methd R' valid_A conf_s3' evaln_methd abrupt_s3 eq_s3'_s3
+        have "(set_lvars l .; S) \<lfloor>v\<rfloor>\<^sub>e s4 Z"
+          by (cases rule: validE) simp+
+        with s5 l show ?thesis
+          by simp
+      qed
 
       have "S \<lfloor>v\<rfloor>\<^sub>e s5 Z"
       proof (cases "normal s2")
@@ -1404,13 +1397,13 @@ next
           by (rule evaln_eval)
         from evaln_e wt_e da_e conf_s0 wf
         have conf_a: "G, store s1\<turnstile>a\<Colon>\<preceq>RefT statT"
-          by (rule evaln_type_sound [elim_format]) (insert normal_s1,simp)
+          by (rule evaln_type_sound [elim_format]) (use normal_s1 in simp)
         with normal_s1 normal_s2 eval_args 
         have conf_a_s2: "G, store s2\<turnstile>a\<Colon>\<preceq>RefT statT"
           by (auto dest: eval_gext)
         from evaln_args wt_args da_args' conf_s1 wf
         have conf_args: "list_all2 (conf G (store s2)) vs pTs"
-          by (rule evaln_type_sound [elim_format]) (insert normal_s2,simp)
+          by (rule evaln_type_sound [elim_format]) (use normal_s2 in simp)
         from statM 
         obtain
           statM': "(statDeclT,statM)\<in>mheads G accC statT \<lparr>name=mn,parTs=pTs'\<rparr>" 
@@ -1652,10 +1645,9 @@ next
         by (rule validE)
       have "s3=s2"
       proof -
-        from eval_init [THEN evaln_eval] wf
         have s1_no_jmp: "\<And> j. abrupt s1 \<noteq> Some (Jump j)"
-          by - (rule eval_statement_no_jump [OF _ _ _ wt_init],
-                insert normal_s0,auto)
+          by (rule eval_statement_no_jump [OF _ _ _ wt_init])
+            (use eval_init [THEN evaln_eval] wf normal_s0 in auto)
         from eval_c [THEN evaln_eval] _ wt_c wf
         have "\<And> j. abrupt s2 = Some (Jump j) \<Longrightarrow> j=Ret"
           by (rule jumpNestingOk_evalE) (auto intro: jmpOk simp add: s1_no_jmp)
@@ -2003,187 +1995,187 @@ next
            evaluation relation, with all
            the necessary preconditions to apply \<open>valid_e\<close> and 
            \<open>valid_c\<close> in the goal.\<close>
-      {
-        fix t s s' v 
-        assume "G\<turnstile>s \<midarrow>t\<succ>\<midarrow>n\<rightarrow> (v, s')"
-        hence "\<And> Y' T E. 
-                \<lbrakk>t =  \<langle>l\<bullet> While(e) c\<rangle>\<^sub>s; \<forall>t\<in>A. G\<Turnstile>n\<Colon>t; P Y' s Z; s\<Colon>\<preceq>(G, L);
-                 normal s \<Longrightarrow> \<lparr>prg=G,cls=accC,lcl=L\<rparr>\<turnstile>t\<Colon>T; 
-                 normal s \<Longrightarrow> \<lparr>prg=G,cls=accC,lcl=L\<rparr>\<turnstile>dom (locals (store s))\<guillemotright>t\<guillemotright>E
-                \<rbrakk>\<Longrightarrow> (P'\<leftarrow>=False\<down>=\<diamondsuit>) v s' Z"
+      have generalized:
+          "\<And> Y' T E.
+              \<lbrakk>t =  \<langle>l\<bullet> While(e) c\<rangle>\<^sub>s; \<forall>t\<in>A. G\<Turnstile>n\<Colon>t; P Y' s Z; s\<Colon>\<preceq>(G, L);
+               normal s \<Longrightarrow> \<lparr>prg=G,cls=accC,lcl=L\<rparr>\<turnstile>t\<Colon>T; 
+               normal s \<Longrightarrow> \<lparr>prg=G,cls=accC,lcl=L\<rparr>\<turnstile>dom (locals (store s))\<guillemotright>t\<guillemotright>E
+              \<rbrakk>\<Longrightarrow> (P'\<leftarrow>=False\<down>=\<diamondsuit>) v s' Z"
           (is "PROP ?Hyp n t s v s'")
-        proof (induct)
-          case (Loop s0' e' b n' s1' c' s2' l' s3' Y' T E)
-          note while = \<open>(\<langle>l'\<bullet> While(e') c'\<rangle>\<^sub>s::term) = \<langle>l\<bullet> While(e) c\<rangle>\<^sub>s\<close>
-          hence eqs: "l'=l" "e'=e" "c'=c" by simp_all
-          note valid_A = \<open>\<forall>t\<in>A. G\<Turnstile>n'\<Colon>t\<close>
-          note P = \<open>P Y' (Norm s0') Z\<close>
-          note conf_s0' = \<open>Norm s0'\<Colon>\<preceq>(G, L)\<close>
-          have wt: "\<lparr>prg=G,cls=accC,lcl=L\<rparr>\<turnstile>\<langle>l\<bullet> While(e) c\<rangle>\<^sub>s\<Colon>T"
-            using Loop.prems eqs by simp
-          have da: "\<lparr>prg=G,cls=accC,lcl=L\<rparr>\<turnstile>
-                    dom (locals (store ((Norm s0')::state)))\<guillemotright>\<langle>l\<bullet> While(e) c\<rangle>\<^sub>s\<guillemotright>E"
-            using Loop.prems eqs by simp
-          have evaln_e: "G\<turnstile>Norm s0' \<midarrow>e-\<succ>b\<midarrow>n'\<rightarrow> s1'" 
-            using Loop.hyps eqs by simp
-          show "(P'\<leftarrow>=False\<down>=\<diamondsuit>) \<diamondsuit> s3' Z"
-          proof -
-            from wt  obtain 
-              wt_e: "\<lparr>prg=G,cls=accC,lcl=L\<rparr>\<turnstile>e\<Colon>-PrimT Boolean" and
-              wt_c: "\<lparr>prg=G,cls=accC,lcl=L\<rparr>\<turnstile>c\<Colon>\<surd>"
-              by cases (simp add: eqs)
-            from da obtain E S where
-              da_e: "\<lparr>prg=G,cls=accC,lcl=L\<rparr>
+        if "G\<turnstile>s \<midarrow>t\<succ>\<midarrow>n\<rightarrow> (v, s')"
+        for t s s' v
+        using that
+      proof (induct)
+        case (Loop s0' e' b n' s1' c' s2' l' s3' Y' T E)
+        note while = \<open>(\<langle>l'\<bullet> While(e') c'\<rangle>\<^sub>s::term) = \<langle>l\<bullet> While(e) c\<rangle>\<^sub>s\<close>
+        hence eqs: "l'=l" "e'=e" "c'=c" by simp_all
+        note valid_A = \<open>\<forall>t\<in>A. G\<Turnstile>n'\<Colon>t\<close>
+        note P = \<open>P Y' (Norm s0') Z\<close>
+        note conf_s0' = \<open>Norm s0'\<Colon>\<preceq>(G, L)\<close>
+        have wt: "\<lparr>prg=G,cls=accC,lcl=L\<rparr>\<turnstile>\<langle>l\<bullet> While(e) c\<rangle>\<^sub>s\<Colon>T"
+          using Loop.prems eqs by simp
+        have da: "\<lparr>prg=G,cls=accC,lcl=L\<rparr>\<turnstile>
+                  dom (locals (store ((Norm s0')::state)))\<guillemotright>\<langle>l\<bullet> While(e) c\<rangle>\<^sub>s\<guillemotright>E"
+          using Loop.prems eqs by simp
+        have evaln_e: "G\<turnstile>Norm s0' \<midarrow>e-\<succ>b\<midarrow>n'\<rightarrow> s1'" 
+          using Loop.hyps eqs by simp
+        show "(P'\<leftarrow>=False\<down>=\<diamondsuit>) \<diamondsuit> s3' Z"
+        proof -
+          from wt  obtain 
+            wt_e: "\<lparr>prg=G,cls=accC,lcl=L\<rparr>\<turnstile>e\<Colon>-PrimT Boolean" and
+            wt_c: "\<lparr>prg=G,cls=accC,lcl=L\<rparr>\<turnstile>c\<Colon>\<surd>"
+            by cases (simp add: eqs)
+          from da obtain E S where
+            da_e: "\<lparr>prg=G,cls=accC,lcl=L\<rparr>
                      \<turnstile> dom (locals (store ((Norm s0')::state))) \<guillemotright>\<langle>e\<rangle>\<^sub>e\<guillemotright> E" and
-              da_c: "\<lparr>prg=G,cls=accC,lcl=L\<rparr>
+            da_c: "\<lparr>prg=G,cls=accC,lcl=L\<rparr>
                      \<turnstile> (dom (locals (store ((Norm s0')::state))) 
                             \<union> assigns_if True e) \<guillemotright>\<langle>c\<rangle>\<^sub>s\<guillemotright> S"
-              by cases (simp add: eqs)
-            from evaln_e 
-            have eval_e: "G\<turnstile>Norm s0' \<midarrow>e-\<succ>b\<rightarrow> s1'"
-              by (rule evaln_eval)
-            from valid_e P valid_A conf_s0' evaln_e wt_e da_e
-            obtain P': "P' \<lfloor>b\<rfloor>\<^sub>e s1' Z" and conf_s1': "s1'\<Colon>\<preceq>(G,L)"
-              by (rule validE)
-            show "(P'\<leftarrow>=False\<down>=\<diamondsuit>) \<diamondsuit> s3' Z"
-            proof (cases "normal s1'")
+            by cases (simp add: eqs)
+          from evaln_e 
+          have eval_e: "G\<turnstile>Norm s0' \<midarrow>e-\<succ>b\<rightarrow> s1'"
+            by (rule evaln_eval)
+          from valid_e P valid_A conf_s0' evaln_e wt_e da_e
+          obtain P': "P' \<lfloor>b\<rfloor>\<^sub>e s1' Z" and conf_s1': "s1'\<Colon>\<preceq>(G,L)"
+            by (rule validE)
+          show "(P'\<leftarrow>=False\<down>=\<diamondsuit>) \<diamondsuit> s3' Z"
+          proof (cases "normal s1'")
+            case True
+            note normal_s1'=this
+            show ?thesis
+            proof (cases "the_Bool b")
               case True
-              note normal_s1'=this
-              show ?thesis
-              proof (cases "the_Bool b")
-                case True
-                with P' normal_s1' have P'': "(Normal (P'\<leftarrow>=True)) \<lfloor>b\<rfloor>\<^sub>e s1' Z"
-                  by auto
-                from True Loop.hyps obtain
-                  eval_c: "G\<turnstile>s1' \<midarrow>c\<midarrow>n'\<rightarrow> s2'" and 
-                  eval_while:  
-                     "G\<turnstile>abupd (absorb (Cont l)) s2' \<midarrow>l\<bullet> While(e) c\<midarrow>n'\<rightarrow> s3'"
-                  by (simp add: eqs)
-                from True Loop.hyps have
-                  hyp: "PROP ?Hyp n' \<langle>l\<bullet> While(e) c\<rangle>\<^sub>s 
+              with P' normal_s1' have P'': "(Normal (P'\<leftarrow>=True)) \<lfloor>b\<rfloor>\<^sub>e s1' Z"
+                by auto
+              from True Loop.hyps obtain
+                eval_c: "G\<turnstile>s1' \<midarrow>c\<midarrow>n'\<rightarrow> s2'" and 
+                eval_while:  
+                "G\<turnstile>abupd (absorb (Cont l)) s2' \<midarrow>l\<bullet> While(e) c\<midarrow>n'\<rightarrow> s3'"
+                by (simp add: eqs)
+              from True Loop.hyps have
+                hyp: "PROP ?Hyp n' \<langle>l\<bullet> While(e) c\<rangle>\<^sub>s 
                           (abupd (absorb (Cont l')) s2') \<diamondsuit> s3'"
-                  apply (simp only: True if_True eqs)
-                  apply (elim conjE)
-                  apply (tactic "smp_tac \<^context> 3 1")
-                  apply fast
-                  done
-                from eval_e
-                have s0'_s1': "dom (locals (store ((Norm s0')::state))) 
+                apply (simp only: True if_True eqs)
+                apply (elim conjE)
+                apply (tactic "smp_tac \<^context> 3 1")
+                apply fast
+                done
+              from eval_e
+              have s0'_s1': "dom (locals (store ((Norm s0')::state))) 
                                   \<subseteq> dom (locals (store s1'))"
-                  by (rule dom_locals_eval_mono_elim)
-                obtain S' where
-                  da_c':
-                   "\<lparr>prg=G,cls=accC,lcl=L\<rparr>\<turnstile>(dom (locals (store s1')))\<guillemotright>\<langle>c\<rangle>\<^sub>s\<guillemotright> S'" 
-                proof -
-                  note s0'_s1'
-                  moreover
-                  from eval_e normal_s1' wt_e 
-                  have "assigns_if True e \<subseteq> dom (locals (store s1'))"
-                    by (rule assigns_if_good_approx' [elim_format]) 
-                       (simp add: True)
-                  ultimately 
-                  have "dom (locals (store ((Norm s0')::state)))
-                           \<union> assigns_if True e \<subseteq> dom (locals (store s1'))"
-                    by (rule Un_least)
-                  with da_c show thesis
-                    by (rule da_weakenE) (rule that)
-                qed
-                with valid_c P'' valid_A conf_s1' eval_c wt_c
-                obtain "(abupd (absorb (Cont l)) .; P) \<diamondsuit> s2' Z" and 
-                  conf_s2': "s2'\<Colon>\<preceq>(G,L)"
-                  by (rule validE)
-                hence P_s2': "P \<diamondsuit> (abupd (absorb (Cont l)) s2') Z"
-                  by simp
-                from conf_s2'
-                have conf_absorb: "abupd (absorb (Cont l)) s2' \<Colon>\<preceq>(G, L)"
-                  by (cases s2') (auto intro: conforms_absorb)
+                by (rule dom_locals_eval_mono_elim)
+              obtain S' where
+                da_c':
+                "\<lparr>prg=G,cls=accC,lcl=L\<rparr>\<turnstile>(dom (locals (store s1')))\<guillemotright>\<langle>c\<rangle>\<^sub>s\<guillemotright> S'" 
+              proof -
+                note s0'_s1'
                 moreover
-                obtain E' where 
-                  da_while':
-                   "\<lparr>prg=G,cls=accC,lcl=L\<rparr>\<turnstile> 
+                from eval_e normal_s1' wt_e 
+                have "assigns_if True e \<subseteq> dom (locals (store s1'))"
+                  by (rule assigns_if_good_approx' [elim_format]) 
+                    (simp add: True)
+                ultimately 
+                have "dom (locals (store ((Norm s0')::state)))
+                           \<union> assigns_if True e \<subseteq> dom (locals (store s1'))"
+                  by (rule Un_least)
+                with da_c show thesis
+                  by (rule da_weakenE) (rule that)
+              qed
+              with valid_c P'' valid_A conf_s1' eval_c wt_c
+              obtain "(abupd (absorb (Cont l)) .; P) \<diamondsuit> s2' Z" and 
+                conf_s2': "s2'\<Colon>\<preceq>(G,L)"
+                by (rule validE)
+              hence P_s2': "P \<diamondsuit> (abupd (absorb (Cont l)) s2') Z"
+                by simp
+              from conf_s2'
+              have conf_absorb: "abupd (absorb (Cont l)) s2' \<Colon>\<preceq>(G, L)"
+                by (cases s2') (auto intro: conforms_absorb)
+              moreover
+              obtain E' where 
+                da_while':
+                "\<lparr>prg=G,cls=accC,lcl=L\<rparr>\<turnstile> 
                      dom (locals(store (abupd (absorb (Cont l)) s2')))
                       \<guillemotright>\<langle>l\<bullet> While(e) c\<rangle>\<^sub>s\<guillemotright> E'"
-                proof -
-                  note s0'_s1'
-                  also 
-                  from eval_c 
-                  have "G\<turnstile>s1' \<midarrow>c\<rightarrow> s2'"
-                    by (rule evaln_eval)
-                  hence "dom (locals (store s1')) \<subseteq> dom (locals (store s2'))"
-                    by (rule dom_locals_eval_mono_elim)
-                  also 
-                  have "\<dots>\<subseteq>dom (locals (store (abupd (absorb (Cont l)) s2')))"
-                    by simp
-                  finally
-                  have "dom (locals (store ((Norm s0')::state))) \<subseteq> \<dots>" .
-                  with da show thesis
-                    by (rule da_weakenE) (rule that)
-                qed
-                from valid_A P_s2' conf_absorb wt da_while'
-                show "(P'\<leftarrow>=False\<down>=\<diamondsuit>) \<diamondsuit> s3' Z" 
-                  using hyp by (simp add: eqs)
-              next
-                case False
-                with Loop.hyps obtain "s3'=s1'"
+              proof -
+                note s0'_s1'
+                also 
+                from eval_c 
+                have "G\<turnstile>s1' \<midarrow>c\<rightarrow> s2'"
+                  by (rule evaln_eval)
+                hence "dom (locals (store s1')) \<subseteq> dom (locals (store s2'))"
+                  by (rule dom_locals_eval_mono_elim)
+                also 
+                have "\<dots>\<subseteq>dom (locals (store (abupd (absorb (Cont l)) s2')))"
                   by simp
-                with P' False show ?thesis
-                  by auto
-              qed 
+                finally
+                have "dom (locals (store ((Norm s0')::state))) \<subseteq> \<dots>" .
+                with da show thesis
+                  by (rule da_weakenE) (rule that)
+              qed
+              from valid_A P_s2' conf_absorb wt da_while'
+              show "(P'\<leftarrow>=False\<down>=\<diamondsuit>) \<diamondsuit> s3' Z" 
+                using hyp by (simp add: eqs)
             next
               case False
-              note abnormal_s1'=this
-              have "s3'=s1'"
-              proof -
-                from False obtain abr where abr: "abrupt s1' = Some abr"
-                  by (cases s1') auto
-                from eval_e _ wt_e wf
-                have no_jmp: "\<And> j. abrupt s1' \<noteq> Some (Jump j)"
-                  by (rule eval_expression_no_jump 
-                       [where ?Env="\<lparr>prg=G,cls=accC,lcl=L\<rparr>",simplified])
-                     simp
-                show ?thesis
-                proof (cases "the_Bool b")
-                  case True  
-                  with Loop.hyps obtain
-                    eval_c: "G\<turnstile>s1' \<midarrow>c\<midarrow>n'\<rightarrow> s2'" and 
-                    eval_while:  
-                     "G\<turnstile>abupd (absorb (Cont l)) s2' \<midarrow>l\<bullet> While(e) c\<midarrow>n'\<rightarrow> s3'"
-                    by (simp add: eqs)
-                  from eval_c abr have "s2'=s1'" by auto
-                  moreover from calculation no_jmp 
-                  have "abupd (absorb (Cont l)) s2'=s2'"
-                    by (cases s1') (simp add: absorb_def)
-                  ultimately show ?thesis
-                    using eval_while abr
-                    by auto
-                next
-                  case False
-                  with Loop.hyps show ?thesis by simp
-                qed
-              qed
+              with Loop.hyps obtain "s3'=s1'"
+                by simp
               with P' False show ?thesis
                 by auto
+            qed 
+          next
+            case False
+            note abnormal_s1'=this
+            have "s3'=s1'"
+            proof -
+              from False obtain abr where abr: "abrupt s1' = Some abr"
+                by (cases s1') auto
+              from eval_e _ wt_e wf
+              have no_jmp: "\<And> j. abrupt s1' \<noteq> Some (Jump j)"
+                by (rule eval_expression_no_jump 
+                    [where ?Env="\<lparr>prg=G,cls=accC,lcl=L\<rparr>",simplified])
+                  simp
+              show ?thesis
+              proof (cases "the_Bool b")
+                case True  
+                with Loop.hyps obtain
+                  eval_c: "G\<turnstile>s1' \<midarrow>c\<midarrow>n'\<rightarrow> s2'" and 
+                  eval_while:  
+                  "G\<turnstile>abupd (absorb (Cont l)) s2' \<midarrow>l\<bullet> While(e) c\<midarrow>n'\<rightarrow> s3'"
+                  by (simp add: eqs)
+                from eval_c abr have "s2'=s1'" by auto
+                moreover from calculation no_jmp 
+                have "abupd (absorb (Cont l)) s2'=s2'"
+                  by (cases s1') (simp add: absorb_def)
+                ultimately show ?thesis
+                  using eval_while abr
+                  by auto
+              next
+                case False
+                with Loop.hyps show ?thesis by simp
+              qed
             qed
-          qed
-        next
-          case (Abrupt abr s t' n' Y' T E)
-          note t' = \<open>t' = \<langle>l\<bullet> While(e) c\<rangle>\<^sub>s\<close>
-          note conf = \<open>(Some abr, s)\<Colon>\<preceq>(G, L)\<close>
-          note P = \<open>P Y' (Some abr, s) Z\<close>
-          note valid_A = \<open>\<forall>t\<in>A. G\<Turnstile>n'\<Colon>t\<close>
-          show "(P'\<leftarrow>=False\<down>=\<diamondsuit>) (undefined3 t') (Some abr, s) Z"
-          proof -
-            have eval_e: 
-              "G\<turnstile>(Some abr,s) \<midarrow>\<langle>e\<rangle>\<^sub>e\<succ>\<midarrow>n'\<rightarrow> (undefined3 \<langle>e\<rangle>\<^sub>e,(Some abr,s))"
-              by auto
-            from valid_e P valid_A conf eval_e 
-            have "P' (undefined3 \<langle>e\<rangle>\<^sub>e) (Some abr,s) Z"
-              by (cases rule: validE [where ?P="P"]) simp+
-            with t' show ?thesis
+            with P' False show ?thesis
               by auto
           qed
-        qed simp_all
-      } note generalized=this
+        qed
+      next
+        case (Abrupt abr s t' n' Y' T E)
+        note t' = \<open>t' = \<langle>l\<bullet> While(e) c\<rangle>\<^sub>s\<close>
+        note conf = \<open>(Some abr, s)\<Colon>\<preceq>(G, L)\<close>
+        note P = \<open>P Y' (Some abr, s) Z\<close>
+        note valid_A = \<open>\<forall>t\<in>A. G\<Turnstile>n'\<Colon>t\<close>
+        show "(P'\<leftarrow>=False\<down>=\<diamondsuit>) (undefined3 t') (Some abr, s) Z"
+        proof -
+          have eval_e: 
+            "G\<turnstile>(Some abr,s) \<midarrow>\<langle>e\<rangle>\<^sub>e\<succ>\<midarrow>n'\<rightarrow> (undefined3 \<langle>e\<rangle>\<^sub>e,(Some abr,s))"
+            by auto
+          from valid_e P valid_A conf eval_e 
+          have "P' (undefined3 \<langle>e\<rangle>\<^sub>e) (Some abr,s) Z"
+            by (cases rule: validE [where ?P="P"]) simp+
+          with t' show ?thesis
+            by auto
+        qed
+      qed simp_all
       from eval _ valid_A P conf_s0 wt da
       have "(P'\<leftarrow>=False\<down>=\<diamondsuit>) \<diamondsuit> s3 Z"
         by (rule generalized)  simp_all
@@ -2317,7 +2309,7 @@ next
         from sxalloc wf
         have "s2=s1"
           by (rule sxalloc_type_sound [elim_format])
-             (insert False, auto split: option.splits abrupt.splits )
+             (use False in \<open>auto split: option.splits abrupt.splits\<close>)
         with False 
         have no_catch: "\<not>  G,s2\<turnstile>catch C"
           by (simp add: catch_def)
@@ -2444,7 +2436,7 @@ next
         by auto
       from eval_c1 wt_c1 da_c1 conf_s0 wf
       have  "error_free (abr1,s1)"
-        by (rule evaln_type_sound  [elim_format]) (insert normal_s0,simp)
+        by (rule evaln_type_sound  [elim_format]) (use normal_s0 in simp)
       with s3 have s3': "s3 = abupd (abrupt_if (abr1 \<noteq> None) abr1) s2"
         by (simp add: error_free_def)
       from conf_s1 
@@ -2551,8 +2543,8 @@ next
           using that by (auto intro: assigned.select_convs)
       next
         case False 
-        with da_Init show ?thesis
-          by - (rule that, auto intro: assigned.select_convs)
+        show ?thesis
+          by (rule that) (use da_Init False in \<open>auto intro: assigned.select_convs\<close>)
       qed
       from normal_s0 conf_s0 wf cls_C not_inited
       have conf_init_cls: "(Norm ((init_class_obj G C) (store s0)))\<Colon>\<preceq>(G, L)"

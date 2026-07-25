@@ -23,9 +23,9 @@ definition
     "OUnion(i,B) \<equiv> {z: \<Union>x\<in>i. B(x). Ord(i)}"
 
 syntax
-  "_oall"     :: "[idt, i, o] \<Rightarrow> o"        (\<open>(3\<forall>_<_./ _)\<close> 10)
-  "_oex"      :: "[idt, i, o] \<Rightarrow> o"        (\<open>(3\<exists>_<_./ _)\<close> 10)
-  "_OUNION"   :: "[idt, i, i] \<Rightarrow> i"        (\<open>(3\<Union>_<_./ _)\<close> 10)
+  "_oall"     :: "[idt, i, o] \<Rightarrow> o"  (\<open>(\<open>indent=3 notation=\<open>binder \<forall><\<close>\<close>\<forall>_<_./ _)\<close> 10)
+  "_oex"      :: "[idt, i, o] \<Rightarrow> o"  (\<open>(\<open>indent=3 notation=\<open>binder \<exists><\<close>\<close>\<exists>_<_./ _)\<close> 10)
+  "_OUNION"   :: "[idt, i, i] \<Rightarrow> i"  (\<open>(\<open>indent=3 notation=\<open>binder \<Union><\<close>\<close>\<Union>_<_./ _)\<close> 10)
 syntax_consts
   "_oall" \<rightleftharpoons> oall and
   "_oex" \<rightleftharpoons> oex and
@@ -196,8 +196,8 @@ definition
     "rex(M, P) \<equiv> \<exists>x. M(x) \<and> P(x)"
 
 syntax
-  "_rall"     :: "[pttrn, i\<Rightarrow>o, o] \<Rightarrow> o"        (\<open>(3\<forall>_[_]./ _)\<close> 10)
-  "_rex"      :: "[pttrn, i\<Rightarrow>o, o] \<Rightarrow> o"        (\<open>(3\<exists>_[_]./ _)\<close> 10)
+  "_rall"     :: "[pttrn, i\<Rightarrow>o, o] \<Rightarrow> o"  (\<open>(\<open>indent=3 notation=\<open>binder \<forall>[]\<close>\<close>\<forall>_[_]./ _)\<close> 10)
+  "_rex"      :: "[pttrn, i\<Rightarrow>o, o] \<Rightarrow> o"  (\<open>(\<open>indent=3 notation=\<open>binder \<exists>[]\<close>\<close>\<exists>_[_]./ _)\<close> 10)
 syntax_consts
   "_rall" \<rightleftharpoons> rall and
   "_rex" \<rightleftharpoons> rex
@@ -330,7 +330,7 @@ by blast
 subsubsection\<open>Sets as Classes\<close>
 
 definition
-  setclass :: "[i,i] \<Rightarrow> o"       (\<open>##_\<close> [40] 40)  where
+  setclass :: "[i,i] \<Rightarrow> o"  (\<open>(\<open>open_block notation=\<open>prefix setclass\<close>\<close>##_)\<close> [40] 40)  where
    "setclass(A) \<equiv> \<lambda>x. x \<in> A"
 
 lemma setclass_iff [simp]: "setclass(A,x) <-> x \<in> A"
@@ -350,8 +350,8 @@ val Ord_atomize =
     ZF_conn_pairs, ZF_mem_pairs);
 \<close>
 declaration \<open>fn _ =>
-  Simplifier.map_ss (Simplifier.set_mksimps (fn ctxt =>
-    map mk_eq o Ord_atomize o Variable.gen_all ctxt))
+  Simplifier.map_simpset (Simplifier.set_mksimps
+    (fn ctxt => map mk_eq o Ord_atomize o Variable.gen_all ctxt))
 \<close>
 
 text \<open>Setting up the one-point-rule simproc\<close>

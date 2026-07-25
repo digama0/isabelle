@@ -205,10 +205,13 @@ lemma matrix_right_invertible_surjective:
 proof -
   have "\<And>B x. A ** B = mat 1 \<Longrightarrow> \<exists>y. x = A *v y"
     by (metis matrix_vector_mul_assoc matrix_vector_mul_lid)
-  moreover have "\<forall>x. \<exists>xa. x = A *v xa \<Longrightarrow> \<exists>B. A ** B = mat 1"
-    by (metis (mono_tags, lifting) matrix_compose_gen matrix_id_mat_1 matrix_of_matrix_vector_mul surj_def vec.linear_axioms vec.linear_surjective_right_inverse)
+  moreover 
+  have "\<exists>B. A ** B = mat 1" if "surj ((*v) A)"
+      by (metis (no_types, opaque_lifting) matrix_compose_gen matrix_id_mat_1
+          matrix_of_matrix_vector_mul vec.linear_axioms
+          vec.linear_surjective_right_inverse that)
   ultimately show ?thesis
-    by (auto simp: image_def set_eq_iff)
+    by (auto simp: image_def set_eq_iff surj_def)
 qed
 
 lemma matrix_left_invertible_independent_columns:
@@ -243,21 +246,25 @@ proof -
     unfolding matrix_right_invertible_surjective matrix_mult_sum surj_def
     by (simp add: eq_commute)
   have rhseq: "?rhs \<longleftrightarrow> (\<forall>x. x \<in> vec.span (columns A))" by blast
-  { assume h: ?lhs
-    { fix x:: "'a ^'n"
+  have ?rhs if h: ?lhs
+  proof -
+    have "x \<in> vec.span (columns A)" for x:: "'a ^'n"
+    proof -
       obtain y :: "'a ^'m" where y: "sum (\<lambda>i. (y$i) *s column i A) ?U = x"
         using h lhseq by blast
-      then have "x \<in> vec.span (columns A)"
+      then show ?thesis
         by (metis (mono_tags, lifting) columns_def mem_Collect_eq vec.span_base vec.span_scale vec.span_sum)
-    }
-    then have ?rhs unfolding rhseq by blast }
+    qed
+    then show ?thesis unfolding rhseq by blast
+  qed
   moreover
-  { assume h:?rhs
-    let ?P = "\<lambda>(y::'a ^'n). \<exists>(x::'a^'m). sum (\<lambda>i. (x$i) *s column i A) ?U = y"
-    { fix y
+  have ?lhs if h:?rhs
+  proof -
+    have "\<exists>(x::'a^'m). sum (\<lambda>i. (x$i) *s column i A) ?U = y" (is "?P y") for y::"'a ^'n"
+    proof -
       have "y \<in> vec.span (columns A)"
         unfolding h by blast
-      then have "?P y"
+      then show ?thesis
       proof (induction rule: vec.span_induct_alt)
         case base
         then show ?case
@@ -287,9 +294,9 @@ proof -
                       = c * ((column i A)$j) + sum (\<lambda>xa. ((x$xa) * ((column xa A)$j))) ?U" .
         qed
       qed
-    }
-    then have ?lhs unfolding lhseq ..
-  }
+    qed
+    then show ?thesis unfolding lhseq ..
+  qed
   ultimately show ?thesis by blast
 qed
 
@@ -301,24 +308,27 @@ lemma matrix_left_invertible_span_rows:
   "(\<exists>(B::real^'m^'n). B ** (A::real^'n^'m) = mat 1) \<longleftrightarrow> span (rows A) = UNIV"
   using matrix_left_invertible_span_rows_gen[of A] by (simp add: span_vec_eq)
 
+
+lemma matrix_left_right_inverse1:
+  fixes A A' :: "'a::{field}^'n^'n"
+  assumes AA': "A ** A' = mat 1"
+  shows "A' ** A = mat 1"
+proof -
+  have sA: "surj ((*v) A)"
+    using AA' matrix_right_invertible_surjective by auto
+  obtain f' :: "'a ^'n \<Rightarrow> 'a ^'n"
+    where f': "Vector_Spaces.linear (*s) (*s) f'" "\<forall>x. f' (A *v x) = x" "\<forall>x. A *v f' x = x"
+    using sA vec.linear_surjective_isomorphism by blast 
+  have "matrix f' ** A = mat 1"
+    by (metis f' matrix_eq matrix_vector_mul_assoc matrix_vector_mul_lid matrix_works)
+  thus "A' ** A = mat 1"
+    by (metis AA' matrix_mul_assoc matrix_mul_lid)
+qed 
+
 lemma matrix_left_right_inverse:
   fixes A A' :: "'a::{field}^'n^'n"
   shows "A ** A' = mat 1 \<longleftrightarrow> A' ** A = mat 1"
-proof -
-  { fix A A' :: "'a ^'n^'n"
-    assume AA': "A ** A' = mat 1"
-    have sA: "surj ((*v) A)"
-      using AA' matrix_right_invertible_surjective by auto
-    obtain f' :: "'a ^'n \<Rightarrow> 'a ^'n"
-      where f': "Vector_Spaces.linear (*s) (*s) f'" "\<forall>x. f' (A *v x) = x" "\<forall>x. A *v f' x = x"
-      using sA vec.linear_surjective_isomorphism by blast 
-    have "matrix f' ** A = mat 1"
-      by (metis f' matrix_eq matrix_vector_mul_assoc matrix_vector_mul_lid matrix_works)
-    hence "A' ** A = mat 1"
-      by (metis AA' matrix_mul_assoc matrix_mul_lid)
-  }
-  then show ?thesis by blast
-qed
+  using matrix_left_right_inverse1 by blast
 
 lemma invertible_left_inverse:
   fixes A :: "'a::{field}^'n^'n"
@@ -353,11 +363,6 @@ lemma transpose_invertible:
   shows "invertible (transpose A)"
   by (meson assms invertible_def matrix_left_right_inverse right_invertible_transpose)
 
-lemma vector_matrix_mul_assoc:
-  fixes v :: "('a::comm_semiring_1)^'n"
-  shows "(v v* M) v* N = v v* (M ** N)"
-  by (metis (no_types, opaque_lifting) matrix_transpose_mul matrix_vector_mul_assoc transpose_matrix_vector)
-
 lemma matrix_scaleR_vector_ac:
   fixes A :: "real^('m::finite)^'n"
   shows "A *v (k *\<^sub>R v) = k *\<^sub>R A *v v"
@@ -373,8 +378,8 @@ subsection \<open>Some interesting theorems and interpretations\<close>
 locale linear_first_finite_dimensional_vector_space =
   l?: Vector_Spaces.linear scaleB scaleC f +
   B?: finite_dimensional_vector_space scaleB BasisB
-  for scaleB :: "('a::field => 'b::ab_group_add => 'b)" (infixr "*b" 75)
-  and scaleC :: "('a => 'c::ab_group_add => 'c)" (infixr "*c" 75)
+  for scaleB :: "('a::field => 'b::ab_group_add => 'b)" (infixr \<open>*b\<close> 75)
+  and scaleC :: "('a => 'c::ab_group_add => 'c)" (infixr \<open>*c\<close> 75)
   and BasisB :: "('b set)"
   and f :: "('b=>'c)"
 
@@ -450,8 +455,8 @@ next
   then obtain i where "v = row i A"
     by (auto simp: rows_def)
   with 0 show ?case
-    unfolding orthogonal_def inner_vec_def matrix_vector_mult_def row_def
-    by (simp add: mult.commute) (metis (no_types) vec_lambda_beta zero_index)
+    by (metis inner_commute matrix_vector_mul_component orthogonal_def row_def vec_lambda_eta
+        zero_index)
 qed
 
 lemma nullspace_inter_rowspace:
@@ -495,7 +500,7 @@ proof -
     finally show ?thesis .
   qed
   then show ?thesis
-    by (simp)
+    by simp
 qed
 
 lemma column_rank_def:
@@ -617,15 +622,15 @@ lemma forall_4: "(\<forall>i::4. P i) \<longleftrightarrow> P 1 \<and> P 2 \<and
   by (metis exhaust_4)
 
 lemma UNIV_1 [simp]: "UNIV = {1::1}"
-  by (auto simp add: num1_eq_iff)
+  by auto
 
-lemma UNIV_2: "UNIV = {1::2, 2::2}"
+lemma UNIV_2: "UNIV = {1, 2::2}"
   using exhaust_2 by auto
 
-lemma UNIV_3: "UNIV = {1::3, 2::3, 3::3}"
+lemma UNIV_3: "UNIV = {1, 2, 3::3}"
   using exhaust_3 by auto
 
-lemma UNIV_4: "UNIV = {1::4, 2::4, 3::4, 4::4}"
+lemma UNIV_4: "UNIV = {1, 2, 3, 4::4}"
   using exhaust_4 by auto
 
 lemma sum_1: "sum f (UNIV::1 set) = f 1"
@@ -720,7 +725,7 @@ proof -
   have "P v" if "\<And>x y. P (vector [x, y])" for v
   proof -
     have "vector [v$1, v$2] = v"
-      by (smt (verit, best) exhaust_2 vec_eq_iff vector_2)
+      unfolding vec_eq_iff by (metis (mono_tags) exhaust_2 vector_2)
     then show ?thesis
       by (metis that)
   qed
@@ -732,7 +737,7 @@ proof -
   have "P v" if "\<And>x y z. P (vector [x, y, z])" for v
   proof -
     have "vector [v$1, v$2, v$3] = v"
-      by (smt (verit, best) exhaust_3 vec_eq_iff vector_3)
+      unfolding vec_eq_iff by (metis (mono_tags) exhaust_3 vector_3)
     then show ?thesis
       by (metis that)
   qed
@@ -830,8 +835,7 @@ lemma vector_eq_affinity:
 lemma vector_cart:
   fixes f :: "real^'n \<Rightarrow> real"
   shows "(\<chi> i. f (axis i 1)) = (\<Sum>i\<in>Basis. f i *\<^sub>R i)"
-  unfolding euclidean_eq_iff[where 'a="real^'n"]
-  by simp (simp add: Basis_vec_def inner_axis)
+  by (simp add: euclidean_eq_iff[where 'a="real^'n"]) (simp add: Basis_vec_def inner_axis)
 
 lemma const_vector_cart:"((\<chi> i. d)::real^'n) = (\<Sum>i\<in>Basis. d *\<^sub>R i)"
   by (rule vector_cart)
@@ -876,30 +880,32 @@ proof -
   let ?U = "UNIV :: 'n set"
   have fU: "finite ?U" by simp
   let ?m1 = "mat 1 :: real ^'n^'n"
-  {
-    assume ot: ?ot
+  have ?rhs if ot: ?ot
+  proof -
     from ot have lf: "Vector_Spaces.linear (*s) (*s) f" and fd: "\<And>v w. f v \<bullet> f w = v \<bullet> w"
       unfolding orthogonal_transformation_def orthogonal_matrix linear_def scalar_mult_eq_scaleR
       by blast+
-    {
-      fix i j
-      let ?A = "transpose ?mf ** ?mf"
-      have th0: "\<And>b (x::'a::comm_ring_1). (if b then 1 else 0)*x = (if b then x else 0)"
-        "\<And>b (x::'a::comm_ring_1). x*(if b then 1 else 0) = (if b then x else 0)"
+    let ?A = "transpose ?mf ** ?mf"
+    have "?A$i$j = ?m1 $ i $ j" for i j
+    proof -
+      have *:
+        "(if b then 1 else 0) * x = (if b then x else 0)"
+        "x * (if b then 1 else 0) = (if b then x else 0)"
+        for b and x::"'a::comm_ring_1"
         by simp_all
       from fd[of "axis i 1" "axis j 1",
         simplified matrix_works[OF lf, symmetric] dot_matrix_vector_mul]
-      have "?A$i$j = ?m1 $ i $ j"
+      show ?thesis
         by (simp add: inner_vec_def matrix_matrix_mult_def columnvector_def rowvector_def
-            th0 sum.delta[OF fU] mat_def axis_def)
-    }
+            * sum.delta[OF fU] mat_def axis_def)
+    qed
     then have "orthogonal_matrix ?mf"
       unfolding orthogonal_matrix
       by vector
-    with lf have ?rhs
+    with lf show ?thesis
       unfolding linear_def scalar_mult_eq_scaleR
       by blast
-  }
+  qed
   moreover
   have ?lhs if "Vector_Spaces.linear (*s) (*s) f" and "orthogonal_matrix ?mf"
     using that unfolding orthogonal_matrix_def norm_eq orthogonal_transformation
@@ -1002,20 +1008,20 @@ proposition scaling_linear:
     and fd: "\<forall>x y. dist (f x) (f y) = c * dist x y"
   shows "linear f"
 proof -
-  {
-    fix v w
+  have "f v \<bullet> f w = c\<^sup>2 * (v \<bullet> w)" for v w
+  proof -
     have "norm (f x) = c * norm x" for x
       by (metis dist_0_norm f0 fd)
-    then have "f v \<bullet> f w = c\<^sup>2 * (v \<bullet> w)"
+    then show ?thesis
       unfolding dot_norm_neg dist_norm[symmetric]
       by (simp add: fd power2_eq_square field_simps)
-  }
+  qed
   then show ?thesis
     unfolding linear_iff vector_eq[where 'a="'a"] scalar_mult_eq_scaleR
     by (simp add: inner_add field_simps)
 qed
 
-lemma  isometry_linear:
+lemma isometry_linear:
   "f (0::'a::real_inner) = (0::'a) \<Longrightarrow> \<forall>x y. dist(f x) (f y) = dist x y \<Longrightarrow> linear f"
   by (rule scaling_linear[where c=1]) simp_all
 
@@ -1035,19 +1041,18 @@ lemma  isometry_sphere_extend:
     and fd1: "\<And>x y. \<lbrakk>norm x = 1; norm y = 1\<rbrakk> \<Longrightarrow> dist (f x) (f y) = dist x y"
   shows "\<exists>g. orthogonal_transformation g \<and> (\<forall>x. norm x = 1 \<longrightarrow> g x = f x)"
 proof -
-  {
-    fix x y x' y' u v u' v' :: "'a"
-    assume H: "x = norm x *\<^sub>R u" "y = norm y *\<^sub>R v"
-              "x' = norm x *\<^sub>R u'" "y' = norm y *\<^sub>R v'"
-      and J: "norm u = 1" "norm u' = 1" "norm v = 1" "norm v' = 1" "norm(u' - v') = norm(u - v)"
-    then have *: "u \<bullet> v = u' \<bullet> v' + v' \<bullet> u' - v \<bullet> u "
+  have norm_eq: "norm(x' - y') = norm(x - y)"
+    if H: "x = norm x *\<^sub>R u" "y = norm y *\<^sub>R v" "x' = norm x *\<^sub>R u'" "y' = norm y *\<^sub>R v'"
+    and J: "norm u = 1" "norm u' = 1" "norm v = 1" "norm v' = 1" "norm(u' - v') = norm(u - v)"
+    for x y x' y' u v u' v' :: "'a"
+  proof -
+    from that have *: "u \<bullet> v = u' \<bullet> v' + v' \<bullet> u' - v \<bullet> u "
       by (simp add: norm_eq norm_eq_1 inner_add inner_diff)
     have "norm (norm x *\<^sub>R u' - norm y *\<^sub>R v') = norm (norm x *\<^sub>R u - norm y *\<^sub>R v)"
       using J by (simp add: norm_eq norm_eq_1 inner_diff * field_simps)
-    then have "norm(x' - y') = norm(x - y)"
+    then show ?thesis
       using H by metis
-  }
-  note norm_eq = this
+  qed
   let ?g = "\<lambda>x. if x = 0 then 0 else norm x *\<^sub>R f (x /\<^sub>R norm x)"
   have thfg: "?g x = f x" if "norm x = 1" for x
     using that by auto
@@ -1263,10 +1268,9 @@ proof -
   next
     fix A :: "real^'n^'n" and i
     assume "row i A = 0"
-    show "P ((*v) A)"
-      using matrix_vector_mul_linear
-      by (rule zeroes[where i=i])
-        (metis \<open>row i A = 0\<close> inner_zero_left matrix_vector_mul_component row_def vec_lambda_eta)
+    with matrix_vector_mul_linear show "P ((*v) A)"
+      by (metis matrix_vector_mul_component matrix_vector_mult_0 row_def
+          vec_lambda_eta zero_index zeroes)
   next
     fix A :: "real^'n^'n"
     assume 0: "\<And>i j. i \<noteq> j \<Longrightarrow> A $ i $ j = 0"

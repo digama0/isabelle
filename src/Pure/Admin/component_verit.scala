@@ -8,7 +8,8 @@ package isabelle
 
 
 object Component_VeriT {
-  val default_download_url = "https://verit.loria.fr/rmx/2021.06.2/verit-2021.06.2-rmx.tar.gz"
+  val default_download_url =
+    "https://www.verit-solver.org/download/2021.06.2/verit-2021.06.2-rmx.tar.gz"
 
 
   /* build veriT */
@@ -17,10 +18,8 @@ object Component_VeriT {
     download_url: String = default_download_url,
     progress: Progress = new Progress,
     target_dir: Path = Path.current,
-    mingw: MinGW = MinGW.none
+    mingw_root: Path = MinGW.default_root
   ): Unit = {
-    mingw.check
-
     Isabelle_System.with_tmp_dir("build") { tmp_dir =>
       /* component */
 
@@ -46,7 +45,9 @@ object Component_VeriT {
 
       /* platform */
 
-      val platform_name = Isabelle_Platform.self.ISABELLE_PLATFORM(windows = true)
+      val platform_context =
+        Isabelle_Platform.Bash_Context(mingw_root = Some(mingw_root), progress = progress)
+      val platform_name = platform_context.ISABELLE_PLATFORM
       val platform_dir =
         Isabelle_System.make_directory(component_dir.path + Path.basic(platform_name))
 
@@ -69,8 +70,8 @@ object Component_VeriT {
       val configure_options =
         if (Platform.is_linux) "LDFLAGS=-Wl,-rpath,_DUMMY_" else ""
 
-      progress.bash(mingw.bash_script("set -e\n./configure " + configure_options + "\nmake"),
-        cwd = source_dir, echo = progress.verbose).check
+      platform_context.bash(
+        "set -e\n./configure " + configure_options + "\nmake", cwd = source_dir).check
 
 
       /* install */
@@ -79,13 +80,13 @@ object Component_VeriT {
 
       val exe_path = Path.basic("veriT").platform_exe
       Isabelle_System.copy_file(source_dir + exe_path, platform_dir)
-      Executable.libraries_closure(platform_dir + exe_path, filter = Set("libgmp"), mingw = mingw)
+      platform_context.library_closure(platform_dir + exe_path, filter = Set("libgmp"))
 
 
       /* settings */
 
       component_dir.write_settings("""
-ISABELLE_VERIT="$COMPONENT/${ISABELLE_WINDOWS_PLATFORM64:-$ISABELLE_PLATFORM64}/veriT"
+ISABELLE_VERIT="$COMPONENT/${ISABELLE_WINDOWS_PLATFORM64:-${ISABELLE_APPLE_PLATFORM64:-$ISABELLE_PLATFORM64}}/veriT"
 """)
 
 
@@ -115,7 +116,7 @@ It has been built from sources like this:
       Scala_Project.here,
       { args =>
         var target_dir = Path.current
-        var mingw = MinGW.none
+        var mingw_root = MinGW.default_root
         var download_url = default_download_url
         var verbose = false
 
@@ -125,6 +126,7 @@ Usage: isabelle component_verit [OPTIONS]
   Options are:
     -D DIR       target directory (default ".")
     -M DIR       msys/mingw root specification for Windows
+                 (default: """ + MinGW.default_root + """)
     -U URL       download URL
                  (default: """" + default_download_url + """")
     -v           verbose
@@ -132,7 +134,7 @@ Usage: isabelle component_verit [OPTIONS]
   Build prover component from official download.
 """,
           "D:" -> (arg => target_dir = Path.explode(arg)),
-          "M:" -> (arg => mingw = MinGW(Path.explode(arg))),
+          "M:" -> (arg => mingw_root = Path.explode(arg)),
           "U:" -> (arg => download_url = arg),
           "v" -> (_ => verbose = true))
 
@@ -142,6 +144,6 @@ Usage: isabelle component_verit [OPTIONS]
         val progress = new Console_Progress(verbose = verbose)
 
         build_verit(download_url = download_url, progress = progress,
-          target_dir = target_dir, mingw = mingw)
+          target_dir = target_dir, mingw_root = mingw_root)
       })
 }

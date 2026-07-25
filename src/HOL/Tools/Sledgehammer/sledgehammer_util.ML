@@ -51,7 +51,7 @@ fun parse_bool_option option name s =
   handle Option.Option =>
     let val ss = map quote ((option ? cons "smart") ["true", "false"]) in
       error ("Parameter " ^ quote name ^ " must be assigned " ^
-       space_implode " " (serial_commas "or" ss))
+       implode_space (serial_commas "or" ss))
     end
 
 val has_junk =
@@ -115,14 +115,12 @@ fun thms_in_proof max_thms name_tabs th =
 
 fun thms_of_name ctxt name =
   let
-    val get = maps (Proof_Context.get_fact ctxt o fst)
     val keywords = Thy_Header.get_keywords' ctxt
   in
-    Symbol_Pos.explode (name, Position.start)
-    |> Token.tokenize keywords {strict = false}
+    Token.explode keywords Position.start name
     |> filter Token.is_proper
     |> Source.of_list
-    |> Source.source Token.stopper (Parse.thms1 >> get)
+    |> Source.source' (Context.Proof ctxt) Token.stopper Attrib.multi_thm
     |> Source.exhaust
   end
 
@@ -131,8 +129,8 @@ val one_year = seconds (365.0 * 24.0 * 60.0 * 60.0)
 
 fun hackish_string_of_term ctxt =
   (* FIXME: map_aterms (fn Free (s, T) => Free (if Name.is_internal s then "_" else s, T) | t => t)
-  #> *) Print_Mode.setmp [] (Syntax.string_of_term ctxt)
-  #> YXML.content_of
+  #> *) Syntax.pretty_term ctxt
+  #> Pretty.pure_string_of
   #> simplify_spaces
 
 val spying_version = "d"
@@ -143,7 +141,7 @@ fun spying false _ = ()
       val (state, i, tool, message) = f ()
       val ctxt = Proof.context_of state
       val goal = Logic.get_goal (Thm.prop_of (#goal (Proof.goal state))) i
-      val hash = String.substring (SHA1.rep (SHA1.digest (hackish_string_of_term ctxt goal)), 0, 12)
+      val hash = Message_Digest.rep_short (SHA1.digest (hackish_string_of_term ctxt goal))
     in
       File.append (Path.explode "$ISABELLE_HOME_USER/spy_sledgehammer")
         (spying_version ^ " " ^ timestamp () ^ ": " ^ hash ^ ": " ^ tool ^ ": " ^ message ^ "\n")

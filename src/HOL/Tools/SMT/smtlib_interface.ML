@@ -13,6 +13,16 @@ sig
   val realsmlibC: SMT_Util.class
   val add_logic: int * (string -> term list -> string option) -> Context.generic -> Context.generic
   val del_logic: int * (string -> term list -> string option) -> Context.generic -> Context.generic
+
+  type dtype_decls = (string * (string * (string * string) list) list) list
+  type func_decl = string * (string list * string)
+  val serialize: (BNF_Util.fp_kind * dtype_decls -> Buffer.T -> Buffer.T) -> (string * string) list -> string list ->
+    {dtyps: (BNF_Util.fp_kind * (string * (string * (string * string) list) list)) list,
+     funcs: func_decl list, logic: string, sorts: string list} ->
+    (SMT_Util.role * SMT_Translate.sterm) list -> string
+
+  val serialize_datatypes: BNF_Util.fp_kind * dtype_decls -> Buffer.T -> Buffer.T
+
   val translate_config: SMT_Util.order -> Proof.context -> SMT_Translate.config
   val assert_name_of_role_and_index: SMT_Util.role -> int -> string
   val role_and_index_of_assert_name: string -> SMT_Util.role * int
@@ -131,10 +141,10 @@ fun tree_of_sterm l (SMT_Translate.SVar (i, [])) = SMTLIB.Sym (var (l - i - 1))
 
 
 fun sctrarg (sel, typ) = "(" ^ sel ^ " " ^ typ ^ ")"
-fun sctr (name, args) = enclose "(" ")" (space_implode " " (name :: map sctrarg args))
-fun sdatatype (name, ctrs) = enclose "(" ")" (space_implode " " (name :: map sctr ctrs))
+fun sctr (name, args) = enclose "(" ")" (implode_space (name :: map sctrarg args))
+fun sdatatype (name, ctrs) = enclose "(" ")" (implode_space (name :: map sctr ctrs))
 
-fun string_of_fun (f, (ss, s)) = f ^ " (" ^ space_implode " " ss ^ ") " ^ s
+fun string_of_fun (f, (ss, s)) = f ^ " (" ^ implode_space ss ^ ") " ^ s
 
 fun named_sterm s t = SMTLIB.S [SMTLIB.Sym "!", t, SMTLIB.Key "named", SMTLIB.Sym s]
 
@@ -157,11 +167,16 @@ fun unprefix_axiom s =
 fun role_and_index_of_assert_name s =
   apsnd (the_default ~1 o Int.fromString) (unprefix_axiom s)
 
-fun sdtyp (fp, dtyps) =
+type dtype_decls = (string * (string * (string * string) list) list) list
+
+fun sdtyp (fp, dtyps : dtype_decls) =
   Buffer.add (enclose ("(declare-" ^ BNF_FP_Util.co_prefix fp ^ "datatypes () (") "))\n"
     (space_implode "\n  " (map sdatatype dtyps)))
 
-fun serialize smt_options comments {logic, sorts, dtyps, funcs} ts =
+type func_decl = string * (string list * string)
+
+fun serialize (sdtyp : BNF_Util.fp_kind * dtype_decls -> Buffer.T -> Buffer.T) smt_options comments
+      {logic, sorts, dtyps, funcs} ts =
   let
     val unsat_core = member (op =) smt_options (":produce-unsat-cores", "true")
   in
@@ -181,13 +196,29 @@ fun serialize smt_options comments {logic, sorts, dtyps, funcs} ts =
     |> Buffer.content
   end
 
+local
+
+fun sctrarg (sel, typ) = "(" ^ sel ^ " " ^ typ ^ ")"
+fun sctr (name, args) = enclose "(" ")" (implode_space (name :: map sctrarg args))
+fun sdatatype (_, ctrs) = enclose "(" ")" (implode_space (map sctr ctrs))
+fun sarity (name, _) = enclose "(" ")" (name ^ " 0")
+
+in
+
+fun serialize_datatypes ((fp, dtyps : dtype_decls)) =
+  Buffer.add (enclose ("(declare-" ^ BNF_FP_Util.co_prefix fp ^ "datatypes (" ^
+    implode_space (map sarity dtyps) ^ ") (") "))\n"
+  (space_implode"\n  " (map sdatatype dtyps)))
+
+end
+
 (* interface *)
 
 fun translate_config order ctxt = {
   order = order,
   logic = choose_logic ctxt,
   fp_kinds = [],
-  serialize = serialize}
+  serialize = serialize sdtyp}
 
 val _ = Theory.setup (Context.theory_map
   (setup_builtins #>

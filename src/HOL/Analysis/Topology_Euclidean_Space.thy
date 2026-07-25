@@ -320,7 +320,7 @@ corollary\<^marker>\<open>tag unimportant\<close> One_neq_0[iff]: "One \<noteq> 
 corollary\<^marker>\<open>tag unimportant\<close> Zero_neq_One[iff]: "0 \<noteq> One"
   by (metis One_non_0)
 
-definition\<^marker>\<open>tag important\<close> (in euclidean_space) eucl_less (infix "<e" 50) where 
+definition\<^marker>\<open>tag important\<close> (in euclidean_space) eucl_less (infix \<open><e\<close> 50) where 
 "eucl_less a b \<longleftrightarrow> (\<forall>i\<in>Basis. a \<bullet> i < b \<bullet> i)"
 
 definition\<^marker>\<open>tag important\<close> box_eucl_less: "box a b = {x. a <e x \<and> x <e b}"
@@ -362,6 +362,12 @@ lemma box_Int_box:
   shows "box a b \<inter> box c d =
     box (\<Sum>i\<in>Basis. max (a\<bullet>i) (c\<bullet>i) *\<^sub>R i) (\<Sum>i\<in>Basis. min (b\<bullet>i) (d\<bullet>i) *\<^sub>R i)"
   unfolding set_eq_iff and Int_iff and mem_box by auto
+
+lemma cbox_prod: "cbox a b = cbox (fst a) (fst b) \<times> cbox (snd a) (snd b)"
+  by (cases a; cases b) auto
+
+lemma box_prod: "box a b = box (fst a) (fst b) \<times> box (snd a) (snd b)"
+  by (cases a; cases b) (force simp: box_def Basis_prod_def)
 
 lemma rational_boxes:
   fixes x :: "'a::euclidean_space"
@@ -555,18 +561,19 @@ proof -
   have False if "i \<in> Basis" and "b\<bullet>i \<le> a\<bullet>i" and "x \<in> box a b" for i x
     by (smt (verit, ccfv_SIG) mem_box(1) that)
   moreover
-  { assume as: "\<forall>i\<in>Basis. \<not> (b\<bullet>i \<le> a\<bullet>i)"
+  have "box a b \<noteq> {}" if as: "\<forall>i\<in>Basis. \<not> (b\<bullet>i \<le> a\<bullet>i)"
+  proof -
     let ?x = "(1/2) *\<^sub>R (a + b)"
-    { fix i :: 'a
-      assume i: "i \<in> Basis"
-      have "a\<bullet>i < b\<bullet>i"
-        using as i by fastforce
-      then have "a\<bullet>i < ((1/2) *\<^sub>R (a+b)) \<bullet> i" "((1/2) *\<^sub>R (a+b)) \<bullet> i < b\<bullet>i"
+    have "a\<bullet>i < ((1/2) *\<^sub>R (a+b)) \<bullet> i" "((1/2) *\<^sub>R (a+b)) \<bullet> i < b\<bullet>i"
+      if i: "i \<in> Basis" for i :: 'a
+    proof -
+      have "a\<bullet>i < b\<bullet>i" using as i by fastforce
+      then show "a\<bullet>i < ((1/2) *\<^sub>R (a+b)) \<bullet> i" "((1/2) *\<^sub>R (a+b)) \<bullet> i < b\<bullet>i"
         by (auto simp: inner_add_left)
-    }
-    then have "box a b \<noteq> {}"
+    qed
+    then show ?thesis
       by (metis (no_types, opaque_lifting) emptyE mem_box(1))
-  }
+  qed
   ultimately show ?th1 by blast
 
   have False if "i\<in>Basis" and "b\<bullet>i < a\<bullet>i" and "x \<in> cbox a b" for i x
@@ -722,6 +729,12 @@ lemma in_box_complex_iff:
 lemma box_complex_of_real [simp]: "box (complex_of_real x) (complex_of_real y) = {}"
   by (auto simp: in_box_complex_iff)
 
+lemma cbox_complex_eq: "cbox a b = {x. Re x \<in> {Re a..Re b} \<and> Im x \<in> {Im a..Im b}}"
+  by (auto simp: in_cbox_complex_iff)
+
+lemma box_complex_eq: "box a b = {x. Re x \<in> {Re a<..<Re b} \<and> Im x \<in> {Im a<..<Im b}}"
+  by (auto simp: in_box_complex_iff)
+
 lemma Int_interval:
   fixes a :: "'a::euclidean_space"
   shows "cbox a b \<inter> cbox c d =
@@ -767,6 +780,20 @@ proof -
   ultimately show ?thesis
     by (auto simp: box_def inner_sum_left inner_Basis sum.If_cases)
 qed
+
+lemma cbox_shift: "(+) c ` cbox a b = cbox (a + c) (b + c)"
+proof -
+  have "bij_betw ((+) c) (cbox a b) (cbox (a + c) (b + c))"
+    by (rule bij_betwI[of _ _ _ "\<lambda>x. x - c"]) (auto simp: cbox_def algebra_simps)
+  thus ?thesis
+    by (simp add: bij_betw_def)
+qed
+
+lemma cbox_shift': "(\<lambda>x. x + c) ` cbox a b = cbox (a + c) (b + c)"
+  using cbox_shift[of c a b] by (simp add: add.commute)
+
+lemma cbox_shift'': "(\<lambda>x. x - c) ` cbox a b = cbox (a - c) (b - c)"
+  using cbox_shift[of "-c" a b] by simp
 
 lemma image_affinity_cbox: fixes m::real
   fixes a b c :: "'a::euclidean_space"
@@ -1574,25 +1601,25 @@ proof
   then obtain l::'a and r where r: "strict_mono r"
     and l: "\<forall>e>0. eventually (\<lambda>n. \<forall>i\<in>Basis. dist (f (r n) \<bullet> i) (l \<bullet> i) < e) sequentially"
     using compact_lemma [OF f] by blast
-  {
-    fix e::real
-    assume "e > 0"
-    hence "e / real_of_nat DIM('a) > 0" by (simp)
+  have "\<forall>\<^sub>F n in sequentially. dist (f (r n)) l < e" if "e > 0" for e::real
+  proof -
+    from that have "e / real_of_nat DIM('a) > 0" by (simp)
     with l have "eventually (\<lambda>n. \<forall>i\<in>Basis. dist (f (r n) \<bullet> i) (l \<bullet> i) < e / (real_of_nat DIM('a))) sequentially"
       by simp
     moreover
-    { fix n
-      assume n: "\<forall>i\<in>Basis. dist (f (r n) \<bullet> i) (l \<bullet> i) < e / (real_of_nat DIM('a))"
+    have "dist (f (r n)) l < e"
+      if n: "\<forall>i\<in>Basis. dist (f (r n) \<bullet> i) (l \<bullet> i) < e / (real_of_nat DIM('a))" for n
+    proof -
       have "dist (f (r n)) l \<le> (\<Sum>i\<in>Basis. dist (f (r n) \<bullet> i) (l \<bullet> i))"
         using L2_set_le_sum [OF zero_le_dist] by (subst euclidean_dist_l2)
       also have "\<dots> < (\<Sum>i\<in>(Basis::'a set). e / (real_of_nat DIM('a)))"
         by (meson eucl.finite_Basis n nonempty_Basis sum_strict_mono)
-      finally have "dist (f (r n)) l < e"
+      finally show ?thesis
         by auto
-    }
-    ultimately have "\<forall>\<^sub>F n in sequentially. dist (f (r n)) l < e"
+    qed
+    ultimately show ?thesis
       by (rule eventually_mono)
-  }
+  qed
   then have *: "(f \<circ> r) \<longlonglongrightarrow> l"
     unfolding o_def tendsto_iff by simp
   with r show "\<exists>l r. strict_mono r \<and> (f \<circ> r) \<longlonglongrightarrow> l"
@@ -2484,7 +2511,6 @@ proof (cases "A = {}")
   qed
 qed auto
 
-no_notation
-  eucl_less (infix "<e" 50)
+no_notation eucl_less  (infix \<open><e\<close> 50)
 
 end

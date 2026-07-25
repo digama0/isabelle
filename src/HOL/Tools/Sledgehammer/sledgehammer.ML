@@ -19,7 +19,7 @@ sig
   type prover_problem = Sledgehammer_Prover.prover_problem
   type prover_result = Sledgehammer_Prover.prover_result
 
-  type preplay_result = proof_method * (play_outcome * (string * stature) list)
+  type preplay_result = proof_method * (play_outcome * (Pretty.T * stature) list)
 
   datatype sledgehammer_outcome =
     SH_Some of prover_result * preplay_result list
@@ -44,16 +44,18 @@ open ATP_Problem_Generate
 open Sledgehammer_Util
 open Sledgehammer_Fact
 open Sledgehammer_Proof_Methods
+open Sledgehammer_Instantiations
 open Sledgehammer_Isar_Proof
 open Sledgehammer_Isar_Preplay
 open Sledgehammer_Isar_Minimize
 open Sledgehammer_ATP_Systems
 open Sledgehammer_Prover
 open Sledgehammer_Prover_ATP
+open Sledgehammer_Prover_Tactic
 open Sledgehammer_Prover_Minimize
 open Sledgehammer_MaSh
 
-type preplay_result = proof_method * (play_outcome * (string * stature) list)
+type preplay_result = proof_method * (play_outcome * (Pretty.T * stature) list)
 
 datatype sledgehammer_outcome =
   SH_Some of prover_result * preplay_result list
@@ -95,14 +97,14 @@ fun max_outcome outcomes =
     |> the_default (SH_Unknown, "")
   end
 
-fun play_one_line_proofs minimize timeout used_facts state goal i methss =
+fun play_one_line_proofs minimize timeout used_facts state goal i methss : preplay_result list =
   (if timeout = Time.zeroTime then
      []
    else
      let
        val ctxt = Proof.context_of state
-       val used_facts = filter_out (fn (_, (sc, _)) => sc = Chained) used_facts
-       val fact_names = map fst used_facts
+       val name_of_fact = content_of_pretty o fst
+       val fact_names = map name_of_fact used_facts
        val {facts = chained, ...} = Proof.goal state
        val goal_t = Logic.get_goal (Thm.prop_of goal) i
 
@@ -128,34 +130,30 @@ fun play_one_line_proofs minimize timeout used_facts state goal i methss =
                       val (time', used_names') =
                         minimized_isar_step ctxt chained time (mk_step [meth])
                         ||> (facts_of_isar_step #> snd)
-                      val used_facts' = filter (member (op =) used_names' o fst) used_facts
+                      val used_facts' =
+                        filter (member (op =) used_names' o name_of_fact) used_facts
                     in
-                      (meth, Played time', used_facts')
+                      (meth, (Played time', used_facts'))
                     end
-                  | _ => (meth, play_outcome, used_facts)))
-             val any_succeeded = exists (fn (_, Played _, _) => true | _ => false) ress'
+                  | _ => (meth, (play_outcome, used_facts))))
+             val any_succeeded = exists (fn (_, (Played _, _)) => true | _ => false) ress'
            in
              try_methss (ress' @ ress) (if any_succeeded then [] else methss)
            end
      in
        try_methss [] methss
      end)
-  |> map (fn (meth, play_outcome, used_facts) =>
-    (meth, (play_outcome, filter_out (fn (_, (sc, _)) => sc = Chained) used_facts)))
   |> sort (play_outcome_ord o apply2 (fn (_, (play_outcome, _)) => play_outcome))
 
-fun select_one_line_proof used_facts preferred_meth preplay_results =
+fun select_one_line_proof preferred_meth preplay_results =
   (case preplay_results of
     (* Select best method if preplay succeeded *)
     (best_meth, (best_outcome as Played _, best_used_facts)) :: _ =>
-    (best_used_facts, (best_meth, best_outcome))
+    SOME (best_used_facts, (best_meth, best_outcome))
     (* Otherwise select preferred method *)
   | _ =>
-    (used_facts, (preferred_meth,
-       (case AList.lookup (op =) preplay_results preferred_meth of
-         SOME (outcome, _) => outcome
-       | NONE => Play_Timed_Out Time.zeroTime))))
-  |> apfst (filter_out (fn (_, (sc, _)) => sc = Chained))
+    AList.lookup (op =) preplay_results preferred_meth
+    |> Option.map (fn (outcome, used_facts) => (used_facts, (preferred_meth, outcome))))
 
 fun launch_prover (params as {verbose, spy, slices, timeout, ...}) mode learn
     (problem as {state, subgoal, factss, ...} : prover_problem)
@@ -175,8 +173,8 @@ fun launch_prover (params as {verbose, spy, slices, timeout, ...}) mode learn
         ()
 
     fun print_used_facts used_facts used_from =
-      tag_list 1 used_from
-      |> map (fn (j, fact) => fact |> apsnd (K j))
+      used_from
+      |> map_index (fn (j, fact) => fact |> apsnd (K (j + 1)))
       |> filter_used_facts false used_facts
       |> map (fn ((name, _), j) => name ^ "@" ^ string_of_int j)
       |> commas
@@ -188,8 +186,8 @@ fun launch_prover (params as {verbose, spy, slices, timeout, ...}) mode learn
           val num_used_facts = length used_facts
 
           fun find_indices facts =
-            tag_list 1 facts
-            |> map (fn (j, fact) => fact |> apsnd (K j))
+            facts
+            |> map_index (fn (j, fact) => fact |> apsnd (K (j + 1)))
             |> filter_used_facts false used_facts
             |> distinct (eq_fst (op =))
             |> map (prefix "@" o string_of_int o snd)
@@ -222,30 +220,62 @@ fun launch_prover (params as {verbose, spy, slices, timeout, ...}) mode learn
    |> spy ? tap (fn res => spying spy (fn () => (state, subgoal, name, spying_str_of_res res)))
  end
 
-fun preplay_prover_result ({minimize, preplay_timeout, ...} : params) state goal subgoal
+fun preplay_prover_result ({verbose, instantiate, minimize, preplay_timeout, ...} : params)
+    state goal subgoal
     (result as {outcome, used_facts, preferred_methss, message, ...} : prover_result) =
-  let
-    val (output, chosen_preplay_outcome) =
-      if outcome = SOME ATP_Proof.TimedOut then
-        (SH_TimeOut, select_one_line_proof used_facts (fst preferred_methss) [])
-      else if outcome = SOME ATP_Proof.OutOfResources then
-        (SH_ResourcesOut, select_one_line_proof used_facts (fst preferred_methss) [])
-      else if is_some outcome then
-        (SH_None, select_one_line_proof used_facts (fst preferred_methss) [])
-      else
-        let
-          val preplay_results =
-            play_one_line_proofs minimize preplay_timeout used_facts state goal subgoal
-              (snd preferred_methss)
-          val chosen_preplay_outcome =
-            select_one_line_proof used_facts (fst preferred_methss) preplay_results
-        in
-          (SH_Some (result, preplay_results), chosen_preplay_outcome)
-        end
-    fun output_message () = message (fn () => chosen_preplay_outcome)
-  in
-    (output, output_message)
-  end
+  if outcome = SOME ATP_Proof.TimedOut then
+    (SH_TimeOut, fn () => message NONE)
+  else if outcome = SOME ATP_Proof.OutOfResources then
+    (SH_ResourcesOut, fn () => message NONE)
+  else if is_some outcome then
+    (SH_None, fn () => message NONE)
+  else
+    let
+      val used_facts0 = filter_out (fn (_, (sc, _)) => sc = Chained) used_facts
+      val pretty_used_facts0 = map (apfst Pretty.str) used_facts0
+      fun preplay methss pretty_used_facts =
+        play_one_line_proofs minimize preplay_timeout pretty_used_facts state goal subgoal methss
+      fun preplay_succeeded ((_, (Played _, _)) :: _) = true
+        | preplay_succeeded _ = false
+      val instantiate_timeout =
+        if preplay_timeout = Time.zeroTime then
+          Time.fromSeconds 5
+        else
+          Time.scale 5.0 preplay_timeout
+      val instantiate = if null used_facts0 then SOME false else instantiate
+      val preplay_results =
+        (case instantiate of
+          SOME false => preplay (snd preferred_methss) pretty_used_facts0
+        | SOME true =>
+          (* Always try to infer variable instantiations *)
+          (case instantiate_facts state verbose instantiate_timeout goal subgoal used_facts0 of
+            NONE => preplay (snd preferred_methss) pretty_used_facts0
+          | SOME pretty_used_facts =>
+            if preplay_timeout = Time.zeroTime then
+              [(fst preferred_methss, (Play_Timed_Out Time.zeroTime, pretty_used_facts))]
+            else if null (snd preferred_methss) then
+              preplay [[fst preferred_methss]] pretty_used_facts
+            else
+              preplay (snd preferred_methss) pretty_used_facts)
+        | NONE =>
+          let
+            val preplay_results0 = preplay (snd preferred_methss) pretty_used_facts0
+            val preplay_disabled =
+              preplay_timeout = Time.zeroTime orelse null (snd preferred_methss)
+          in
+            if preplay_succeeded preplay_results0 orelse preplay_disabled then
+              preplay_results0
+            else
+              (* Preplay failed, now try to infer variable instantiations *)
+              instantiate_facts state verbose instantiate_timeout goal subgoal used_facts0
+              |> Option.map (preplay (snd preferred_methss))
+              |> the_default preplay_results0
+          end)
+      fun output_message () =
+        message (select_one_line_proof (fst preferred_methss) preplay_results)
+    in
+      (SH_Some (result, preplay_results), output_message)
+    end
 
 fun analyze_prover_result_for_inconsistency (result as {outcome, used_facts, ...} : prover_result) =
   if outcome = SOME ATP_Proof.TimedOut then
@@ -262,7 +292,7 @@ fun analyze_prover_result_for_inconsistency (result as {outcome, used_facts, ...
           | facts => "The goal is falsified by these facts: " ^ commas facts)
         else
           "Derived \"False\" from these facts alone: " ^
-          space_implode " " (map fst used_facts)))
+          implode_space (map fst used_facts)))
 
 fun check_expected_outcome ctxt prover_name expect outcome =
   let
@@ -294,7 +324,7 @@ fun launch_prover_and_preplay (params as {debug, timeout, expect, ...}) mode
     val ctxt = Proof.context_of state
     val hard_timeout = Time.scale 5.0 timeout
 
-    fun flip_problem {comment, state, goal, subgoal, factss = factss, ...} =
+    fun flip_problem {comment, state, goal, subgoal, factss, memoize_fun_call, ...} =
       let
         val thy = Proof_Context.theory_of ctxt
         val assms = Assumption.all_assms_of ctxt
@@ -314,7 +344,8 @@ fun launch_prover_and_preplay (params as {debug, timeout, expect, ...}) mode
         {comment = comment, state = state, goal = Thm.trivial @{cprop False}, subgoal = 1,
          subgoal_count = 1, factss = map (apsnd (append new_facts)) factss,
          has_already_found_something = has_already_found_something,
-         found_something = found_something "a falsification"}
+         found_something = found_something "a falsification",
+         memoize_fun_call = memoize_fun_call}
       end
 
     val problem as {goal, ...} = problem |> falsify ? flip_problem
@@ -351,7 +382,7 @@ fun launch_prover_and_preplay (params as {debug, timeout, expect, ...}) mode
 
 fun string_of_facts filter facts =
   "Selected " ^ string_of_int (length facts) ^ " " ^ (if filter = "" then "" else filter ^ " ") ^
-  "fact" ^ plural_s (length facts) ^ ": " ^ (space_implode " " (map (fst o fst) facts))
+  "fact" ^ plural_s (length facts) ^ ": " ^ (implode_space (map (fst o fst) facts))
 
 fun string_of_factss factss =
   if forall (null o snd) factss then
@@ -359,32 +390,55 @@ fun string_of_factss factss =
   else
     cat_lines (map (fn (filter, facts) => string_of_facts filter facts) factss)
 
-val default_slice_schedule =
+local
+
+fun default_slice_schedule (ctxt : Proof.context) : string list =
+  (* We want to subsume try0. *)
+  flat (Try0.get_schedule ctxt) @
+  (* FUDGE (loosely inspired by "Hammering without ATPs" evaluation) *)
+  ["metis", "fastforce", "metis", "simp", "auto", "fastforce", "metis", "simp"] @
   (* FUDGE (loosely inspired by Seventeen evaluation) *)
-  [cvc4N, zipperpositionN, vampireN, veritN, spassN, zipperpositionN, eN, cvc4N, zipperpositionN,
-   cvc4N, eN, zipperpositionN, vampireN, cvc4N, cvc4N, vampireN, cvc4N, iproverN, zipperpositionN,
+  [cvc5N, zipperpositionN, vampireN, veritN, spassN, zipperpositionN, eN, cvc5N, zipperpositionN,
+   cvc5N, eN, zipperpositionN, vampireN, cvc5N, cvc5N, vampireN, cvc5N, iproverN, zipperpositionN,
    spassN, vampireN, zipperpositionN, vampireN, zipperpositionN, z3N, zipperpositionN, vampireN,
-   iproverN, spassN, zipperpositionN, vampireN, cvc4N, zipperpositionN, z3N, z3N, cvc4N,
+   iproverN, spassN, zipperpositionN, vampireN, cvc5N, zipperpositionN, z3N, z3N, cvc5N,
    zipperpositionN]
 
-fun schedule_of_provers provers num_slices =
-  let
-    val (known_provers, unknown_provers) =
-      List.partition (member (op =) default_slice_schedule) provers
+in
 
-    val default_slice_schedule = filter (member (op =) known_provers) default_slice_schedule
-    val num_default_slices = length default_slice_schedule
+fun schedule_of_provers (ctxt : Proof.context) (provers : string list) num_slices =
+  let
+    val default_schedule = default_slice_schedule ctxt
+    val (tactics, known_provers, unknown_provers) =
+      let
+        fun partition_into name (tactics, known_provers, unknown_provers) =
+          if Option.isSome (Try0.get_proof_method name) then
+            (name :: tactics, known_provers, unknown_provers)
+          else if member (op =) default_schedule name then
+            (tactics, name :: known_provers, unknown_provers)
+          else
+            (tactics, known_provers, name :: unknown_provers)
+      in
+        fold partition_into provers ([], [], [])
+      end
+
+    val default_schedule =
+      filter (fn name => member (op =) tactics name orelse member (op =) known_provers name)
+        default_schedule
+    val num_default_slices = length default_schedule
 
     fun round_robin _ [] = []
       | round_robin 0 _ = []
       | round_robin n (prover :: provers) = prover :: round_robin (n - 1) (provers @ [prover])
   in
     if num_slices <= num_default_slices then
-      take num_slices default_slice_schedule
+      take num_slices default_schedule
     else
-      default_slice_schedule
+      default_schedule
       @ round_robin (num_slices - num_default_slices) (unknown_provers @ known_provers)
   end
+
+end
 
 fun prover_slices_of_schedule ctxt goal subgoal factss
     ({abduce, falsify, max_facts, fact_filter, type_enc, lam_trans, uncurried_aliases,
@@ -410,7 +464,7 @@ fun prover_slices_of_schedule ctxt goal subgoal factss
         extra_extra0)) =
         ATP_Slice (format0, the_default type_enc0 type_enc, the_default lam_trans0 lam_trans,
           the_default uncurried_aliases0 uncurried_aliases, extra_extra0)
-      | adjust_extra (extra as SMT_Slice _) = extra
+      | adjust_extra extra = extra
 
     fun adjust_slice max_slice_size
         ((slice_size0, abduce0, falsify0, num_facts0, fact_filter0), extra) =
@@ -460,8 +514,32 @@ fun prover_slices_of_schedule ctxt goal subgoal factss
     |> distinct (op =)
   end
 
+local
+
+fun memoize verbose cache_dir f arg =
+  let
+    val hash = Message_Digest.rep (SHA1.digest arg)
+    val file = cache_dir + Path.explode hash
+  in
+    (case try File.read file of
+      NONE =>
+      let val result = f arg in
+        File.write file result;
+        result
+      end
+    | SOME s =>
+      let
+        val () =
+          if verbose then
+            writeln ("Found problem with key " ^ hash ^ " in cache.")
+          else
+            ()
+      in s end)
+  end
+in
+
 fun run_sledgehammer (params as {verbose, spy, provers, falsify, induction_rules, max_facts,
-    max_proofs, slices, timeout, ...}) mode writeln_result i (fact_override as {only, ...}) state =
+    max_proofs, slices, timeout, cache_dir, ...}) mode writeln_result i (fact_override as {only, ...}) state =
   if null provers then
     error "No prover is set"
   else
@@ -508,7 +586,7 @@ fun run_sledgehammer (params as {verbose, spy, provers, falsify, induction_rules
             s
 
         fun massage_message proof_or_inconsistency s =
-          let val s' = strip_time s in
+          let val s' = strip_time (Protocol_Message.clean_output s) in
             if member (op =) (Synchronized.value seen_messages) s' then
               "Duplicate " ^ proof_or_inconsistency
             else
@@ -563,13 +641,23 @@ fun run_sledgehammer (params as {verbose, spy, provers, falsify, induction_rules
             factss
           end
 
+        val memoize_fun_call =
+          (case cache_dir of
+            NONE => (fn f => fn arg => f arg)
+          | SOME path =>
+            (if File.is_dir path then
+              memoize verbose path
+            else
+              (warning ("No such directory: " ^ quote (Path.print path));
+              fn f => fn arg => f arg)))
+
         fun launch_provers () =
           let
             val factss = get_factss provers
             val problem =
               {comment = "", state = state, goal = goal, subgoal = i, subgoal_count = n,
                factss = factss, has_already_found_something = has_already_found_something,
-               found_something = found_something "a proof"}
+               found_something = found_something "a proof", memoize_fun_call = memoize_fun_call}
             val learn = mash_learn_proof ctxt params (Thm.prop_of goal)
             val launch = launch_prover_and_preplay params mode has_already_found_something
               found_something massage_message writeln_result learn
@@ -578,7 +666,7 @@ fun run_sledgehammer (params as {verbose, spy, provers, falsify, induction_rules
 
             val schedule =
               if mode = Auto_Try then provers
-              else schedule_of_provers provers slices
+              else schedule_of_provers ctxt provers slices
             val prover_slices = prover_slices_of_schedule ctxt goal i factss params schedule
 
             val _ =
@@ -625,5 +713,7 @@ fun run_sledgehammer (params as {verbose, spy, provers, falsify, induction_rules
             if message = "" then normal_failure ()
             else (the_default writeln writeln_result ("Warning: " ^ message); false)))
       end)
+
+end
 
 end;

@@ -30,7 +30,7 @@ val default_default_params =
    ("max_genuine", "1"),
    ("max_potential", "1"),
    ("overlord", "false"),
-   ("solvers", "cvc4 kodkod paradox smbc"),
+   ("solvers", "kodkod paradox smbc"),
    ("specialize", "true"),
    ("spy", "false"),
    ("timeout", "30"),
@@ -235,7 +235,7 @@ fun default_params thy =
   extract_params (Proof_Context.init_global thy) Normal (default_raw_params thy)
   o map (apsnd single);
 
-val parse_key = Scan.repeat1 Parse.embedded >> space_implode " ";
+val parse_key = Scan.repeat1 Parse.embedded >> implode_space;
 val parse_value =
   Scan.repeat1 (Parse.minus >> single
     || Scan.repeat1 (Scan.unless Parse.minus (Parse.name || Parse.float_number))
@@ -246,7 +246,7 @@ val parse_params = Scan.optional (\<^keyword>\<open>[\<close> |-- Parse.list par
 
 fun run_chaku override_params mode i state0 =
   let
-    val state = Proof.map_contexts (Try0.silence_methods false) state0;
+    val state = Proof.map_contexts Try0_HOL.silence_methods state0;
     val thy = Proof.theory_of state;
     val ctxt = Proof.context_of state;
     val _ = List.app check_raw_param override_params;

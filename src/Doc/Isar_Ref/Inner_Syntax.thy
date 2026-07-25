@@ -94,16 +94,12 @@ text \<open>
     \<^descr> @{command "print_state"} prints the current proof state (if present),
     including current facts and goals.
 
-  All of the diagnostic commands above admit a list of \<open>modes\<close> to be
-  specified, which is appended to the current print mode; see also
-  \secref{sec:print-modes}. Thus the output behavior may be modified according
-  particular print mode features. For example, @{command
-  "print_state"}~\<open>(latex)\<close> prints the current proof state with mathematical
-  symbols and special characters represented in {\LaTeX} source, according to
-  the Isabelle style \<^cite>\<open>"isabelle-system"\<close>.
-
-  Note that antiquotations (cf.\ \secref{sec:antiq}) provide a more systematic
-  way to include formal items into the printed text document.
+  The diagnostic commands above accept an optional list of \<open>modes\<close>, which is
+  appended to the current print mode; see also \secref{sec:print-modes}. Thus
+  the output behavior may be modified according particular print mode
+  features. For example, @{command "thm"}~\<^verbatim>\<open>("") symmetric\<close> prints a theorem
+  without any special markup, bypassing the print mode setup of the Prover
+  IDE.
 \<close>
 
 
@@ -112,11 +108,11 @@ subsection \<open>Details of printed content\<close>
 text \<open>
   \begin{tabular}{rcll}
     @{attribute_def show_markup} & : & \<open>attribute\<close> \\
+    @{attribute_def show_consts_markup} & : & \<open>attribute\<close> & default \<open>true\<close> \\
     @{attribute_def show_types} & : & \<open>attribute\<close> & default \<open>false\<close> \\
     @{attribute_def show_sorts} & : & \<open>attribute\<close> & default \<open>false\<close> \\
     @{attribute_def show_consts} & : & \<open>attribute\<close> & default \<open>false\<close> \\
     @{attribute_def show_abbrevs} & : & \<open>attribute\<close> & default \<open>true\<close> \\
-    @{attribute_def show_brackets} & : & \<open>attribute\<close> & default \<open>false\<close> \\
     @{attribute_def names_long} & : & \<open>attribute\<close> & default \<open>false\<close> \\
     @{attribute_def names_short} & : & \<open>attribute\<close> & default \<open>false\<close> \\
     @{attribute_def names_unique} & : & \<open>attribute\<close> & default \<open>true\<close> \\
@@ -139,6 +135,9 @@ text \<open>
   tooltips or popups while hovering with the mouse over the output window, for
   example. Consequently, this option is enabled by default for Isabelle/jEdit.
 
+  \<^descr> @{attribute show_consts_markup} controls printing of type constrains for
+  term constants; this requires @{attribute show_markup}.
+
   \<^descr> @{attribute show_types} and @{attribute show_sorts} control printing of
   type constraints for term variables, and sort constraints for type
   variables. By default, neither of these are shown in output. If @{attribute
@@ -157,13 +156,6 @@ text \<open>
   occur at several different type instances.
 
   \<^descr> @{attribute show_abbrevs} controls folding of constant abbreviations.
-
-  \<^descr> @{attribute show_brackets} controls bracketing in pretty printed output.
-  If enabled, all sub-expressions of the pretty printing tree will be
-  parenthesized, even if this produces malformed term syntax! This crude way
-  of showing the internal structure of pretty printed entities may
-  occasionally help to diagnose problems with operator priorities, for
-  example.
 
   \<^descr> @{attribute names_long}, @{attribute names_short}, and @{attribute
   names_unique} control the way of printing fully qualified internal names in
@@ -334,8 +326,7 @@ text \<open>
   \<^descr> \<open>d\<close> is a delimiter, namely a non-empty sequence delimiter items of the
   following form:
     \<^enum> a control symbol followed by a cartouche
-    \<^enum> a single symbol, excluding the following special characters:
-      \<^medskip>
+    \<^enum> a single symbol, excluding the following special characters: \\[\medskipamount]
       \begin{tabular}{ll}
         \<^verbatim>\<open>'\<close> & single quote \\
         \<^verbatim>\<open>_\<close> & underscore \\
@@ -345,7 +336,6 @@ text \<open>
         \<^verbatim>\<open>/\<close> & slash \\
         \<open>\<open> \<close>\<close> & cartouche delimiters \\
       \end{tabular}
-      \<^medskip>
 
   \<^descr> \<^verbatim>\<open>'\<close> escapes the special meaning of these meta-characters, producing a
   literal version of the following character, unless that is a blank.
@@ -391,12 +381,16 @@ text \<open>
     atom: @{syntax short_ident} | @{syntax int} | @{syntax float} | @{syntax cartouche}
   \<close>
 
-  Each @{syntax entry} is a name-value pair: if the value is omitted, it
-  defaults to \<^verbatim>\<open>true\<close> (intended for Boolean properties). The following
-  standard block properties are supported:
+  Each @{syntax entry} is a name--value pair, but the latter is optional. If
+  the value is omitted, the default depends on its type (Boolean: \<^verbatim>\<open>true\<close>,
+  number: \<^verbatim>\<open>1\<close>, otherwise the empty string). The following standard block
+  properties are supported:
 
     \<^item> \<open>indent\<close> (natural number): the block indentation --- the same as for the
     simple syntax without block properties.
+
+    \<^item> \<open>open_block\<close> (Boolean): this block has no impact on formatting, but it
+    may carry markup information.
 
     \<^item> \<open>consistent\<close> (Boolean): this block has consistent breaks (if one break
     is taken, all breaks are taken).
@@ -409,13 +403,51 @@ text \<open>
     This allows to specify free-form PIDE markup, e.g.\ for specialized
     output.
 
+    \<^item> \<open>notation\<close> (cartouche): a semi-formal description of the notation that
+    is surrounded by the block parentheses. The cartouche consists of multiple
+    words (separated by white-space). The first word specifies the \<^emph>\<open>kind\<close> of
+    notation as follows:
+
+      \<^item> @{notation_kind_def mixfix}: general mixfix notation, with delimiters
+      surrounding its arguments.
+
+      \<^item> @{notation_kind_def prefix}: notation with delimiter before its
+      argument.
+
+      \<^item> @{notation_kind_def postfix}: notation with delimiter after its
+      argument.
+
+      \<^item> @{notation_kind_def "infix"}: notation with delimiter between its
+      arguments (automatically inserted for @{keyword "infix"} annotations,
+      see \secref{sec:infixes}).
+
+      \<^item> @{notation_kind_def "binder"}: notation that binds variables within
+      its body argument (automatically inserted for @{keyword "binder"}
+      annotations, see \secref{sec:binders}).
+
+      \<^item> @{notation_kind_def literal}: notation for literal values, such as
+      string or number.
+
+      \<^item> @{notation_kind_def type_application}: application of a type
+      constructor to its arguments.
+
+      \<^item> @{notation_kind_def application}: \<open>\<lambda>\<close>-term application.
+
+      \<^item> @{notation_kind_def abstraction}: \<open>\<lambda>\<close>-term abstraction.
+
+      \<^item> @{notation_kind_def judgment}: judgment form of the object-logic
+      (usually without delimiters).
+
+    Plenty of examples may be found in the Isabelle sources by searching for
+    ``\<^verbatim>\<open>notation=\<close>''.
+
   \<^medskip>
   Note that the general idea of pretty printing with blocks and breaks is
   described in \<^cite>\<open>"paulson-ml2"\<close>; it goes back to \<^cite>\<open>"Oppen:1980"\<close>.
 \<close>
 
 
-subsection \<open>Infixes\<close>
+subsection \<open>Infixes \label{sec:infixes}\<close>
 
 text \<open>
   Infix operators are specified by convenient short forms that abbreviate
@@ -425,13 +457,13 @@ text \<open>
   \begin{tabular}{lll}
 
   \<^verbatim>\<open>(\<close>@{keyword_def "infix"}~\<^verbatim>\<open>"\<close>\<open>sy\<close>\<^verbatim>\<open>"\<close> \<open>p\<close>\<^verbatim>\<open>)\<close>
-  & \<open>\<mapsto>\<close> &
+  & \<open>\<leadsto>\<close> &
   \<^verbatim>\<open>("(_\<close>~\<open>sy\<close>\<^verbatim>\<open>/ _)" [\<close>\<open>p + 1\<close>\<^verbatim>\<open>,\<close>~\<open>p + 1\<close>\<^verbatim>\<open>]\<close>~\<open>p\<close>\<^verbatim>\<open>)\<close> \\
   \<^verbatim>\<open>(\<close>@{keyword_def "infixl"}~\<^verbatim>\<open>"\<close>\<open>sy\<close>\<^verbatim>\<open>"\<close> \<open>p\<close>\<^verbatim>\<open>)\<close>
-  & \<open>\<mapsto>\<close> &
+  & \<open>\<leadsto>\<close> &
   \<^verbatim>\<open>("(_\<close>~\<open>sy\<close>\<^verbatim>\<open>/ _)" [\<close>\<open>p\<close>\<^verbatim>\<open>,\<close>~\<open>p + 1\<close>\<^verbatim>\<open>]\<close>~\<open>p\<close>\<^verbatim>\<open>)\<close> \\
   \<^verbatim>\<open>(\<close>@{keyword_def "infixr"}~\<^verbatim>\<open>"\<close>\<open>sy\<close>\<^verbatim>\<open>"\<close>~\<open>p\<close>\<^verbatim>\<open>)\<close>
-  & \<open>\<mapsto>\<close> &
+  & \<open>\<leadsto>\<close> &
   \<^verbatim>\<open>("(_\<close>~\<open>sy\<close>\<^verbatim>\<open>/ _)" [\<close>\<open>p + 1\<close>\<^verbatim>\<open>,\<close>~\<open>p\<close>\<^verbatim>\<open>]\<close>~\<open>p\<close>\<^verbatim>\<open>)\<close> \\
 
   \end{tabular}
@@ -442,12 +474,12 @@ text \<open>
   the entire phrase is a pretty printing block.
 
   The alternative notation \<^verbatim>\<open>(\<close>\<open>sy\<close>\<^verbatim>\<open>)\<close> is introduced in addition. Thus any
-  infix operator may be written in prefix form (as in Haskell), independently of
-  the number of arguments.
+  infix operator may be written in prefix form (as in Haskell), independently
+  of the number of arguments.
 \<close>
 
 
-subsection \<open>Binders\<close>
+subsection \<open>Binders \label{sec:binders}\<close>
 
 text \<open>
   A \<^emph>\<open>binder\<close> is a variable-binding construct such as a quantifier. The idea
@@ -955,8 +987,10 @@ text \<open>
   carefully by syntax transformations.
 
   Pre-terms are further processed by the so-called \<^emph>\<open>check\<close> and \<^emph>\<open>uncheck\<close>
-  phases that are intertwined with type-inference (see also \<^cite>\<open>"isabelle-implementation"\<close>). The latter allows to operate on higher-order
-  abstract syntax with proper binding and type information already available.
+  phases that are intertwined with type-inference (see also
+  \<^cite>\<open>"isabelle-implementation"\<close>). The latter allows to operate on
+  higher-order abstract syntax with proper binding and type information
+  already available.
 
   As a rule of thumb, anything that manipulates bindings of variables or
   constants needs to be implemented as syntax transformation (see below).
@@ -1009,12 +1043,13 @@ text \<open>
 
   Input syntax of a term such as \<open>f a b = c\<close> does not yet indicate the scopes
   of atomic entities \<open>f, a, b, c\<close>: they could be global constants or local
-  variables, even bound ones depending on the context of the term. \<^ML>\<open>Ast.Variable\<close> leaves this choice still open: later syntax layers (or
+  variables, even bound ones depending on the context of the term.
+  \<^ML>\<open>Ast.Variable\<close> leaves this choice still open: later syntax layers (or
   translation functions) may capture such a variable to determine its role
   specifically, to make it a constant, bound variable, free variable etc. In
   contrast, syntax translations that introduce already known constants would
-  rather do it via \<^ML>\<open>Ast.Constant\<close> to prevent accidental re-interpretation
-  later on.
+  rather do it via \<^ML>\<open>Ast.Constant\<close> to prevent accidental
+  re-interpretation later on.
 
   Output syntax turns term constants into \<^ML>\<open>Ast.Constant\<close> and variables
   (free or schematic) into \<^ML>\<open>Ast.Variable\<close>. This information is precise
@@ -1078,10 +1113,10 @@ text \<open>
     @{command_def "nonterminal"} & : & \<open>theory \<rightarrow> theory\<close> \\
     @{command_def "syntax"} & : & \<open>local_theory \<rightarrow> local_theory\<close> \\
     @{command_def "no_syntax"} & : & \<open>local_theory \<rightarrow> local_theory\<close> \\
-    @{command_def "syntax_types"} & : & \<open>theory \<rightarrow> theory\<close> \\
-    @{command_def "syntax_consts"} & : & \<open>theory \<rightarrow> theory\<close> \\
-    @{command_def "translations"} & : & \<open>theory \<rightarrow> theory\<close> \\
-    @{command_def "no_translations"} & : & \<open>theory \<rightarrow> theory\<close> \\
+    @{command_def "syntax_types"} & : & \<open>local_theory \<rightarrow> local_theory\<close> \\
+    @{command_def "syntax_consts"} & : & \<open>local_theory \<rightarrow> local_theory\<close> \\
+    @{command_def "translations"} & : & \<open>local_theory \<rightarrow> local_theory\<close> \\
+    @{command_def "no_translations"} & : & \<open>local_theory \<rightarrow> local_theory\<close> \\
     @{attribute_def syntax_ast_trace} & : & \<open>attribute\<close> & default \<open>false\<close> \\
     @{attribute_def syntax_ast_stats} & : & \<open>attribute\<close> & default \<open>false\<close> \\
   \end{tabular}
@@ -1192,10 +1227,12 @@ text \<open>
   applications within the term syntax, independently of the corresponding
   concrete syntax.
 
-  Atomic ASTs are distinguished as \<^ML>\<open>Ast.Constant\<close> versus \<^ML>\<open>Ast.Variable\<close> as follows: a qualified name or syntax constant declared via
-  @{command syntax}, or parse tree head of concrete notation becomes \<^ML>\<open>Ast.Constant\<close>, anything else \<^ML>\<open>Ast.Variable\<close>. Note that \<open>CONST\<close> and
-  \<open>XCONST\<close> within the term language (\secref{sec:pure-grammar}) allow to
-  enforce treatment as constants.
+  Atomic ASTs are distinguished as \<^ML>\<open>Ast.Constant\<close> versus
+  \<^ML>\<open>Ast.Variable\<close> as follows: a qualified name or syntax constant
+  declared via @{command syntax}, or parse tree head of concrete notation
+  becomes \<^ML>\<open>Ast.Constant\<close>, anything else \<^ML>\<open>Ast.Variable\<close>. Note that
+  \<open>CONST\<close> and \<open>XCONST\<close> within the term language (\secref{sec:pure-grammar})
+  allow to enforce treatment as constants.
 
   AST rewrite rules \<open>(lhs, rhs)\<close> need to obey the following side-conditions:
 
@@ -1257,6 +1294,12 @@ text \<open>
     object are treated as (potential) constants, and a successful match makes
     them actual constants even before name space resolution (see also
     \secref{sec:ast}).
+
+    \<^item> Objects of the form \<^verbatim>\<open>Ast.Appl [Constant "_constrain",\<close>~\<open>u\<close>\<^verbatim>\<open>,\<close>~\<open>T\<close>\<^verbatim>\<open>]\<close>,
+    for \<open>u\<close> as \<^ML>\<open>Ast.Variable\<close>~\<open>x\<close> or \<^ML>\<open>Ast.Constant\<close>~\<open>x\<close>, are
+    matched by \<^ML>\<open>Ast.Constant\<close>~\<open>x\<close> if the AST \<open>T\<close> encodes a source
+    position (from parsing) or if types are considered optional (for
+    printing).
 
     \<^item> Object \<open>u\<close> is matched by pattern \<^ML>\<open>Ast.Variable\<close>~\<open>x\<close>, binding \<open>x\<close> to
     \<open>u\<close>.
@@ -1383,12 +1426,14 @@ text \<open>
   in ML.
 
   For AST translations, the arguments \<open>x\<^sub>1, \<dots>, x\<^sub>n\<close> are ASTs. A combination
-  has the form \<^ML>\<open>Ast.Constant\<close>~\<open>c\<close> or \<^ML>\<open>Ast.Appl\<close>~\<open>[\<close>\<^ML>\<open>Ast.Constant\<close>~\<open>c, x\<^sub>1, \<dots>, x\<^sub>n]\<close>. For term translations, the arguments are
-  terms and a combination has the form \<^ML>\<open>Const\<close>~\<open>(c, \<tau>)\<close> or \<^ML>\<open>Const\<close>~\<open>(c, \<tau>) $ x\<^sub>1 $ \<dots> $ x\<^sub>n\<close>. Terms allow more sophisticated
-  transformations than ASTs do, typically involving abstractions and bound
-  variables. \<^emph>\<open>Typed\<close> print translations may even peek at the type \<open>\<tau>\<close> of the
-  constant they are invoked on, although some information might have been
-  suppressed for term output already.
+  has the form \<^ML>\<open>Ast.Constant\<close>~\<open>c\<close> or
+  \<^ML>\<open>Ast.Appl\<close>~\<open>[\<close>\<^ML>\<open>Ast.Constant\<close>~\<open>c, x\<^sub>1, \<dots>, x\<^sub>n]\<close>. For term
+  translations, the arguments are terms and a combination has the form
+  \<^ML>\<open>Const\<close>~\<open>(c, \<tau>)\<close> or \<^ML>\<open>Const\<close>~\<open>(c, \<tau>) $ x\<^sub>1 $ \<dots> $ x\<^sub>n\<close>. Terms
+  allow more sophisticated transformations than ASTs do, typically involving
+  abstractions and bound variables. \<^emph>\<open>Typed\<close> print translations may even peek
+  at the type \<open>\<tau>\<close> of the constant they are invoked on, although some
+  information might have been suppressed for term output already.
 
   Regardless of whether they act on ASTs or terms, translation functions
   called during the parsing process differ from those for printing in their
@@ -1407,13 +1452,14 @@ text \<open>
     Multiple functions associated with some syntactic name are tried in the
     order of declaration in the theory.
 
-  Only constant atoms --- constructor \<^ML>\<open>Ast.Constant\<close> for ASTs and \<^ML>\<open>Const\<close> for terms --- can invoke translation functions. This means that parse
-  translations can only be associated with parse tree heads of concrete
-  syntax, or syntactic constants introduced via other translations. For plain
-  identifiers within the term language, the status of constant versus variable
-  is not yet know during parsing. This is in contrast to print translations,
-  where constants are explicitly known from the given term in its fully
-  internal form.
+  Only constant atoms --- constructor \<^ML>\<open>Ast.Constant\<close> for ASTs and
+  \<^ML>\<open>Const\<close> for terms --- can invoke translation functions. This means
+  that parse translations can only be associated with parse tree heads of
+  concrete syntax, or syntactic constants introduced via other translations.
+  For plain identifiers within the term language, the status of constant
+  versus variable is not yet know during parsing. This is in contrast to print
+  translations, where constants are explicitly known from the given term in
+  its fully internal form.
 \<close>
 
 
@@ -1462,10 +1508,10 @@ text \<open>
   \end{tabular}
   \end{center}
 
-  Note that type and sort constraints may occur in further places ---
-  translations need to be ready to cope with them. The built-in syntax
-  transformation from parse trees to ASTs insert additional constraints that
-  represent source positions.
+  Note that type and sort constraints may occur in many other places ---
+  translations need to cope with them. The built-in syntax transformation from
+  parse trees to ASTs insert additional constraints that represent source
+  positions.
 \<close>
 
 
@@ -1525,8 +1571,8 @@ text \<open>
   according to the grammar production.
 
   If an AST application \<open>(c x\<^sub>1 \<dots> x\<^sub>m)\<close> has more arguments than the
-  corresponding production, it is first split into \<open>((c x\<^sub>1 \<dots> x\<^sub>n) x\<^sub>n\<^sub>+\<^sub>1 \<dots>
-  x\<^sub>m)\<close> and then printed recursively as above.
+  corresponding production, it is first split into \<open>((c x\<^sub>1 \<dots> x\<^sub>n) x\<^sub>n\<^sub>+\<^sub>1 \<dots> x\<^sub>m)\<close>
+  and then printed recursively as above.
 
   Applications with too few arguments or with non-constant head or without a
   corresponding production are printed in prefix-form like \<open>f t\<^sub>1 \<dots> t\<^sub>n\<close> for

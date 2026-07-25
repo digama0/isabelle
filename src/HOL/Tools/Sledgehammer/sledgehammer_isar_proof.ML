@@ -384,7 +384,7 @@ fun string_of_isar_proof ctxt0 i n proof =
 
     fun add_str s' = apfst (suffix s')
 
-    fun of_indent ind = replicate_string (ind * indent_size) " "
+    fun of_indent ind = Symbol.spaces (ind * indent_size)
     fun of_moreover ind = of_indent ind ^ "moreover\n"
     fun of_label l = if l = no_label then "" else string_of_label l ^ ": "
 
@@ -405,13 +405,14 @@ fun string_of_isar_proof ctxt0 i n proof =
       (s ^ (term
             |> singleton (Syntax.uncheck_terms ctxt)
             |> annotate_types_in_term ctxt
-            |> Print_Mode.setmp [] (Syntax.unparse_term ctxt #> Pretty.string_of)
+            |> Syntax.unparse_term (Config.put Printer.show_markup false ctxt)
+            |> Pretty.pure_string_of
             |> simplify_spaces
             |> maybe_quote ctxt),
        ctxt |> perhaps (try (Proof_Context.augment term)))
 
     fun using_facts [] [] = ""
-      | using_facts ls ss = enclose "using " " " (space_implode " " (map string_of_label ls @ ss))
+      | using_facts ls ss = enclose "using " " " (implode_space (map string_of_label ls @ ss))
 
     (* Local facts are always passed via "using", which affects "meson" and "metis". This is
        arguably stylistically superior, because it emphasises the structure of the proof. It is also
@@ -425,7 +426,7 @@ fun string_of_isar_proof ctxt0 i n proof =
 
     fun of_free (s, T) =
       Thy_Header.print_name' ctxt s ^ " :: " ^
-      maybe_quote ctxt (simplify_spaces (Print_Mode.setmp [] (Syntax.string_of_typ ctxt) T))
+      maybe_quote ctxt (simplify_spaces (Pretty.pure_string_of (Syntax.pretty_typ ctxt T)))
 
     fun add_frees xs (s, ctxt) =
       (s ^ space_implode " and " (map of_free xs), ctxt |> fold Proof_Context.augment (map Free xs))
@@ -443,7 +444,7 @@ fun string_of_isar_proof ctxt0 i n proof =
         val prefix = "{ "
         val suffix = " }"
       in
-        replicate_string (ind * indent_size - size prefix) " " ^ prefix ^
+        Symbol.spaces (ind * indent_size - size prefix) ^ prefix ^
         String.substring (s, ind * indent_size, size s - ind * indent_size - 1) ^
         suffix ^ "\n"
       end

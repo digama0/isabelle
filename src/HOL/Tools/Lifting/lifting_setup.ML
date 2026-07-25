@@ -88,7 +88,7 @@ fun define_pcrel (config: config) crel lthy0 =
     val rhs = \<^Const>\<open>relcompp rty rty' qty for param_rel_fixed fixed_crel\<close>
     val definition_term = Logic.mk_equals (lhs, rhs)
     fun note_def lthy =
-      Specification.definition (SOME (pcrel_name, SOME relator_type, NoSyn)) [] []
+      Specification.definition {verbose = false} (SOME (pcrel_name, SOME relator_type, NoSyn)) [] []
         (Binding.empty_atts, definition_term) lthy |>> (snd #> snd);
     fun raw_def lthy =
       let
@@ -245,7 +245,7 @@ fun lifting_bundle qty_full_name qinfo lthy =
     lthy
     |> Local_Theory.declaration {syntax = false, pervasive = true, pos = \<^here>}
         (fn phi => Lifting_Info.init_restore_data bundle_name (phi_qinfo phi))
-    |> Bundle.bundle ((binding, [restore_lifting_att])) []
+    |> Bundle.bundle {open_bundle = false} ((binding, [restore_lifting_att])) []
     |> pair binding
   end
 
@@ -427,7 +427,7 @@ local
 
   fun reduce_Domainp ctxt rules thm =
     let
-      val goal = thm |> Thm.prems_of |> hd
+      val goal = hd (Thm.take_prems_of 1 thm)
       val var = goal |> HOLogic.dest_Trueprop |> dest_comb |> snd |> dest_Var 
       val reduced_assm =
         reduce_goal [var] goal (TRY (REPEAT_ALL_NEW (resolve_tac ctxt rules) 1)) ctxt
@@ -439,7 +439,7 @@ in
     let
       fun reduce_first_assm ctxt rules thm =
         let
-          val goal = thm |> Thm.prems_of |> hd
+          val goal = hd (Thm.take_prems_of 1 thm)
           val reduced_assm =
             reduce_goal [] goal (TRY (REPEAT_ALL_NEW (resolve_tac ctxt rules) 1)) ctxt
         in
@@ -959,7 +959,7 @@ fun get_transfer_rel (qinfo : Lifting_Info.quotient) =
 
 fun pointer_of_bundle_name bundle_name ctxt =
   let
-    val bundle = Bundle.read ctxt bundle_name
+    val bundle = Bundle.get ctxt (Bundle.check ctxt bundle_name)
     fun err () = error "The provided bundle is not a lifting bundle"
   in
     (case bundle of
