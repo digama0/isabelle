@@ -43,7 +43,7 @@ sig
   val generalize_proof: Names.set * Names.set -> int -> T -> T
   val instantiate_proof:
     ((indexname * sort) * typ) list * ((indexname * typ) * term) list -> sort list -> T -> T
-  val trivial_proof: sort list -> T
+  val trivial_proof: term -> sort list -> T
   val of_class_proof: typ * class -> T
   val thm_proof: serial -> T
   val constrain_thm_proof: serial -> sort list -> term list -> term -> T
@@ -123,7 +123,7 @@ datatype T =
   | PTGeneralize of Names.set * Names.set * int * T
   | PTInstantiate of ((indexname * sort) * typ) list * ((indexname * typ) * term) list *
       sort list * T
-  | PTTrivial of sort list
+  | PTTrivial of term * sort list
   | PTOfClass of typ * class
   | PTThm of serial
   | PTConstrainThm of serial * sort list * term list * term
@@ -167,7 +167,7 @@ fun equal_elim_proof p q = PTEqElim (p, q);
 fun flexflex_proof env p = PTFlexFlex (env, p);
 fun generalize_proof (tfrees, frees) idx p = PTGeneralize (tfrees, frees, idx, p);
 fun instantiate_proof (instT, inst) sorts p = PTInstantiate (instT, inst, sorts, p);
-fun trivial_proof sorts = PTTrivial sorts;
+fun trivial_proof A sorts = PTTrivial (A, sorts);
 val of_class_proof = PTOfClass;
 val thm_proof = PTThm;
 fun constrain_thm_proof i shyps hyps prop = PTConstrainThm (i, shyps, hyps, prop);

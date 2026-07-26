@@ -2034,7 +2034,7 @@ fun trivial (ct as Cterm {cert, t = A, T, maxidx, sorts}) =
             raise CONTEXT (msg, [], [ct], [], NONE);
         in ZTerm.trivial_proof thy A end;
       fun proof () = Proofterm.trivial_proof;
-      fun trace () = Prooftrace.trivial_proof sorts;
+      fun trace () = Prooftrace.trivial_proof A sorts;
     in
       tag_thm (Thm (deriv_rule0 zproof proof trace,
        {cert = cert,
