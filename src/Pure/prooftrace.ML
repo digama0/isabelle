@@ -59,6 +59,7 @@ sig
 
   val export_proof: theory -> thm_header -> (typ * typ) list -> int -> term list -> T -> unit
   val log: string -> unit
+  val log_stats: unit -> unit
 end;
 
 (*** local ***)
@@ -199,12 +200,34 @@ fun open_socket_inet name =
       (case (NetHostDB.getByName h, Int.fromString p) of
         (SOME host, SOME port) =>
           let val socket: Socket.active INetSock.stream_sock = INetSock.TCP.socket ()
-          in Socket.connect (socket, INetSock.toAddr (NetHostDB.addr host, port)); socket end
+          in
+            (*a blocked write() holds ML memory and so freezes GC for the whole prover:
+              give the kernel room to absorb a whole trace without us waiting*)
+            Socket.Ctl.setSNDBUF (socket, 4 * 1024 * 1024) handle OS.SysErr _ => ();
+            Socket.connect (socket, INetSock.toAddr (NetHostDB.addr host, port));
+            socket
+          end
       | _ => error ("prooftrace: bad socket address " ^ name))
   | _ => error ("prooftrace: bad socket address " ^ name));
 
+(*where does the prover actually block?  (count, unused, writing)*)
+val stats = Synchronized.var "prooftrace_stats" (0, Time.zeroTime, Time.zeroTime);
+
+fun add_stat wait write =
+  Synchronized.change stats (fn (n, w, x) => (n + 1, w + wait, x + write));
+
+(*independent of prooftrace_log: one line per theory, so a benchmark run can report where
+  the prover blocked without paying for per-trace logging*)
+fun log_stats () =
+  let val (n, _, x) = Synchronized.value stats in
+    if n = 0 then () else
+      File.append (Path.explode "$ISABELLE_HOME_USER/prooftrace_stats.log")
+        ("prooftrace ML: " ^ string_of_int n ^ " exports, write " ^ Time.message x ^ "\n")
+  end;
+
 fun export_to_socket addr thy_name serial data =
   let
+    val write_start = Timing.start ()
     val socket = open_socket_inet addr
     val fd =
       (case Posix.FileSys.iodToFD (Socket.ioDesc socket) of
@@ -212,7 +235,11 @@ fun export_to_socket addr thy_name serial data =
       | NONE => raise Fail "prooftrace: socket has no file descriptor")
     val () = write_all fd (Byte.stringToBytes (thy_name ^ "\n" ^ string_of_int serial ^ "\n"))
     val () = PolyML.exportSmallToFD (fd, data)
-  in Socket.close socket end;
+      handle e => (Socket.close socket; Exn.reraise e)
+  in
+    Socket.close socket;
+    add_stat Time.zeroTime (#elapsed (Timing.result write_start))
+  end;
 
 fun export_proof thy header tvar_map shyps hyps p =
   if not (Options.default_bool "prooftrace_out") then () else

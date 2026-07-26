@@ -270,6 +270,7 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
 
     val () = Prooftrace.log ("exporting " ^ Context.theory_base_name thy ^
       ", enabled = " ^ (if enabled then "true" else "false"));
+    val () = Prooftrace.log_stats ();
 
     val encode_reason: Theory.axiom_reason XML.Encode.T =
       let open XML.Encode in variant

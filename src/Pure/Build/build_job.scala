@@ -285,38 +285,63 @@ object Build_Job {
              EOF.  The bytes go through the same export consumer as the protocol path, so
              the database result is identical -- except the blob is the unescaped image,
              hence the distinct "proof_trace_raw/" prefix. */
-          val prooftrace_pending = Synchronized(0)
+          // who blocks?  (transfers, nanos spent reading sockets, nanos spent storing)
+          val prooftrace_stats = Synchronized((0L, 0L, 0L))
+
+          // decouple reading from storing: a channel thread drains its socket eagerly and
+          // hands the payload on, so the prover is never blocked by our compress+insert
+          val prooftrace_store =
+            Consumer_Thread.fork[(Protocol.Export.Args, Bytes)]("prooftrace_store",
+              consume = { case (args, bytes) =>
+                val t0 = System.nanoTime()
+                export_consumer.make_entry(session_name, args, bytes)
+                val dt = System.nanoTime() - t0
+                prooftrace_stats.change({ case (n, r, w) => (n, r, w + dt) })
+                true
+              },
+              daemon = true)
+
+          // Two threads.  The front thread does nothing but drain sockets: the exporting
+          // ML thread holds ML memory (and therefore blocks GC for the whole prover) for as
+          // long as its write() blocks, so the only thing that matters is that we are always
+          // ready to absorb bytes.  A large receive buffer plus a deep backlog means small
+          // traces are written and closed into kernel buffers before we even accept them.
+          // The backend thread does the expensive part (compress + database insert).
           val prooftrace_server: Option[java.net.ServerSocket] =
             if (options.bool("prooftrace_enabled") && options.bool("prooftrace_out")) {
-              val server_socket =
-                new java.net.ServerSocket(0, 128, java.net.InetAddress.getByName("127.0.0.1"))
-              Isabelle_Thread.fork(name = "prooftrace_accept", daemon = true) {
+              val server_socket = new java.net.ServerSocket()
+              server_socket.setReceiveBufferSize(4 * 1024 * 1024)  // must precede bind
+              server_socket.bind(
+                new java.net.InetSocketAddress(java.net.InetAddress.getByName("127.0.0.1"), 0),
+                1024)
+              Isabelle_Thread.fork(name = "prooftrace_reader", daemon = true) {
                 try {
                   while (true) {
                     val socket = server_socket.accept().nn
-                    prooftrace_pending.change(_ + 1)
-                    Isabelle_Thread.fork(name = "prooftrace_entry", daemon = true) {
-                      try {
-                        val stream = new java.io.BufferedInputStream(socket.getInputStream.nn)
-                        def read_line(): String = {
-                          val buf = new StringBuilder
-                          var c = stream.read()
-                          while (c >= 0 && c != '\n') { buf += c.toChar; c = stream.read() }
-                          buf.toString
-                        }
-                        val theory_name = read_line()
-                        val serial = read_line()
-                        val bytes = Bytes.read_stream(stream)
-                        export_consumer.make_entry(session_name,
-                          Protocol.Export.Args(theory_name = theory_name,
-                            name = "proof_trace_raw/" + serial, compress = true), bytes)
+                    try {
+                      val t0 = System.nanoTime()
+                      val stream =
+                        new java.io.BufferedInputStream(socket.getInputStream.nn, 65536)
+                      def read_line(): String = {
+                        val buf = new StringBuilder
+                        var c = stream.read()
+                        while (c >= 0 && c != '\n') { buf += c.toChar; c = stream.read() }
+                        buf.toString
                       }
-                      catch {
-                        case exn: Throwable =>
-                          progress.echo_error_message("prooftrace export failed: " + exn)
-                      }
-                      finally { socket.close(); prooftrace_pending.change(_ - 1) }
+                      val theory_name = read_line()
+                      val serial = read_line()
+                      val bytes = Bytes.read_stream(stream)   // drains to EOF (peer HUP)
+                      val dt = System.nanoTime() - t0
+                      prooftrace_stats.change({ case (n, r, w) => (n + 1, r + dt, w) })
+                      prooftrace_store.send(
+                        (Protocol.Export.Args(theory_name = theory_name,
+                          name = "proof_trace_raw/" + serial, compress = true), bytes))
                     }
+                    catch {
+                      case exn: Throwable =>
+                        progress.echo_error_message("prooftrace export failed: " + exn)
+                    }
+                    finally socket.close()
                   }
                 }
                 catch { case _: java.net.SocketException => () /*server closed*/ }
@@ -542,9 +567,15 @@ object Build_Job {
           session.stop()
           session.stop_process_output()
 
-          // let in-flight trace connections finish before the consumer closes
+          // the prover has exited by now, so no transfer can be in flight; shutdown drains
+          // whatever is still queued for storing
           prooftrace_server.foreach(_.close())
-          prooftrace_pending.guarded_access(n => if (n == 0) Some(((), n)) else None)
+          if (prooftrace_server.isDefined) {
+            prooftrace_store.shutdown()
+            val (n, r, w) = prooftrace_stats.value
+            progress.echo("prooftrace Scala: " + n + " transfers, read " +
+              Time.ms(r / 1000000).message + ", store " + Time.ms(w / 1000000).message)
+          }
 
           val export_errors =
             export_consumer.shutdown(close = true).map(Output.error_message_text)
