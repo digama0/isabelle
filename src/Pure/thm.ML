@@ -1981,7 +1981,7 @@ fun gen_instantiate inst_fn (instT, inst) th =
       fun trace p =
         Prooftrace.instantiate_proof
           (TVars.fold (fn (v, (T, _)) => cons (v, T)) instT' [],
-           Vars.fold (fn (v, (t, _)) => cons (v, t)) inst' []) p;
+           Vars.fold (fn (v, (t, _)) => cons (v, t)) inst' []) shyps' p;
     in
       tag_thm (Thm (deriv_rule1 zproof proof trace der,
        {cert = cert',

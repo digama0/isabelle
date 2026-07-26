@@ -42,7 +42,7 @@ sig
   val flexflex_proof: Envir.env -> T -> T
   val generalize_proof: Names.set * Names.set -> int -> T -> T
   val instantiate_proof:
-    ((indexname * sort) * typ) list * ((indexname * typ) * term) list -> T -> T
+    ((indexname * sort) * typ) list * ((indexname * typ) * term) list -> sort list -> T -> T
   val trivial_proof: sort list -> T
   val of_class_proof: typ * class -> T
   val thm_proof: serial -> T
@@ -121,7 +121,8 @@ datatype T =
   | PTEqElim of T * T
   | PTFlexFlex of Envir.env * T
   | PTGeneralize of Names.set * Names.set * int * T
-  | PTInstantiate of ((indexname * sort) * typ) list * ((indexname * typ) * term) list * T
+  | PTInstantiate of ((indexname * sort) * typ) list * ((indexname * typ) * term) list *
+      sort list * T
   | PTTrivial of sort list
   | PTOfClass of typ * class
   | PTThm of serial
@@ -165,7 +166,7 @@ fun equal_intr_proof p q = PTEqIntr (p, q);
 fun equal_elim_proof p q = PTEqElim (p, q);
 fun flexflex_proof env p = PTFlexFlex (env, p);
 fun generalize_proof (tfrees, frees) idx p = PTGeneralize (tfrees, frees, idx, p);
-fun instantiate_proof (instT, inst) p = PTInstantiate (instT, inst, p);
+fun instantiate_proof (instT, inst) sorts p = PTInstantiate (instT, inst, sorts, p);
 fun trivial_proof sorts = PTTrivial sorts;
 val of_class_proof = PTOfClass;
 val thm_proof = PTThm;
