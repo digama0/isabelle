@@ -825,7 +825,9 @@ fun tag_thm (thm as Thm (Deriv {promises, body}, args)) =
     let val PBody {oracles, thms, zboxes, zproof, proof, trace} = body in
       Thm (Deriv {promises = promises,
         body = PBody {oracles = oracles, thms = thms, zboxes = zboxes, zproof = zproof,
-          proof = proof, trace = Prooftrace.prop_proof (#prop args) trace}}, args)
+          proof = proof,
+          trace = Prooftrace.prop_proof (#prop args) (#shyps args) (#tpairs args) trace}},
+        args)
     end
   else thm;
 
