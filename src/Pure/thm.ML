@@ -808,7 +808,8 @@ fun deriv_rule1 zproof proof trace = deriv_rule2 (K zproof) (K proof) (K trace) 
 
 fun deriv_rule0 zproof proof trace =
   let val proofs = Proofterm.get_proofs_level () in
-    if Proofterm.proof_enabled proofs orelse Proofterm.zproof_enabled proofs then
+    if Proofterm.proof_enabled proofs orelse Proofterm.zproof_enabled proofs
+      orelse Prooftrace.enabled () then
       deriv_rule1 I I I (make_deriv [] [] [] []
        (if Proofterm.zproof_enabled proofs then zproof () else ZNop)
        (if Proofterm.proof_enabled proofs then proof () else MinProof)
@@ -2555,7 +2556,8 @@ fun bicompose_aux opt_ctxt {flatten, match, incremented} (state, (stpairs, Bs, B
         fun proof p q =
           Proofterm.bicompose_proof env smax flatten Bs As A oldAs n (nlift + 1) p q;
         fun trace p q =
-          Prooftrace.bicompose_proof env tpairs nsubgoal flatten As A n (nlift + 1) p q;
+          Prooftrace.bicompose_proof env tpairs nsubgoal flatten As A n (nlift + 1)
+            (length Bs) p q;
         val th =
           Thm (deriv_rule2 zproof proof trace rder' sder,
            {tags = [],

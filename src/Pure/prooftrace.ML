@@ -55,7 +55,7 @@ sig
   val rotate_proof: int -> int -> T -> T
   val permute_prems_proof: int -> int -> T -> T
   val bicompose_proof: Envir.env -> (term * term) list -> int -> bool -> term list ->
-    term option -> int -> int -> T -> T -> T
+    term option -> int -> int -> int -> T -> T -> T
 
   val export_proof: theory -> thm_header -> (typ * typ) list -> int -> term list -> T -> unit
   val log: string -> unit
@@ -132,7 +132,7 @@ datatype T =
   | PTRotate of int * int * T
   | PTPermutePrems of int * int * T
   | PTBicompose of (Envir.env * (term * term) list * int * bool * term list *
-    term option * int * int) * T * T
+    term option * int * int * int) * T * T
   | PTPruned;
 
 val sorry = PTSorry;
@@ -171,8 +171,8 @@ fun assumption_proof i n p = PTAssumption (i, n, p);
 fun eq_assumption_proof i p = PTEqAssumption (i, p);
 fun rotate_proof k i p = PTRotate (k, i, p);
 fun permute_prems_proof j k p = PTPermutePrems (j, k, p);
-fun bicompose_proof env tpairs nsubgoal flatten As A n nlift p q =
-  PTBicompose ((env, tpairs, nsubgoal, flatten, As, A, n, nlift), p, q);
+fun bicompose_proof env tpairs nsubgoal flatten As A n nlift nbs p q =
+  PTBicompose ((env, tpairs, nsubgoal, flatten, As, A, n, nlift, nbs), p, q);
 
 fun enabled () = Options.default_bool "prooftrace_enabled";
 fun when f = if enabled () then f () else PTSorry;
@@ -182,6 +182,37 @@ fun logging () = Options.default_bool "prooftrace_log";
 fun log s =
   if logging () then File.append (Path.explode "$ISABELLE_HOME_USER/prooftrace.log") (s ^ "\n")
   else ();
+
+fun write_all fd bytes =
+  let
+    val n = Word8Vector.length bytes
+    fun loop i =
+      if i >= n then ()
+      else loop (i + Posix.IO.writeVec (fd, Word8VectorSlice.slice (bytes, i, NONE)))
+  in loop 0 end;
+
+(*inline: Socket_IO is loaded after this file in ROOT.ML, and open_streams would hide the
+  file descriptor behind BinPrimIO closures anyway*)
+fun open_socket_inet name =
+  (case String.tokens (fn c => c = #":") name of
+    [h, p] =>
+      (case (NetHostDB.getByName h, Int.fromString p) of
+        (SOME host, SOME port) =>
+          let val socket: Socket.active INetSock.stream_sock = INetSock.TCP.socket ()
+          in Socket.connect (socket, INetSock.toAddr (NetHostDB.addr host, port)); socket end
+      | _ => error ("prooftrace: bad socket address " ^ name))
+  | _ => error ("prooftrace: bad socket address " ^ name));
+
+fun export_to_socket addr thy_name serial data =
+  let
+    val socket = open_socket_inet addr
+    val fd =
+      (case Posix.FileSys.iodToFD (Socket.ioDesc socket) of
+        SOME fd => fd
+      | NONE => raise Fail "prooftrace: socket has no file descriptor")
+    val () = write_all fd (Byte.stringToBytes (thy_name ^ "\n" ^ string_of_int serial ^ "\n"))
+    val () = PolyML.exportSmallToFD (fd, data)
+  in Socket.close socket end;
 
 fun export_proof thy header tvar_map shyps hyps p =
   if not (Options.default_bool "prooftrace_out") then () else
@@ -195,15 +226,25 @@ fun export_proof thy header tvar_map shyps hyps p =
     val start = Timing.start ();
 
     val data = (header, tvar_map, shyps, hyps, p)
-    val s = YXML.escape (Byte.bytesToString (PolyML.exportSmall data))
-    val () =
-      Export.export thy (Path.binding0 (Path.make ["proof_trace", string_of_int (#serial header)]))
-        [XML.Text s]
+    val addr = Options.default_string "prooftrace_socket"
+    val size_hint =
+      if addr <> "" then
+        (*v11: stream the image straight to a fresh socket to the Scala build job.  No
+          in-memory image, no YXML escaping, no protocol copy; the close frames the
+          message, which matters because the length is unknown until it is written.*)
+        (export_to_socket addr (Context.theory_base_name thy) (#serial header) data; 0)
+      else
+        let val s = YXML.escape (Byte.bytesToString (PolyML.exportSmall data)) in
+          Export.export thy
+            (Path.binding0 (Path.make ["proof_trace", string_of_int (#serial header)]))
+            [XML.Text s];
+          size s
+        end
 
     val () = if logit then
       let val {elapsed, ...} = Timing.result start in
         log ("trace " ^ string_of_int (#serial header) ^
-          "(" ^ string_of_int (size s) ^ " bytes, " ^ Time.message elapsed ^ "): " ^
+          "(" ^ string_of_int size_hint ^ " bytes, " ^ Time.message elapsed ^ "): " ^
             (Print_Mode.with_modes [""]
               (fn () => Syntax.string_of_term (Syntax.init_pretty_global thy) (#prop header)) ()
               handle Fail _ => "..."))

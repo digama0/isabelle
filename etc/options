@@ -476,6 +476,9 @@ option prooftrace_out : bool = true for content
 option prooftrace_log : bool = false for content
   -- "log prooftrace exports to $ISABELLE_HOME_USER/prooftrace.log"
 
+option prooftrace_socket : string = ""
+  -- "socket address for streaming prooftrace exports (set by the build job)"
+
 
 section "Theory update"
 

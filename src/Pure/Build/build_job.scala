@@ -280,6 +280,58 @@ object Build_Job {
             Export.consumer(store.open_database(session_name, output = true, server = server),
               store.cache, progress = progress)
 
+          /* v11: prooftrace streaming channel.  One connection per trace:
+             "<theory>\n<serial>\n" then the raw PolyML.exportSmallToFD image, framed by
+             EOF.  The bytes go through the same export consumer as the protocol path, so
+             the database result is identical -- except the blob is the unescaped image,
+             hence the distinct "proof_trace_raw/" prefix. */
+          val prooftrace_pending = Synchronized(0)
+          val prooftrace_server: Option[java.net.ServerSocket] =
+            if (options.bool("prooftrace_enabled") && options.bool("prooftrace_out")) {
+              val server_socket =
+                new java.net.ServerSocket(0, 128, java.net.InetAddress.getByName("127.0.0.1"))
+              Isabelle_Thread.fork(name = "prooftrace_accept", daemon = true) {
+                try {
+                  while (true) {
+                    val socket = server_socket.accept().nn
+                    prooftrace_pending.change(_ + 1)
+                    Isabelle_Thread.fork(name = "prooftrace_entry", daemon = true) {
+                      try {
+                        val stream = new java.io.BufferedInputStream(socket.getInputStream.nn)
+                        def read_line(): String = {
+                          val buf = new StringBuilder
+                          var c = stream.read()
+                          while (c >= 0 && c != '\n') { buf += c.toChar; c = stream.read() }
+                          buf.toString
+                        }
+                        val theory_name = read_line()
+                        val serial = read_line()
+                        val bytes = Bytes.read_stream(stream)
+                        export_consumer.make_entry(session_name,
+                          Protocol.Export.Args(theory_name = theory_name,
+                            name = "proof_trace_raw/" + serial, compress = true), bytes)
+                      }
+                      catch {
+                        case exn: Throwable =>
+                          progress.echo_error_message("prooftrace export failed: " + exn)
+                      }
+                      finally { socket.close(); prooftrace_pending.change(_ - 1) }
+                    }
+                  }
+                }
+                catch { case _: java.net.SocketException => () /*server closed*/ }
+              }
+              Some(server_socket)
+            }
+            else None
+
+          val prooftrace_options =
+            prooftrace_server match {
+              case Some(sock) =>
+                options.string.update("prooftrace_socket", "127.0.0.1:" + sock.getLocalPort)
+              case None => options
+            }
+
           // mutable state: session.synchronized
           val stdout = new StringBuilder(1000)
           val stderr = new StringBuilder(1000)
@@ -425,7 +477,7 @@ object Build_Job {
           /* process */
 
           val process =
-            Isabelle_Process.start(options, session, session_background, session_heaps,
+            Isabelle_Process.start(prooftrace_options, session, session_background, session_heaps,
               use_prelude = use_prelude, eval_main = eval_main, cwd = info.dir, env = env)
 
           val timeout_request: Option[Event_Timer.Request] =
@@ -489,6 +541,10 @@ object Build_Job {
 
           session.stop()
           session.stop_process_output()
+
+          // let in-flight trace connections finish before the consumer closes
+          prooftrace_server.foreach(_.close())
+          prooftrace_pending.guarded_access(n => if (n == 0) Some(((), n)) else None)
 
           val export_errors =
             export_consumer.shutdown(close = true).map(Output.error_message_text)
