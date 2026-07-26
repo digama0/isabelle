@@ -1147,7 +1147,10 @@ fun strip_shyps thm =
         val zproof' = ZTerm.map_proof_types {hyps = true} map_ztyp zproof;
         val proof' = Proofterm.map_proof_types (Term.map_atyps_same map_atyp) proof;
         val trace' = Prooftrace.when (fn () =>
-          Prooftrace.strip_shyps_proof (Sorts.subtract extra extra') trace);
+          (*Ord_List.subtract ord xs ys = ys \ xs, so this must be extra \ extra' -- the
+            witnessed sorts that were dropped.  The other way round is always empty, since
+            extra' is a subset of extra, and every StripSHyps then records nothing.*)
+          Prooftrace.strip_shyps_proof (Sorts.subtract extra' extra) trace);
       in
         tag_thm (Thm (make_deriv promises oracles thms zboxes zproof' proof' trace',
          {cert = cert, tags = tags, maxidx = maxidx, constraints = constraints',
