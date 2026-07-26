@@ -59,6 +59,8 @@ sig
 
   val export_proof: theory -> thm_header -> (typ * typ) list -> int -> term list -> T -> unit
   val log: string -> unit
+  val props_enabled: unit -> bool
+  val prop_proof: term -> T -> T
   val log_stats: unit -> unit
 end;
 
@@ -134,7 +136,10 @@ datatype T =
   | PTPermutePrems of int * int * T
   | PTBicompose of (Envir.env * (term * term) list * int * bool * term list *
     term option * int * int * int) * T * T
-  | PTPruned;
+  | PTPruned
+  (*debug aid: the statement this subproof proves.  Named to sort last so that the
+    constructor tags of everything above are unchanged.*)
+  | PTZProp of term * T;
 
 val sorry = PTSorry;
 val pruned = PTPruned;
@@ -176,6 +181,8 @@ fun bicompose_proof env tpairs nsubgoal flatten As A n nlift nbs p q =
   PTBicompose ((env, tpairs, nsubgoal, flatten, As, A, n, nlift, nbs), p, q);
 
 fun enabled () = Options.default_bool "prooftrace_enabled";
+fun props_enabled () = Options.default_bool "prooftrace_props";
+fun prop_proof prop p = PTZProp (prop, p);
 fun when f = if enabled () then f () else PTSorry;
 
 fun logging () = Options.default_bool "prooftrace_log";

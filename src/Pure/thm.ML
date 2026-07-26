@@ -817,6 +817,18 @@ fun deriv_rule0 zproof proof trace =
     else empty_deriv
   end;
 
+(*debug aid (option prooftrace_props): record the statement each inference proves, so a
+  checker can report the first inference whose result it disagrees with, rather than only
+  the final theorem.*)
+fun tag_thm (thm as Thm (Deriv {promises, body}, args)) =
+  if Prooftrace.props_enabled () then
+    let val PBody {oracles, thms, zboxes, zproof, proof, trace} = body in
+      Thm (Deriv {promises = promises,
+        body = PBody {oracles = oracles, thms = thms, zboxes = zboxes, zproof = zproof,
+          proof = proof, trace = Prooftrace.prop_proof (#prop args) trace}}, args)
+    end
+  else thm;
+
 
 (* fulfilled proofs *)
 
@@ -903,9 +915,9 @@ fun axiom' thy (name, src) =
         val maxidx = maxidx_of_term prop;
         val shyps = Sorts.insert_term prop [];
       in
-        Thm (deriv_rule0 zproof proof trace,
+        tag_thm (Thm (deriv_rule0 zproof proof trace,
           {cert = cert, tags = [], maxidx = maxidx,
-            constraints = [], shyps = shyps, hyps = [], tpairs = [], prop = prop})
+            constraints = [], shyps = shyps, hyps = [], tpairs = [], prop = prop}))
       end
   | NONE => raise THEORY ("No axiom " ^ quote name, [thy]));
 
@@ -927,7 +939,7 @@ fun map_tags f (Thm (der, {cert, tags, maxidx, constraints, shyps, hyps, tpairs,
 (* technical adjustments *)
 
 fun norm_proof (th as Thm (der, args)) =
-  Thm (deriv_rule1 I (Proofterm.rew_proof (theory_of_thm th)) I der, args);
+  tag_thm (Thm (deriv_rule1 I (Proofterm.rew_proof (theory_of_thm th)) I der, args));
 
 fun adjust_maxidx_thm i
     (th as Thm (der, {cert, tags, maxidx, constraints, shyps, hyps, tpairs, prop})) =
@@ -1283,7 +1295,7 @@ fun assume raw_ct =
         fun proof () = Proofterm.Hyp prop;
         fun trace () = Prooftrace.assume_proof prop;
       in
-        Thm (deriv_rule0 zproof proof trace,
+        tag_thm (Thm (deriv_rule0 zproof proof trace,
          {cert = cert,
           tags = [],
           maxidx = ~1,
@@ -1291,7 +1303,7 @@ fun assume raw_ct =
           shyps = sorts,
           hyps = [prop],
           tpairs = [],
-          prop = prop})
+          prop = prop}))
       end
   end;
 
@@ -1322,7 +1334,7 @@ fun implies_intr
       fun proof p = Proofterm.implies_intr_proof A p;
       fun trace p = Prooftrace.implies_intr_proof A p;
     in
-      Thm (deriv_rule1 zproof proof trace der,
+      tag_thm (Thm (deriv_rule1 zproof proof trace der,
        {cert = cert,
         tags = [],
         maxidx = Int.max (maxidx1, maxidx2),
@@ -1330,7 +1342,7 @@ fun implies_intr
         shyps = Sorts.union sorts shyps,
         hyps = remove_hyps A hyps,
         tpairs = tpairs,
-        prop = Logic.mk_implies (A, prop)})
+        prop = Logic.mk_implies (A, prop)}))
     end;
 
 
@@ -1350,7 +1362,7 @@ fun implies_elim thAB thA =
     (case prop of
       Const ("Pure.imp", _) $ A $ B =>
         if A aconv propA then
-          Thm (deriv_rule2 (curry ZAppp) (curry Proofterm.%%) Prooftrace.implies_elim_proof der derA,
+          tag_thm (Thm (deriv_rule2 (curry ZAppp) (curry Proofterm.%%) Prooftrace.implies_elim_proof der derA,
            {cert = join_certificate2 (thAB, thA),
             tags = [],
             maxidx = Int.max (maxidx1, maxidx2),
@@ -1358,7 +1370,7 @@ fun implies_elim thAB thA =
             shyps = Sorts.union shypsA shyps,
             hyps = union_hyps hypsA hyps,
             tpairs = union_tpairs tpairsA tpairs,
-            prop = B})
+            prop = B}))
         else err ()
     | _ => err ())
   end;
@@ -1392,7 +1404,7 @@ fun forall_intr
           fun proof p = Proofterm.forall_intr_proof (a, x) NONE p;
           fun trace p = Prooftrace.forall_intr_proof x p;
         in
-          Thm (deriv_rule1 zproof proof trace der,
+          tag_thm (Thm (deriv_rule1 zproof proof trace der,
            {cert = cert,
             tags = [],
             maxidx = Int.max (maxidx1, maxidx2),
@@ -1400,7 +1412,7 @@ fun forall_intr
             shyps = Sorts.union sorts shyps,
             hyps = hyps,
             tpairs = tpairs,
-            prop = Logic.all_const T $ Abs (a, T, abstract_over (x, prop))})
+            prop = Logic.all_const T $ Abs (a, T, abstract_over (x, prop))}))
         end;
   in
     (case x of
@@ -1432,7 +1444,7 @@ fun forall_elim
           fun proof p = p % SOME t;
           fun trace p = Prooftrace.forall_elim_proof p t;
         in
-          Thm (deriv_rule1 zproof proof trace der,
+          tag_thm (Thm (deriv_rule1 zproof proof trace der,
            {cert = cert,
             tags = [],
             maxidx = Int.max (maxidx1, maxidx2),
@@ -1440,7 +1452,7 @@ fun forall_elim
             shyps = Sorts.union sorts shyps,
             hyps = hyps,
             tpairs = tpairs,
-            prop = Term.betapply (A, t)})
+            prop = Term.betapply (A, t)}))
         end
   | _ => raise THM ("forall_elim: not quantified", 0, [th]));
 
@@ -1460,7 +1472,7 @@ fun reflexive (ct as Cterm {cert, t, T, maxidx, sorts}) =
     fun proof () = Proofterm.reflexive_proof;
     fun trace () = Prooftrace.reflexive_proof t;
   in
-    Thm (deriv_rule0 zproof proof trace,
+    tag_thm (Thm (deriv_rule0 zproof proof trace,
      {cert = cert,
       tags = [],
       maxidx = maxidx,
@@ -1468,7 +1480,7 @@ fun reflexive (ct as Cterm {cert, t, T, maxidx, sorts}) =
       shyps = sorts,
       hyps = [],
       tpairs = [],
-      prop = Logic.mk_equals (t, t)})
+      prop = Logic.mk_equals (t, t)}))
   end;
 
 (*Symmetry
@@ -1486,7 +1498,7 @@ fun symmetric (th as Thm (der, {cert, maxidx, constraints, shyps, hyps, tpairs, 
               raise CONTEXT (msg, [], [], [th], NONE);
           in ZTerm.symmetric_proof thy T t u p end;
       in
-        Thm (deriv_rule1 zproof Proofterm.symmetric_proof Prooftrace.symmetric_proof der,
+        tag_thm (Thm (deriv_rule1 zproof Proofterm.symmetric_proof Prooftrace.symmetric_proof der,
          {cert = cert,
           tags = [],
           maxidx = maxidx,
@@ -1494,7 +1506,7 @@ fun symmetric (th as Thm (der, {cert, maxidx, constraints, shyps, hyps, tpairs, 
           shyps = shyps,
           hyps = hyps,
           tpairs = tpairs,
-          prop = eq $ u $ t})
+          prop = eq $ u $ t}))
       end
     | _ => raise THM ("symmetric", 0, [th]));
 
@@ -1525,7 +1537,7 @@ fun transitive th1 th2 =
             fun proof p = Proofterm.transitive_proof T u p;
             fun trace p = Prooftrace.transitive_proof p;
           in
-            Thm (deriv_rule2 zproof proof trace der1 der2,
+            tag_thm (Thm (deriv_rule2 zproof proof trace der1 der2,
              {cert = cert,
               tags = [],
               maxidx = Int.max (maxidx1, maxidx2),
@@ -1533,7 +1545,7 @@ fun transitive th1 th2 =
               shyps = Sorts.union shyps1 shyps2,
               hyps = union_hyps hyps1 hyps2,
               tpairs = union_tpairs tpairs1 tpairs2,
-              prop = eq $ t1 $ t2})
+              prop = eq $ t1 $ t2}))
           end
      | _ => err "premises"
   end;
@@ -1557,7 +1569,7 @@ fun beta_conversion full (ct as Cterm {cert, t, T, maxidx, sorts}) =
     fun proof () = Proofterm.reflexive_proof;
     fun trace () = Prooftrace.beta_proof full t;
   in
-    Thm (deriv_rule0 zproof proof trace,
+    tag_thm (Thm (deriv_rule0 zproof proof trace,
      {cert = cert,
       tags = [],
       maxidx = maxidx,
@@ -1565,7 +1577,7 @@ fun beta_conversion full (ct as Cterm {cert, t, T, maxidx, sorts}) =
       shyps = sorts,
       hyps = [],
       tpairs = [],
-      prop = Logic.mk_equals (t, t')})
+      prop = Logic.mk_equals (t, t')}))
   end;
 
 fun eta_conversion (ct as Cterm {cert, t, T, maxidx, sorts}) =
@@ -1578,7 +1590,7 @@ fun eta_conversion (ct as Cterm {cert, t, T, maxidx, sorts}) =
     fun proof () = Proofterm.reflexive_proof;
     fun trace () = Prooftrace.eta_proof t;
   in
-    Thm (deriv_rule0 zproof proof trace,
+    tag_thm (Thm (deriv_rule0 zproof proof trace,
      {cert = cert,
       tags = [],
       maxidx = maxidx,
@@ -1586,7 +1598,7 @@ fun eta_conversion (ct as Cterm {cert, t, T, maxidx, sorts}) =
       shyps = sorts,
       hyps = [],
       tpairs = [],
-      prop = Logic.mk_equals (t, Envir.eta_contract t)})
+      prop = Logic.mk_equals (t, Envir.eta_contract t)}))
   end;
 
 fun eta_long_conversion (ct as Cterm {cert, t, T, maxidx, sorts}) =
@@ -1599,7 +1611,7 @@ fun eta_long_conversion (ct as Cterm {cert, t, T, maxidx, sorts}) =
     fun proof () = Proofterm.reflexive_proof;
     fun trace () = Prooftrace.eta_long_proof t;
   in
-    Thm (deriv_rule0 zproof proof trace,
+    tag_thm (Thm (deriv_rule0 zproof proof trace,
      {cert = cert,
       tags = [],
       maxidx = maxidx,
@@ -1607,7 +1619,7 @@ fun eta_long_conversion (ct as Cterm {cert, t, T, maxidx, sorts}) =
       shyps = sorts,
       hyps = [],
       tpairs = [],
-      prop = Logic.mk_equals (t, Envir.eta_long [] t)})
+      prop = Logic.mk_equals (t, Envir.eta_long [] t)}))
   end;
 
 (*The abstraction rule.  The Free or Var x must not be free in the hypotheses.
@@ -1639,7 +1651,7 @@ fun abstract_rule b
           fun proof p = Proofterm.abstract_rule_proof (b, x) p
           fun trace p = Prooftrace.abstract_rule_proof x p
         in
-          Thm (deriv_rule1 zproof proof trace der,
+          tag_thm (Thm (deriv_rule1 zproof proof trace der,
            {cert = cert,
             tags = [],
             maxidx = maxidx,
@@ -1647,7 +1659,7 @@ fun abstract_rule b
             shyps = Sorts.union sorts shyps,
             hyps = hyps,
             tpairs = tpairs,
-            prop = Logic.mk_equals (f, g)})
+            prop = Logic.mk_equals (f, g)}))
         end;
   in
     (case x of
@@ -1686,7 +1698,7 @@ fun combination th1 th2 =
             in ZTerm.combination_proof thy fT U f g t u p q end;
           fun proof p q = Proofterm.combination_proof f g t u p q;
         in
-          Thm (deriv_rule2 zproof proof Prooftrace.combination_proof der1 der2,
+          tag_thm (Thm (deriv_rule2 zproof proof Prooftrace.combination_proof der1 der2,
            {cert = cert,
             tags = [],
             maxidx = Int.max (maxidx1, maxidx2),
@@ -1694,7 +1706,7 @@ fun combination th1 th2 =
             shyps = Sorts.union shyps1 shyps2,
             hyps = union_hyps hyps1 hyps2,
             tpairs = union_tpairs tpairs1 tpairs2,
-            prop = Logic.mk_equals (f $ t, g $ u)})
+            prop = Logic.mk_equals (f $ t, g $ u)}))
         end
      | _ => raise THM ("combination: premises", 0, [th1, th2]))
   end;
@@ -1724,7 +1736,7 @@ fun equal_intr th1 th2 =
                   raise CONTEXT (msg, [], [], [th1, th2], NONE);
               in ZTerm.equal_intr_proof thy A B p q end;
           in
-            Thm (deriv_rule2 zproof proof Prooftrace.equal_intr_proof der1 der2,
+            tag_thm (Thm (deriv_rule2 zproof proof Prooftrace.equal_intr_proof der1 der2,
              {cert = cert,
               tags = [],
               maxidx = Int.max (maxidx1, maxidx2),
@@ -1732,7 +1744,7 @@ fun equal_intr th1 th2 =
               shyps = Sorts.union shyps1 shyps2,
               hyps = union_hyps hyps1 hyps2,
               tpairs = union_tpairs tpairs1 tpairs2,
-              prop = Logic.mk_equals (A, B)})
+              prop = Logic.mk_equals (A, B)}))
           end
         else err "not equal"
     | _ =>  err "premises")
@@ -1763,7 +1775,7 @@ fun equal_elim th1 th2 =
                   raise CONTEXT (msg, [], [], [th1, th2], NONE);
               in ZTerm.equal_elim_proof thy A B p q end;
           in
-            Thm (deriv_rule2 zproof proof Prooftrace.equal_elim_proof der1 der2,
+            tag_thm (Thm (deriv_rule2 zproof proof Prooftrace.equal_elim_proof der1 der2,
              {cert = cert,
               tags = [],
               maxidx = Int.max (maxidx1, maxidx2),
@@ -1771,7 +1783,7 @@ fun equal_elim th1 th2 =
               shyps = Sorts.union shyps1 shyps2,
               hyps = union_hyps hyps1 hyps2,
               tpairs = union_tpairs tpairs1 tpairs2,
-              prop = B})
+              prop = B}))
           end
         else err "not equal"
      | _ =>  err "major premise")
@@ -1807,7 +1819,7 @@ fun flexflex_rule opt_ctxt =
               fun proof p = Proofterm.norm_proof_remove_types env p;
               fun trace p = Prooftrace.flexflex_proof env p;
             in
-              Thm (deriv_rule1 zproof proof trace der,
+              tag_thm (Thm (deriv_rule1 zproof proof trace der,
                {cert = cert',
                 tags = [],
                 maxidx = maxidx_tpairs tpairs' (maxidx_of_term prop'),
@@ -1815,7 +1827,7 @@ fun flexflex_rule opt_ctxt =
                 shyps = Envir.insert_sorts env shyps,
                 hyps = hyps,
                 tpairs = tpairs',
-                prop = prop'})
+                prop = prop'}))
             end)
     end);
 
@@ -1854,7 +1866,7 @@ fun generalize (tfrees, frees) idx th =
       val proof = Proofterm.generalize_proof (tfrees, frees) idx prop;
       val trace = Prooftrace.generalize_proof (tfrees, frees) idx;
     in
-      Thm (deriv_rule1 zproof proof trace der,
+      tag_thm (Thm (deriv_rule1 zproof proof trace der,
        {cert = cert,
         tags = [],
         maxidx = maxidx',
@@ -1862,7 +1874,7 @@ fun generalize (tfrees, frees) idx th =
         shyps = shyps,
         hyps = hyps,
         tpairs = tpairs',
-        prop = prop'})
+        prop = prop'}))
     end;
 
 fun generalize_cterm (tfrees, frees) idx (ct as Cterm {cert, t, T, maxidx, sorts}) =
@@ -1969,7 +1981,7 @@ fun gen_instantiate inst_fn (instT, inst) th =
           (TVars.fold (fn (v, (T, _)) => cons (v, T)) instT' [],
            Vars.fold (fn (v, (t, _)) => cons (v, t)) inst' []) p;
     in
-      Thm (deriv_rule1 zproof proof trace der,
+      tag_thm (Thm (deriv_rule1 zproof proof trace der,
        {cert = cert',
         tags = [],
         maxidx = maxidx',
@@ -1977,7 +1989,7 @@ fun gen_instantiate inst_fn (instT, inst) th =
         shyps = shyps',
         hyps = hyps,
         tpairs = tpairs',
-        prop = prop'})
+        prop = prop'}))
       |> solve_constraints
     end
     handle TYPE (msg, _, _) => raise THM (msg, 0, [th]);
@@ -2019,7 +2031,7 @@ fun trivial (ct as Cterm {cert, t = A, T, maxidx, sorts}) =
       fun proof () = Proofterm.trivial_proof;
       fun trace () = Prooftrace.trivial_proof;
     in
-      Thm (deriv_rule0 zproof proof trace,
+      tag_thm (Thm (deriv_rule0 zproof proof trace,
        {cert = cert,
         tags = [],
         maxidx = maxidx,
@@ -2027,7 +2039,7 @@ fun trivial (ct as Cterm {cert, t = A, T, maxidx, sorts}) =
         shyps = sorts,
         hyps = [],
         tpairs = [],
-        prop = Logic.mk_implies (A, A)})
+        prop = Logic.mk_implies (A, A)}))
     end;
 
 (*Axiom-scheme reflecting signature contents
@@ -2048,7 +2060,7 @@ fun of_class (cT, raw_c) =
     fun trace () = Prooftrace.of_class_proof (T, c);
   in
     if Sign.of_sort thy (T, [c]) then
-      Thm (deriv_rule0 zproof proof trace,
+      tag_thm (Thm (deriv_rule0 zproof proof trace,
        {cert = cert,
         tags = [],
         maxidx = maxidx,
@@ -2056,7 +2068,7 @@ fun of_class (cT, raw_c) =
         shyps = sorts,
         hyps = [],
         tpairs = [],
-        prop = prop})
+        prop = prop}))
     else raise THM ("of_class: type not of class " ^ Syntax.string_of_sort_global thy [c], 0, [])
   end |> solve_constraints;
 
@@ -2099,7 +2111,7 @@ fun varifyT_global' fixed (Thm (der, {cert, maxidx, constraints, shyps, hyps, tp
     fun proof p = Proofterm.varifyT_proof al p;
     fun trace p = Prooftrace.varifyT_proof al p;
   in
-    (al, Thm (deriv_rule1 zproof proof trace der,
+    (al, tag_thm (Thm (deriv_rule1 zproof proof trace der,
      {cert = cert,
       tags = [],
       maxidx = Int.max (0, maxidx),
@@ -2107,7 +2119,7 @@ fun varifyT_global' fixed (Thm (der, {cert, maxidx, constraints, shyps, hyps, tp
       shyps = shyps,
       hyps = hyps,
       tpairs = rev (map Logic.dest_equals ts),
-      prop = prop3}))
+      prop = prop3})))
   end;
 
 val varifyT_global = #2 o varifyT_global' TFrees.empty;
@@ -2121,7 +2133,7 @@ fun legacy_freezeT (Thm (der, {cert, constraints, shyps, hyps, tpairs, prop, ...
     fun zproof p = ZTerm.legacy_freezeT_proof prop1 p;
     fun proof p = Proofterm.legacy_freezeT prop1 p;
   in
-    Thm (deriv_rule1 zproof proof Prooftrace.legacy_freezeT_proof der,
+    tag_thm (Thm (deriv_rule1 zproof proof Prooftrace.legacy_freezeT_proof der,
      {cert = cert,
       tags = [],
       maxidx = maxidx_of_term prop2,
@@ -2129,7 +2141,7 @@ fun legacy_freezeT (Thm (der, {cert, constraints, shyps, hyps, tpairs, prop, ...
       shyps = shyps,
       hyps = hyps,
       tpairs = rev (map Logic.dest_equals ts),
-      prop = prop3})
+      prop = prop3}))
   end;
 
 fun plain_prop_of raw_thm =
@@ -2210,7 +2222,7 @@ fun lift_rule goal orule =
         fun proof p = Proofterm.lift_proof gprop inc prems p;
         fun trace p = Prooftrace.lift_proof gprop inc p;
       in
-        Thm (deriv_rule1 zproof proof trace der,
+        tag_thm (Thm (deriv_rule1 zproof proof trace der,
          {cert = cert,
           tags = [],
           maxidx = maxidx + inc,
@@ -2218,7 +2230,7 @@ fun lift_rule goal orule =
           shyps = Sorts.union shyps sorts,  (*sic!*)
           hyps = hyps,
           tpairs = map (apply2 lift_abs) tpairs,
-          prop = Logic.list_implies (prems, lift_all B)})
+          prop = Logic.list_implies (prems, lift_all B)}))
       end
   end;
 
@@ -2231,7 +2243,7 @@ fun incr_indexes i (thm as Thm (der, {cert, maxidx, constraints, shyps, hyps, tp
       fun proof p = Proofterm.incr_indexes i p;
       fun trace p = Prooftrace.incr_indexes_proof i p;
     in
-      Thm (deriv_rule1 zproof proof trace der,
+      tag_thm (Thm (deriv_rule1 zproof proof trace der,
        {cert = cert,
         tags = [],
         maxidx = maxidx + i,
@@ -2239,7 +2251,7 @@ fun incr_indexes i (thm as Thm (der, {cert, maxidx, constraints, shyps, hyps, tp
         shyps = shyps,
         hyps = hyps,
         tpairs = map (apply2 (Logic.incr_indexes ([], i))) tpairs,
-        prop = Logic.incr_indexes ([], i) prop})
+        prop = Logic.incr_indexes ([], i) prop}))
     end;
 
 (*Solve subgoal Bi of proof state B1...Bn/C by assumption. *)
@@ -2259,7 +2271,7 @@ fun assumption opt_ctxt i state =
           |> not (Envir.is_empty env) ? Proofterm.norm_proof_remove_types env;
         fun trace p = Prooftrace.assumption_proof i n p;
       in
-        Thm (deriv_rule1 zproof proof trace der,
+        tag_thm (Thm (deriv_rule1 zproof proof trace der,
          {tags = [],
           maxidx = Envir.maxidx_of env,
           constraints = insert_constraints_env thy' env constraints,
@@ -2270,7 +2282,7 @@ fun assumption opt_ctxt i state =
             if Envir.is_empty env
             then Logic.list_implies (Bs, C) (*avoid wasted normalizations*)
             else normt (Logic.list_implies (Bs, C)) (*normalize the new rule fully*),
-          cert = cert'})
+          cert = cert'}))
       end;
 
     val (close, asms, concl) = Logic.assum_problems (~1, Bi);
@@ -2304,7 +2316,7 @@ fun eq_assumption i state =
           fun proof p = Proofterm.assumption_proof Bs Bi (n + 1) p;
           fun trace p = Prooftrace.eq_assumption_proof i p;
         in
-          Thm (deriv_rule1 zproof proof trace der,
+          tag_thm (Thm (deriv_rule1 zproof proof trace der,
            {cert = cert,
             tags = [],
             maxidx = maxidx,
@@ -2312,7 +2324,7 @@ fun eq_assumption i state =
             shyps = shyps,
             hyps = hyps,
             tpairs = tpairs,
-            prop = Logic.list_implies (Bs, C)})
+            prop = Logic.list_implies (Bs, C)}))
         end)
   end;
 
@@ -2343,7 +2355,7 @@ fun rotate_rule k i state =
     fun proof p = Proofterm.rotate_proof Bs Bi' params asms m p;
     fun trace p = Prooftrace.rotate_proof m i p;
   in
-    Thm (deriv_rule1 zproof proof trace der,
+    tag_thm (Thm (deriv_rule1 zproof proof trace der,
      {cert = cert,
       tags = [],
       maxidx = maxidx,
@@ -2351,7 +2363,7 @@ fun rotate_rule k i state =
       shyps = shyps,
       hyps = hyps,
       tpairs = tpairs,
-      prop = Logic.list_implies (Bs @ [Bi'], C)})
+      prop = Logic.list_implies (Bs @ [Bi'], C)}))
   end;
 
 
@@ -2385,7 +2397,7 @@ fun permute_prems j k rl =
     fun proof p = Proofterm.permute_prems_proof prems' j m p;
     fun trace p = Prooftrace.permute_prems_proof j m p;
   in
-    Thm (deriv_rule1 zproof proof trace der,
+    tag_thm (Thm (deriv_rule1 zproof proof trace der,
      {cert = cert,
       tags = [],
       maxidx = maxidx,
@@ -2393,7 +2405,7 @@ fun permute_prems j k rl =
       shyps = shyps,
       hyps = hyps,
       tpairs = tpairs,
-      prop = prop'})
+      prop = prop'}))
   end;
 
 
@@ -2559,7 +2571,7 @@ fun bicompose_aux opt_ctxt {flatten, match, incremented} (state, (stpairs, Bs, B
           Prooftrace.bicompose_proof env tpairs nsubgoal flatten As A n (nlift + 1)
             (length Bs) p q;
         val th =
-          Thm (deriv_rule2 zproof proof trace rder' sder,
+          tag_thm (Thm (deriv_rule2 zproof proof trace rder' sder,
            {tags = [],
             maxidx = Envir.maxidx_of env,
             constraints = constraints',
@@ -2567,7 +2579,7 @@ fun bicompose_aux opt_ctxt {flatten, match, incremented} (state, (stpairs, Bs, B
             hyps = union_hyps hyps1 hyps2,
             tpairs = ntpairs,
             prop = Logic.list_implies normp,
-            cert = cert})
+            cert = cert}))
       in Seq.cons th thq end handle COMPOSE => thq;
     val (rAs, B) = Logic.strip_prems (nsubgoal, [], rprop)
        handle TERM _ => raise THM("bicompose: rule", 0, [orule, state]);
