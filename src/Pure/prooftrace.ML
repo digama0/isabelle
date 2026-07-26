@@ -24,17 +24,17 @@ sig
   val oracle_proof:  string -> term -> T
   val strip_shyps_proof: sort list -> T -> T
   val incr_indexes_proof: int -> T -> T
-  val assume_proof: term -> T
-  val implies_intr_proof: term -> T -> T
+  val assume_proof: term -> sort list -> T
+  val implies_intr_proof: term -> sort list -> T -> T
   val implies_elim_proof: T -> T -> T
-  val forall_intr_proof: term -> T -> T
-  val forall_elim_proof: T -> term -> T
-  val reflexive_proof: term -> T
+  val forall_intr_proof: term -> sort list -> T -> T
+  val forall_elim_proof: T -> term -> sort list -> T
+  val reflexive_proof: term -> sort list -> T
   val symmetric_proof: T -> T
   val transitive_proof: T -> T -> T
-  val beta_proof: bool -> term -> T
-  val eta_proof: term -> T
-  val eta_long_proof: term -> T
+  val beta_proof: bool -> term -> sort list -> T
+  val eta_proof: term -> sort list -> T
+  val eta_long_proof: term -> sort list -> T
   val abstract_rule_proof: term -> T -> T
   val combination_proof: T -> T -> T
   val equal_intr_proof: T -> T -> T
@@ -43,13 +43,13 @@ sig
   val generalize_proof: Names.set * Names.set -> int -> T -> T
   val instantiate_proof:
     ((indexname * sort) * typ) list * ((indexname * typ) * term) list -> T -> T
-  val trivial_proof: T
+  val trivial_proof: sort list -> T
   val of_class_proof: typ * class -> T
   val thm_proof: serial -> T
   val constrain_thm_proof: serial -> sort list -> term list -> term -> T
   val varifyT_proof: ((string * sort) * (indexname * sort)) list -> T -> T
   val legacy_freezeT_proof: T -> T
-  val lift_proof: term -> int -> T -> T
+  val lift_proof: term -> int -> sort list -> T -> T
   val assumption_proof: int -> int -> T -> T
   val eq_assumption_proof: int -> T -> T
   val rotate_proof: int -> int -> T -> T
@@ -100,20 +100,20 @@ type thm_header =
 
 datatype T =
     PTSorry
-  | PTHyp of term
-  | PTImpIntr of term * T
+  | PTHyp of term * sort list
+  | PTImpIntr of term * sort list * T
   | PTImpElim of T * T
-  | PTForallIntr of term * T
-  | PTForallElim of term * T
+  | PTForallIntr of term * sort list * T
+  | PTForallElim of term * sort list * T
   | PTAxiom of string * term * Theory.axiom_source
   | PTOracle of string * term
-  | PTRefl of term
+  | PTRefl of term * sort list
   | PTSymm of T
   | PTTrans of T * T
-  | PTBetaNorm of term
-  | PTBetaHead of term
-  | PTEta of term
-  | PTEtaLong of term
+  | PTBetaNorm of term * sort list
+  | PTBetaHead of term * sort list
+  | PTEta of term * sort list
+  | PTEtaLong of term * sort list
   | PTStripSHyps of sort list * T
   | PTAbsRule of term * T
   | PTAppRule of T * T
@@ -122,13 +122,13 @@ datatype T =
   | PTFlexFlex of Envir.env * T
   | PTGeneralize of Names.set * Names.set * int * T
   | PTInstantiate of ((indexname * sort) * typ) list * ((indexname * typ) * term) list * T
-  | PTTrivial
+  | PTTrivial of sort list
   | PTOfClass of typ * class
   | PTThm of serial
   | PTConstrainThm of serial * sort list * term list * term
   | PTVarify of ((string * sort) * (indexname * sort)) list * T
   | PTLegacyFreezeT of T
-  | PTLift of term * int * T
+  | PTLift of term * int * sort list * T
   | PTIncrIndexes of int * T
   | PTAssumption of int * int * T
   | PTEqAssumption of int * T
@@ -146,19 +146,19 @@ val sorry = PTSorry;
 val pruned = PTPruned;
 fun axiom_proof name prop src = PTAxiom (name, prop, src);
 fun oracle_proof name prop = PTOracle (name, prop);
-fun implies_intr_proof A p = PTImpIntr (A, p);
+fun implies_intr_proof A sorts p = PTImpIntr (A, sorts, p);
 fun implies_elim_proof p q = PTImpElim (p, q);
-fun forall_intr_proof x p = PTForallIntr (x, p);
-fun forall_elim_proof p t = PTForallElim (t, p);
-val assume_proof = PTHyp;
-val reflexive_proof = PTRefl;
+fun forall_intr_proof x sorts p = PTForallIntr (x, sorts, p);
+fun forall_elim_proof p t sorts = PTForallElim (t, sorts, p);
+fun assume_proof t sorts = PTHyp (t, sorts);
+fun reflexive_proof t sorts = PTRefl (t, sorts);
 val symmetric_proof = PTSymm;
 fun transitive_proof p q = PTTrans (p, q);
 fun strip_shyps_proof sorts p = PTStripSHyps (sorts, p);
-fun beta_proof true = PTBetaNorm
-  | beta_proof false = PTBetaHead;
-val eta_proof = PTEta;
-val eta_long_proof = PTEtaLong;
+fun beta_proof true t sorts = PTBetaNorm (t, sorts)
+  | beta_proof false t sorts = PTBetaHead (t, sorts);
+fun eta_proof t sorts = PTEta (t, sorts);
+fun eta_long_proof t sorts = PTEtaLong (t, sorts);
 fun abstract_rule_proof x p = PTAbsRule (x, p);
 fun combination_proof p q = PTAppRule (p, q);
 fun equal_intr_proof p q = PTEqIntr (p, q);
@@ -166,13 +166,13 @@ fun equal_elim_proof p q = PTEqElim (p, q);
 fun flexflex_proof env p = PTFlexFlex (env, p);
 fun generalize_proof (tfrees, frees) idx p = PTGeneralize (tfrees, frees, idx, p);
 fun instantiate_proof (instT, inst) p = PTInstantiate (instT, inst, p);
-val trivial_proof = PTTrivial;
+fun trivial_proof sorts = PTTrivial sorts;
 val of_class_proof = PTOfClass;
 val thm_proof = PTThm;
 fun constrain_thm_proof i shyps hyps prop = PTConstrainThm (i, shyps, hyps, prop);
 fun varifyT_proof al p = PTVarify (al, p);
 val legacy_freezeT_proof = PTLegacyFreezeT;
-fun lift_proof gprop inc p = PTLift (gprop, inc, p);
+fun lift_proof gprop inc sorts p = PTLift (gprop, inc, sorts, p);
 fun incr_indexes_proof i p = PTIncrIndexes (i, p);
 fun assumption_proof i n p = PTAssumption (i, n, p);
 fun eq_assumption_proof i p = PTEqAssumption (i, p);

@@ -1295,7 +1295,7 @@ fun assume raw_ct =
               raise CONTEXT (msg, [], [ct], [], NONE);
           in ZTerm.assume_proof thy prop end;
         fun proof () = Proofterm.Hyp prop;
-        fun trace () = Prooftrace.assume_proof prop;
+        fun trace () = Prooftrace.assume_proof prop sorts;
       in
         tag_thm (Thm (deriv_rule0 zproof proof trace,
          {cert = cert,
@@ -1334,7 +1334,7 @@ fun implies_intr
             raise CONTEXT (msg, [], [ct], [th], NONE);
         in ZTerm.implies_intr_proof thy A p end
       fun proof p = Proofterm.implies_intr_proof A p;
-      fun trace p = Prooftrace.implies_intr_proof A p;
+      fun trace p = Prooftrace.implies_intr_proof A sorts p;
     in
       tag_thm (Thm (deriv_rule1 zproof proof trace der,
        {cert = cert,
@@ -1404,7 +1404,7 @@ fun forall_intr
                 raise CONTEXT (msg, [], [ct], [th], NONE);
             in ZTerm.forall_intr_proof thy T (a, x) p end;
           fun proof p = Proofterm.forall_intr_proof (a, x) NONE p;
-          fun trace p = Prooftrace.forall_intr_proof x p;
+          fun trace p = Prooftrace.forall_intr_proof x sorts p;
         in
           tag_thm (Thm (deriv_rule1 zproof proof trace der,
            {cert = cert,
@@ -1444,7 +1444,7 @@ fun forall_elim
                 raise CONTEXT (msg, [], [ct], [th], NONE);
             in ZTerm.forall_elim_proof thy t p end;
           fun proof p = p % SOME t;
-          fun trace p = Prooftrace.forall_elim_proof p t;
+          fun trace p = Prooftrace.forall_elim_proof p t sorts;
         in
           tag_thm (Thm (deriv_rule1 zproof proof trace der,
            {cert = cert,
@@ -1472,7 +1472,7 @@ fun reflexive (ct as Cterm {cert, t, T, maxidx, sorts}) =
           raise CONTEXT (msg, [], [ct], [], NONE);
       in ZTerm.reflexive_proof thy T t end;
     fun proof () = Proofterm.reflexive_proof;
-    fun trace () = Prooftrace.reflexive_proof t;
+    fun trace () = Prooftrace.reflexive_proof t sorts;
   in
     tag_thm (Thm (deriv_rule0 zproof proof trace,
      {cert = cert,
@@ -1569,7 +1569,7 @@ fun beta_conversion full (ct as Cterm {cert, t, T, maxidx, sorts}) =
           raise CONTEXT (msg, [], [ct], [], NONE);
       in ZTerm.reflexive_proof thy T t end;
     fun proof () = Proofterm.reflexive_proof;
-    fun trace () = Prooftrace.beta_proof full t;
+    fun trace () = Prooftrace.beta_proof full t sorts;
   in
     tag_thm (Thm (deriv_rule0 zproof proof trace,
      {cert = cert,
@@ -1590,7 +1590,7 @@ fun eta_conversion (ct as Cterm {cert, t, T, maxidx, sorts}) =
           raise CONTEXT (msg, [], [ct], [], NONE);
       in ZTerm.reflexive_proof thy T t end;
     fun proof () = Proofterm.reflexive_proof;
-    fun trace () = Prooftrace.eta_proof t;
+    fun trace () = Prooftrace.eta_proof t sorts;
   in
     tag_thm (Thm (deriv_rule0 zproof proof trace,
      {cert = cert,
@@ -1611,7 +1611,7 @@ fun eta_long_conversion (ct as Cterm {cert, t, T, maxidx, sorts}) =
           raise CONTEXT (msg, [], [ct], [], NONE);
       in ZTerm.reflexive_proof thy T t end;
     fun proof () = Proofterm.reflexive_proof;
-    fun trace () = Prooftrace.eta_long_proof t;
+    fun trace () = Prooftrace.eta_long_proof t sorts;
   in
     tag_thm (Thm (deriv_rule0 zproof proof trace,
      {cert = cert,
@@ -2031,7 +2031,7 @@ fun trivial (ct as Cterm {cert, t = A, T, maxidx, sorts}) =
             raise CONTEXT (msg, [], [ct], [], NONE);
         in ZTerm.trivial_proof thy A end;
       fun proof () = Proofterm.trivial_proof;
-      fun trace () = Prooftrace.trivial_proof;
+      fun trace () = Prooftrace.trivial_proof sorts;
     in
       tag_thm (Thm (deriv_rule0 zproof proof trace,
        {cert = cert,
@@ -2222,7 +2222,7 @@ fun lift_rule goal orule =
               handle ERROR msg => raise CONTEXT (msg, [], [goal], [orule], NONE);
           in ZTerm.lift_proof thy gprop inc prems p end;
         fun proof p = Proofterm.lift_proof gprop inc prems p;
-        fun trace p = Prooftrace.lift_proof gprop inc p;
+        fun trace p = Prooftrace.lift_proof gprop inc sorts p;
       in
         tag_thm (Thm (deriv_rule1 zproof proof trace der,
          {cert = cert,
