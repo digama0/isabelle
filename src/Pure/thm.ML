@@ -891,7 +891,7 @@ fun future future_thm ct =
     val i = serial ();
     val future = future_thm |> Future.map (future_result i cert sorts prop);
   in
-    Thm (make_deriv [(i, future)] [] [] [] ZNop MinProof Prooftrace.sorry,
+    tag_thm (Thm (make_deriv [(i, future)] [] [] [] ZNop MinProof Prooftrace.sorry,
      {cert = cert,
       tags = [],
       maxidx = maxidx,
@@ -899,7 +899,7 @@ fun future future_thm ct =
       shyps = sorts,
       hyps = [],
       tpairs = [],
-      prop = prop})
+      prop = prop}))
   end;
 
 
@@ -1084,9 +1084,9 @@ fun solve_constraints (thm as Thm (der, args)) =
       |> fold (fold union_digest o constraint_digest) constraints;
     val zproof' = ZTerm.beta_norm_prooft zproof;
   in
-    Thm (make_deriv promises oracles' thms' zboxes zproof' proof trace,
+    tag_thm (Thm (make_deriv promises oracles' thms' zboxes zproof' proof trace,
       {constraints = [], cert = cert, tags = tags, maxidx = maxidx,
-        shyps = shyps, hyps = hyps, tpairs = tpairs, prop = prop})
+        shyps = shyps, hyps = hyps, tpairs = tpairs, prop = prop}))
   end;
 
 end;
@@ -1149,9 +1149,9 @@ fun strip_shyps thm =
         val trace' = Prooftrace.when (fn () =>
           Prooftrace.strip_shyps_proof (Sorts.subtract extra extra') trace);
       in
-        Thm (make_deriv promises oracles thms zboxes zproof' proof' trace',
+        tag_thm (Thm (make_deriv promises oracles thms zboxes zproof' proof' trace',
          {cert = cert, tags = tags, maxidx = maxidx, constraints = constraints',
-          shyps = shyps', hyps = hyps, tpairs = tpairs, prop = prop})
+          shyps = shyps', hyps = hyps, tpairs = tpairs, prop = prop}))
       end)
   |> solve_constraints;
 
@@ -1206,7 +1206,7 @@ fun name_derivation name_pos =
 
       val ps = map (apsnd (Future.map fulfill_body)) promises;
       val body' = Proofterm.thm_proof thy (sorts_proof thy) name_pos shyps hyps prop ps body;
-    in Thm (make_deriv0 [] body', args) end);
+    in tag_thm (Thm (make_deriv0 [] body', args)) end);
 
 fun close_derivation pos =
   solve_constraints #> (fn thm =>
@@ -1250,7 +1250,7 @@ fun add_oracle (b, oracle_fn) thy1 =
             val trace = Prooftrace.when (fn () =>
               Prooftrace.oracle_proof name prop);
           in
-            Thm (make_deriv [] [oracle] [] [] zproof proof trace,
+            tag_thm (Thm (make_deriv [] [oracle] [] [] zproof proof trace,
              {cert = cert,
               tags = [],
               maxidx = maxidx,
@@ -1258,7 +1258,7 @@ fun add_oracle (b, oracle_fn) thy1 =
               shyps = sorts,
               hyps = [],
               tpairs = [],
-              prop = prop})
+              prop = prop}))
           end
       end;
   in ((name, invoke_oracle), thy2) end;
@@ -2091,7 +2091,7 @@ val unconstrainT =
       val ps = map (apsnd (Future.map fulfill_body)) promises;
       val (prop', body') = Proofterm.unconstrain_thm_proof thy (sorts_proof thy) shyps prop ps body;
     in
-      Thm (make_deriv0 [] body',
+      tag_thm (Thm (make_deriv0 [] body',
        {cert = cert,
         tags = [],
         maxidx = maxidx_of_term prop',
@@ -2099,7 +2099,7 @@ val unconstrainT =
         shyps = [[]],  (*potentially redundant*)
         hyps = [],
         tpairs = [],
-        prop = prop'})
+        prop = prop'}))
     end);
 
 (*Replace all TFrees not fixed or in the hyps by new TVars*)
