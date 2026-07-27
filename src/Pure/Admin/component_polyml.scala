@@ -213,7 +213,7 @@ object Component_PolyML {
 
   // fork of polyml-5.9.2 (ccd3e3717f72) adding PolyML.exportSmall / exportSmallToFD
   val default_polyml_url = "https://github.com/digama0/polyml/archive"
-  val default_polyml_version = "5612ede0c13a"
+  val default_polyml_version = "95414c58"
   val default_polyml_name = "polyml-exportSmall"
 
   private def init_src_root(src_dir: Path, input: String, output: String): Unit = {
@@ -333,10 +333,11 @@ ISABELLE_DOCS_EXAMPLES="$ISABELLE_DOCS_EXAMPLES:\$POLYML_HOME/\$ML_SOURCES_ROOT"
 
 This compilation of Poly/ML (https://www.polyml.org) is based on the
 source distribution from
-https://github.com/polyml/polyml/commit/""" + polyml_version + """
+""" + polyml_url.replace("/archive", "/commit/") + polyml_version + """
 
-This is the official release of Poly/ML 5.9.2 with some later changes,
-see also https://github.com/polyml/polyml/commits/fixes-5.9.2
+This is the official release of Poly/ML 5.9.2 with some later changes, plus
+`PolyML.exportSmall`; see also
+https://github.com/polyml/polyml/commits/fixes-5.9.2
 
 The Isabelle repository provides an administrative tool "isabelle
 component_polyml", which can be used in the polyml component directory as
