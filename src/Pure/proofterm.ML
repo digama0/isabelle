@@ -63,6 +63,7 @@ sig
   val unions_thms: thm Ord_List.T list -> thm Ord_List.T
   val no_proof_body: zproof -> proof -> Prooftrace.T -> proof_body
   val no_thm_names: proof -> proof
+  val proof_serial: unit -> int
   val no_thm_proofs: proof -> proof
   val no_body_proofs: proof -> proof
 

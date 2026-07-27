@@ -21,7 +21,7 @@ sig
   val when: (unit -> T) -> T
 
   val axiom_proof: string -> term -> Theory.axiom_source -> T
-  val oracle_proof:  string -> term -> T
+  val oracle_proof:  string -> term -> sort list -> T
   val strip_shyps_proof: sort list -> T -> T
   val incr_indexes_proof: int -> T -> T
   val assume_proof: term -> sort list -> T
@@ -35,27 +35,31 @@ sig
   val beta_proof: bool -> term -> sort list -> T
   val eta_proof: term -> sort list -> T
   val eta_long_proof: term -> sort list -> T
-  val abstract_rule_proof: term -> T -> T
+  val abstract_rule_proof: term -> sort list -> T -> T
   val combination_proof: T -> T -> T
   val equal_intr_proof: T -> T -> T
   val equal_elim_proof: T -> T -> T
   val flexflex_proof: Envir.env -> T -> T
   val generalize_proof: Names.set * Names.set -> int -> T -> T
   val instantiate_proof:
-    ((indexname * sort) * typ) list * ((indexname * typ) * term) list -> sort list -> T -> T
+    ((indexname * sort) * typ) list * ((indexname * typ) * term) list -> sort list ->
+    bool -> T -> T
+  val weaken_proof: term -> sort list -> T -> T
   val trivial_proof: term -> sort list -> T
   val of_class_proof: typ * class -> T
   val thm_proof: serial -> T
+  val promise_proof: serial -> term -> sort list -> T
+  val export_promise: theory -> serial -> term -> T -> unit
   val constrain_thm_proof: serial -> sort list -> term list -> term -> T
   val varifyT_proof: ((string * sort) * (indexname * sort)) list -> T -> T
   val legacy_freezeT_proof: T -> T
   val lift_proof: term -> int -> sort list -> T -> T
-  val assumption_proof: int -> int -> T -> T
+  val assumption_proof: Envir.env -> int -> int -> T -> T
   val eq_assumption_proof: int -> T -> T
   val rotate_proof: int -> int -> T -> T
   val permute_prems_proof: int -> int -> T -> T
   val bicompose_proof: Envir.env -> (term * term) list -> int -> bool -> term list ->
-    term option -> int -> int -> int -> T -> T -> T
+    term option -> int -> int -> int -> int -> bool -> T -> T -> T
 
   val export_proof: theory -> thm_header -> (typ * typ) list -> int -> term list -> T -> unit
   val log: string -> unit
@@ -106,7 +110,7 @@ datatype T =
   | PTForallIntr of term * sort list * T
   | PTForallElim of term * sort list * T
   | PTAxiom of string * term * Theory.axiom_source
-  | PTOracle of string * term
+  | PTOracle of string * term * sort list
   | PTRefl of term * sort list
   | PTSymm of T
   | PTTrans of T * T
@@ -115,28 +119,30 @@ datatype T =
   | PTEta of term * sort list
   | PTEtaLong of term * sort list
   | PTStripSHyps of sort list * T
-  | PTAbsRule of term * T
+  | PTAbsRule of term * sort list * T
   | PTAppRule of T * T
   | PTEqIntr of T * T
   | PTEqElim of T * T
   | PTFlexFlex of Envir.env * T
   | PTGeneralize of Names.set * Names.set * int * T
-  | PTInstantiate of ((indexname * sort) * typ) list * ((indexname * typ) * term) list *
-      sort list * T
+  | PTInstantiate of (((indexname * sort) * typ) list * ((indexname * typ) * term) list *
+      sort list * bool) * T
   | PTTrivial of term * sort list
   | PTOfClass of typ * class
   | PTThm of serial
   | PTConstrainThm of serial * sort list * term list * term
   | PTVarify of ((string * sort) * (indexname * sort)) list * T
+  | PTWeaken of term * sort list * T
   | PTLegacyFreezeT of T
   | PTLift of term * int * sort list * T
   | PTIncrIndexes of int * T
-  | PTAssumption of int * int * T
+  | PTAssumption of Envir.env * int * int * T
   | PTEqAssumption of int * T
   | PTRotate of int * int * T
   | PTPermutePrems of int * int * T
   | PTBicompose of (Envir.env * (term * term) list * int * bool * term list *
-    term option * int * int * int) * T * T
+    term option * int * int * int * int * bool) * T * T
+  | PTPromise of serial * term * sort list
   | PTPruned
   (*debug aid: what this subproof proves -- statement, sort hypotheses and flex-flex
     pairs.  Named to sort last so that the constructor tags of everything above are
@@ -146,7 +152,7 @@ datatype T =
 val sorry = PTSorry;
 val pruned = PTPruned;
 fun axiom_proof name prop src = PTAxiom (name, prop, src);
-fun oracle_proof name prop = PTOracle (name, prop);
+fun oracle_proof name prop sorts = PTOracle (name, prop, sorts);
 fun implies_intr_proof A sorts p = PTImpIntr (A, sorts, p);
 fun implies_elim_proof p q = PTImpElim (p, q);
 fun forall_intr_proof x sorts p = PTForallIntr (x, sorts, p);
@@ -160,27 +166,31 @@ fun beta_proof true t sorts = PTBetaNorm (t, sorts)
   | beta_proof false t sorts = PTBetaHead (t, sorts);
 fun eta_proof t sorts = PTEta (t, sorts);
 fun eta_long_proof t sorts = PTEtaLong (t, sorts);
-fun abstract_rule_proof x p = PTAbsRule (x, p);
+fun abstract_rule_proof x sorts p = PTAbsRule (x, sorts, p);
 fun combination_proof p q = PTAppRule (p, q);
 fun equal_intr_proof p q = PTEqIntr (p, q);
 fun equal_elim_proof p q = PTEqElim (p, q);
 fun flexflex_proof env p = PTFlexFlex (env, p);
 fun generalize_proof (tfrees, frees) idx p = PTGeneralize (tfrees, frees, idx, p);
-fun instantiate_proof (instT, inst) sorts p = PTInstantiate (instT, inst, sorts, p);
+fun instantiate_proof (instT, inst) sorts beta p =
+  PTInstantiate ((instT, inst, sorts, beta), p);
+
+fun weaken_proof A sorts p = PTWeaken (A, sorts, p);
 fun trivial_proof A sorts = PTTrivial (A, sorts);
 val of_class_proof = PTOfClass;
 val thm_proof = PTThm;
+fun promise_proof i prop sorts = PTPromise (i, prop, sorts);
 fun constrain_thm_proof i shyps hyps prop = PTConstrainThm (i, shyps, hyps, prop);
 fun varifyT_proof al p = PTVarify (al, p);
 val legacy_freezeT_proof = PTLegacyFreezeT;
 fun lift_proof gprop inc sorts p = PTLift (gprop, inc, sorts, p);
 fun incr_indexes_proof i p = PTIncrIndexes (i, p);
-fun assumption_proof i n p = PTAssumption (i, n, p);
+fun assumption_proof env i n p = PTAssumption (env, i, n, p);
 fun eq_assumption_proof i p = PTEqAssumption (i, p);
 fun rotate_proof k i p = PTRotate (k, i, p);
 fun permute_prems_proof j k p = PTPermutePrems (j, k, p);
-fun bicompose_proof env tpairs nsubgoal flatten As A n nlift nbs p q =
-  PTBicompose ((env, tpairs, nsubgoal, flatten, As, A, n, nlift, nbs), p, q);
+fun bicompose_proof env tpairs nsubgoal flatten As A n nlift nbs smax lifted p q =
+  PTBicompose ((env, tpairs, nsubgoal, flatten, As, A, n, nlift, nbs, smax, lifted), p, q);
 
 fun enabled () = Options.default_bool "prooftrace_enabled";
 fun props_enabled () = Options.default_bool "prooftrace_props";
@@ -250,7 +260,19 @@ fun export_to_socket addr thy_name serial data =
     add_stat Time.zeroTime (#elapsed (Timing.result write_start))
   end;
 
-fun export_proof thy header tvar_map shyps hyps p =
+fun export_promise thy i prop p =
+  let
+    val header =
+      {serial = i, command_pos = Position.thread_data (),
+       theory_name = Context.theory_long_name thy,
+       thm_name = (Thm_Name.empty, Position.none), prop = prop, types = NONE};
+  in
+    (*`~1` marks a promise: its sort hypotheses are declared by `Thm.future`'s cterm, not
+      discharged into `OFCLASS` premises the way `unconstrainT` does for a stored theorem*)
+    export_proof thy header [] ~1 [] p
+  end
+
+and export_proof thy header tvar_map shyps hyps p =
   if not (Options.default_bool "prooftrace_out") then () else
   let
     val logit = logging ();
@@ -260,6 +282,13 @@ fun export_proof thy header tvar_map shyps hyps p =
         string_of_int (the_default 0 (Position.line_of (#command_pos header))))
       else ();
     val start = Timing.start ();
+
+    val _ =
+      (case (case p of PTZProp (_, _, _, q) => q | q => q) of
+        PTSorry =>
+          warning ("prooftrace: unrecorded proof for " ^ Thm_Name.print (#1 (#thm_name header)) ^
+            " at " ^ Position.here (#command_pos header))
+      | _ => ());
 
     val data = (header, tvar_map, shyps, hyps, p)
     val addr = Options.default_string "prooftrace_socket"

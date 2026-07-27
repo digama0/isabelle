@@ -739,27 +739,6 @@ fun make_context_certificate ths opt_ctxt cert =
   in (context, cert') end;
 
 (*explicit weakening: maps |- B to A |- B*)
-fun weaken raw_ct th =
-  let
-    val ct as Cterm {t = A, T, sorts, maxidx = maxidxA, ...} = adjust_maxidx_cterm ~1 raw_ct;
-    val Thm (der, {tags, maxidx, constraints, shyps, hyps, tpairs, prop, ...}) = th;
-  in
-    if T <> propT then
-      raise THM ("weaken: assumptions must have type prop", 0, [])
-    else if maxidxA <> ~1 then
-      raise THM ("weaken: assumptions may not contain schematic variables", maxidxA, [])
-    else
-      Thm (der,
-       {cert = join_certificate1 (ct, th),
-        tags = tags,
-        maxidx = maxidx,
-        constraints = constraints,
-        shyps = Sorts.union sorts shyps,
-        hyps = insert_hyps A hyps,
-        tpairs = tpairs,
-        prop = prop})
-  end;
-
 fun weaken_sorts raw_sorts ct =
   let
     val Cterm {cert, t, T, maxidx, sorts} = ct;
@@ -865,10 +844,11 @@ fun expose_proof thy = expose_proofs thy o single;
 
 (* future rule *)
 
-fun future_result i orig_cert orig_shyps orig_prop thm =
+fun future_result i trace_id orig_cert orig_shyps orig_prop thm =
   let
     fun err msg = raise THM ("future_result: " ^ msg, 0, [thm]);
-    val Thm (Deriv {promises, ...}, {cert, constraints, shyps, hyps, tpairs, prop, ...}) = thm;
+    val Thm (Deriv {promises, body = PBody {trace, ...}}, 
+      {cert, constraints, shyps, hyps, tpairs, prop, ...}) = thm;
 
     val _ = Context.eq_certificate (cert, orig_cert) orelse err "bad theory";
     val _ = prop aconv orig_prop orelse err "bad prop";
@@ -878,6 +858,16 @@ fun future_result i orig_cert orig_shyps orig_prop thm =
     val _ = Sorts.subset (shyps, orig_shyps) orelse err "bad shyps";
     val _ = forall (fn (j, _) => i <> j) promises orelse err "bad dependencies";
     val _ = join_promises promises;
+
+    (*a forked proof reaches the kernel as a promise, whose derivation is empty until the
+      future is joined.  Export the fulfilled proof as a trace of its own, keyed by the
+      promise serial, so that `PTPromise i` in the using proof is an ordinary citation.*)
+    val _ =
+      if Prooftrace.enabled () then
+        let val thy = Context.certificate_theory cert
+          handle ERROR msg => raise CONTEXT (msg, [], [], [thm], NONE);
+        in Prooftrace.export_promise thy trace_id prop trace end
+      else ();
   in thm end;
 
 fun future future_thm ct =
@@ -889,9 +879,13 @@ fun future future_thm ct =
       then raise CTERM ("future: proof terms enabled", [ct]) else ();
 
     val i = serial ();
-    val future = future_thm |> Future.map (future_result i cert sorts prop);
+    (*the trace is cited by serial like a proof box, so it must come from the same counter:
+      `serial ()` and `Proofterm.proof_serial ()` are different sequences*)
+    val trace_id = if Prooftrace.enabled () then Proofterm.proof_serial () else 0;
+    val future = future_thm |> Future.map (future_result i trace_id cert sorts prop);
   in
-    tag_thm (Thm (make_deriv [(i, future)] [] [] [] ZNop MinProof Prooftrace.sorry,
+    tag_thm (Thm (make_deriv [(i, future)] [] [] [] ZNop MinProof
+      (Prooftrace.when (fn () => Prooftrace.promise_proof trace_id prop sorts)),
      {cert = cert,
       tags = [],
       maxidx = maxidx,
@@ -902,6 +896,28 @@ fun future future_thm ct =
       prop = prop}))
   end;
 
+
+
+fun weaken raw_ct th =
+  let
+    val ct as Cterm {t = A, T, sorts, maxidx = maxidxA, ...} = adjust_maxidx_cterm ~1 raw_ct;
+    val Thm (der, {tags, maxidx, constraints, shyps, hyps, tpairs, prop, ...}) = th;
+  in
+    if T <> propT then
+      raise THM ("weaken: assumptions must have type prop", 0, [])
+    else if maxidxA <> ~1 then
+      raise THM ("weaken: assumptions may not contain schematic variables", maxidxA, [])
+    else
+      tag_thm (Thm (deriv_rule1 I I (Prooftrace.weaken_proof A sorts) der,
+       {cert = join_certificate1 (ct, th),
+        tags = tags,
+        maxidx = maxidx,
+        constraints = constraints,
+        shyps = Sorts.union sorts shyps,
+        hyps = insert_hyps A hyps,
+        tpairs = tpairs,
+        prop = prop}))
+  end;
 
 
 (** Axioms **)
@@ -1251,7 +1267,7 @@ fun add_oracle (b, oracle_fn) thy1 =
                 in ZTerm.oracle_proof thy name prop end
               else ZNop;
             val trace = Prooftrace.when (fn () =>
-              Prooftrace.oracle_proof name prop);
+              Prooftrace.oracle_proof name prop sorts);
           in
             tag_thm (Thm (make_deriv [] [oracle] [] [] zproof proof trace,
              {cert = cert,
@@ -1654,7 +1670,7 @@ fun abstract_rule b
                 raise CONTEXT (msg, [], [ct], [th], NONE);
             in ZTerm.abstract_rule_proof thy T U (b, x) f g p end;
           fun proof p = Proofterm.abstract_rule_proof (b, x) p
-          fun trace p = Prooftrace.abstract_rule_proof x p
+          fun trace p = Prooftrace.abstract_rule_proof x sorts p
         in
           tag_thm (Thm (deriv_rule1 zproof proof trace der,
            {cert = cert,
@@ -1955,7 +1971,7 @@ in
 (*Left-to-right replacements: ctpairs = [..., (vi, ti), ...].
   Instantiates distinct Vars by terms of same type.
   Does NOT normalize the resulting theorem!*)
-fun gen_instantiate inst_fn (instT, inst) th =
+fun gen_instantiate beta inst_fn (instT, inst) th =
   if TVars.is_empty instT andalso Vars.is_empty inst then th
   else
     let
@@ -1984,7 +2000,7 @@ fun gen_instantiate inst_fn (instT, inst) th =
       fun trace p =
         Prooftrace.instantiate_proof
           (TVars.fold (fn (v, (T, _)) => cons (v, T)) instT' [],
-           Vars.fold (fn (v, (t, _)) => cons (v, t)) inst' []) shyps' p;
+           Vars.fold (fn (v, (t, _)) => cons (v, t)) inst' []) shyps' beta p;
     in
       tag_thm (Thm (deriv_rule1 zproof proof trace der,
        {cert = cert',
@@ -1999,8 +2015,8 @@ fun gen_instantiate inst_fn (instT, inst) th =
     end
     handle TYPE (msg, _, _) => raise THM (msg, 0, [th]);
 
-val instantiate = gen_instantiate Term_Subst.instantiate_maxidx;
-val instantiate_beta = gen_instantiate Term_Subst.instantiate_beta_maxidx;
+val instantiate = gen_instantiate false Term_Subst.instantiate_maxidx;
+val instantiate_beta = gen_instantiate true Term_Subst.instantiate_beta_maxidx;
 
 fun gen_instantiate_cterm inst_fn (instT, inst) ct =
   if TVars.is_empty instT andalso Vars.is_empty inst then ct
@@ -2274,7 +2290,7 @@ fun assumption opt_ctxt i state =
         fun proof p =
           Proofterm.assumption_proof (map normt Bs) (normt Bi) n p
           |> not (Envir.is_empty env) ? Proofterm.norm_proof_remove_types env;
-        fun trace p = Prooftrace.assumption_proof i n p;
+        fun trace p = Prooftrace.assumption_proof env i n p;
       in
         tag_thm (Thm (deriv_rule1 zproof proof trace der,
          {tags = [],
@@ -2574,7 +2590,7 @@ fun bicompose_aux opt_ctxt {flatten, match, incremented} (state, (stpairs, Bs, B
           Proofterm.bicompose_proof env smax flatten Bs As A oldAs n (nlift + 1) p q;
         fun trace p q =
           Prooftrace.bicompose_proof env tpairs nsubgoal flatten As A n (nlift + 1)
-            (length Bs) p q;
+            (length Bs) smax lifted p q;
         val th =
           tag_thm (Thm (deriv_rule2 zproof proof trace rder' sder,
            {tags = [],
